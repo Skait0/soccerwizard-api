@@ -59,10 +59,18 @@ def get_fixtures():
     
     try:
         response = requests.get(url, impersonate="chrome120", timeout=10)
+        
+        # Check if response text is actually present
+        if not response.text.strip():
+            return jsonify({"success": False, "error": "Empty response received from SportyBet"}), 502
+            
         data = response.json()
         
         matches = []
-        for tournament in data.get('data', {}).get('tournaments', []):
+        biz_data = data.get('data', {})
+        tournaments = biz_data.get('tournaments', []) if isinstance(biz_data, dict) else []
+        
+        for tournament in tournaments:
             for event in tournament.get('events', []):
                 matches.append({
                     "eventId": event.get("id"),
@@ -73,6 +81,7 @@ def get_fixtures():
                 
         return jsonify({"success": True, "matches": matches})
     except Exception as e:
+        print(f"Fixtures Fetch Error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/generate-booking-code', methods=['POST'])
