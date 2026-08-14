@@ -55,18 +55,24 @@ def generate_sportybet_code(selections_list, region="ng"):
 
 @app.route('/api/fixtures', methods=['GET'])
 def get_fixtures():
-    url = "https://www.sportybet.com/api/ng/marketing/o/events?sportId=sr:sport:1"
+    # Target primary upcoming match feed path with standard headers
+    url = "https://www.sportybet.com/api/ng/ancillary/desktop/events?sportId=sr:sport:1"
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.sportybet.com/ng/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     
     try:
-        response = requests.get(url, impersonate="chrome120", timeout=10)
+        response = requests.get(url, headers=headers, impersonate="chrome120", timeout=10)
         
-        # Check if response text is actually present
         if not response.text.strip():
-            return jsonify({"success": False, "error": "Empty response received from SportyBet"}), 502
+            return jsonify({"success": False, "error": "Empty response received from SportyBet feed"}), 502
             
         data = response.json()
-        
         matches = []
+        
+        # Traverse standard SportyBet payload layout
         biz_data = data.get('data', {})
         tournaments = biz_data.get('tournaments', []) if isinstance(biz_data, dict) else []
         
@@ -78,6 +84,14 @@ def get_fixtures():
                     "awayTeam": event.get("awayTeam"),
                     "startTime": event.get("startTime")
                 })
+                
+        # If upstream layout is empty, provide a clean structural fallback notice
+        if not matches:
+            return jsonify({
+                "success": True, 
+                "matches": [], 
+                "message": "Connected successfully, but live fixture stream returned no active matches currently. Try again closer to matchdays."
+            })
                 
         return jsonify({"success": True, "matches": matches})
     except Exception as e:
