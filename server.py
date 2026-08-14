@@ -53,6 +53,28 @@ def generate_sportybet_code(selections_list, region="ng"):
         print(f"API Internal Error: {e}")
         return None
 
+@app.route('/api/fixtures', methods=['GET'])
+def get_fixtures():
+    url = "https://www.sportybet.com/api/ng/marketing/o/events?sportId=sr:sport:1"
+    
+    try:
+        response = requests.get(url, impersonate="chrome120", timeout=10)
+        data = response.json()
+        
+        matches = []
+        for tournament in data.get('data', {}).get('tournaments', []):
+            for event in tournament.get('events', []):
+                matches.append({
+                    "eventId": event.get("id"),
+                    "homeTeam": event.get("homeTeam"),
+                    "awayTeam": event.get("awayTeam"),
+                    "startTime": event.get("startTime")
+                })
+                
+        return jsonify({"success": True, "matches": matches})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route('/api/generate-booking-code', methods=['POST'])
 def api_generate_code():
     data = request.json
