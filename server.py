@@ -55,25 +55,48 @@ def generate_sportybet_code(selections_list, region="ng"):
 
 @app.route('/api/fixtures', methods=['GET'])
 def get_fixtures():
-    # Providing a clean operational fixture structure 
-    # Frontend can ingest these or supply custom match IDs directly to the generator
-    sample_fixtures = [
-        {
-            "eventId": "sr:match:45381202",
-            "homeTeam": "Sample Home Team",
-            "awayTeam": "Sample Away Team",
-            "startTime": "2026-08-14T15:00:00Z"
+    try:
+        # Fetch live fixtures from SportyBet using curl_cffi with chrome120 impersonation
+        region = "ng"
+        url = f"https://www.sportybet.com/api/{region}/fixtures/upcoming"
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://www.sportybet.com",
+            "Referer": f"https://www.sportybet.com/{region}/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
-    ]
-    return jsonify({
-        "success": True, 
-        "matches": sample_fixtures,
-        "note": "Using structural handler. Pass active event IDs directly from your frontend selection payload to generate booking codes."
-    })
+        
+        response = requests.get(url, headers=headers, impersonate="chrome120", timeout=10)
+        data = response.json()
+        
+        if data.get("bizCode") == 10000:
+            raw_events = data.get("data", {}).get("events", [])
+            formatted_matches = []
+            for event in raw_events:
+                formatted_matches.append({
+                    "eventId": event.get("eventId"),
+                    "homeTeam": event.get("homeTeamName"),
+                    "awayTeam": event.get("awayTeamName"),
+                    "startTime": event.get("estimateStartTime")
+                })
+            return jsonify({
+                "success": True, 
+                "matches": formatted_matches
+            })
+            
+        return jsonify({
+            "success": False, 
+            "message": "Failed to fetch live events from SportyBet",
+            "matches": []
+        }), 500
+        
+    except Exception as e:
+        print(f"Fixtures Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/generate-booking-code', methods=['POST'])
 def api_generate_code():
-    data = request.json
+    data = request.json or {}
     raw_selections = data.get("selections", [])
 
     formatted_selections = []
