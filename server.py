@@ -1,3 +1,4 @@
+import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from curl_cffi import requests
@@ -24,6 +25,10 @@ MARKET_MAP = {
     "X2":       {"marketId": "10", "outcomeId": "X2"},  # Away or Draw
     "12":       {"marketId": "10", "outcomeId": "12"}   # Home or Away (Anybody Wins)
 }
+
+# In-memory cache for fixtures (shared while the container stays warm)
+_FIXTURES_CACHE = {"at": 0, "data": None}
+_FIXTURES_TTL = 15 * 60  # 15 minutes
 
 
 def generate_sportybet_code(selections_list, region="ng"):
@@ -56,9 +61,7 @@ def generate_sportybet_code(selections_list, region="ng"):
         return None
 
 
-@app.route('/api/fixtures', methods=['GET'])
-def get_fixtures():
-    region = "ng"
+def fetch_sportybet_fixtures(region="ng"):
     headers = {
         "Accept": "application/json, text/plain, */*",
         "Origin": "https://www.sportybet.com",
@@ -67,34 +70,59 @@ def get_fixtures():
                       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
     matches = []
+    for page in range(1, 8):  # up to ~700 events
+        url = (f"https://www.sportybet.com/api/{region}/factsCenter/pcUpcomingEvents"
+               f"?sportId=sr:sport:1&marketId=1&pageSize=100&pageNum={page}")
+        r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
+        data = r.json()
+        if data.get("bizCode") != 10000:
+            break
+        d = data.get("data", {}) or {}
+        events = []
+        for t in (d.get("tournaments") or []):
+            events.extend(t.get("events") or [])
+        events.extend(d.get("events") or [])
+        if not events:
+            break
+        for e in events:
+            matches.append({
+                "eventId": e.get("eventId"),
+                "homeTeam": e.get("homeTeamName"),
+                "awayTeam": e.get("awayTeamName"),
+                "startTime": e.get("estimateStartTime"),
+            })
+    return matches
+
+
+@app.route('/api/fixtures', methods=['GET'])
+def get_fixtures():
+    now = time.time()
+    # Serve from cache if fresh (unless ?refresh=1)
+    refresh = request.args.get("refresh") in ("1", "true")
+    if not refresh and _FIXTURES_CACHE["data"] is not None \
+            and (now - _FIXTURES_CACHE["at"]) < _FIXTURES_TTL:
+        return jsonify({
+            "success": True,
+            "cached": True,
+            "count": len(_FIXTURES_CACHE["data"]),
+            "matches": _FIXTURES_CACHE["data"],
+        })
     try:
-        # Football = sr:sport:1. Page through upcoming events.
-        for page in range(1, 8):  # up to ~700 events
-            url = (f"https://www.sportybet.com/api/{region}/factsCenter/pcUpcomingEvents"
-                   f"?sportId=sr:sport:1&marketId=1&pageSize=100&pageNum={page}")
-            r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
-            data = r.json()
-            if data.get("bizCode") != 10000:
-                break
-            d = data.get("data", {}) or {}
-            # factsCenter nests events under tournaments; handle both shapes
-            events = []
-            for t in (d.get("tournaments") or []):
-                events.extend(t.get("events") or [])
-            events.extend(d.get("events") or [])
-            if not events:
-                break
-            for e in events:
-                matches.append({
-                    "eventId": e.get("eventId"),
-                    "homeTeam": e.get("homeTeamName"),
-                    "awayTeam": e.get("awayTeamName"),
-                    "startTime": e.get("estimateStartTime"),
-                })
-        return jsonify({"success": True, "count": len(matches), "matches": matches})
+        matches = fetch_sportybet_fixtures()
+        # Only overwrite the cache if we actually got data
+        if matches:
+            _FIXTURES_CACHE["data"] = matches
+            _FIXTURES_CACHE["at"] = now
+        return jsonify({"success": True, "cached": False,
+                        "count": len(matches), "matches": matches})
     except Exception as ex:
         print(f"Fixtures Error: {ex}")
-        return jsonify({"success": False, "error": str(ex), "matches": matches}), 500
+        # Fall back to stale cache rather than failing
+        if _FIXTURES_CACHE["data"] is not None:
+            return jsonify({"success": True, "cached": True, "stale": True,
+                            "count": len(_FIXTURES_CACHE["data"]),
+                            "matches": _FIXTURES_CACHE["data"]})
+        return jsonify({"success": False, "error": str(ex), "matches": []}), 500
 
 
 @app.route('/api/generate-booking-code', methods=['POST'])
