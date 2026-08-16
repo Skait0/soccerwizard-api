@@ -94,6 +94,30 @@ def _map_live_status(s):
     return s or "LIVE"
 
 
+def _extract_events(d):
+    pairs = []
+    tours = []
+    if isinstance(d, list):
+        tours = d
+    elif isinstance(d, dict):
+        tours = d.get("tournaments") or []
+        if not tours and d.get("events"):
+            return [("", e) for e in d["events"]]
+    for t in tours:
+        if not isinstance(t, dict):
+            continue
+        cat = ((t.get("category") or {}).get("name")) or t.get("categoryName") or ""
+        nm = t.get("name") or ""
+        lg = (f"{cat} {nm}").strip() if cat else nm
+        evs = t.get("events")
+        if evs:
+            for e in evs:
+                pairs.append((lg, e))
+        else:
+            pairs.append((lg, t))
+    return pairs
+
+
 def fetch_live_scores(region="ng"):
     headers = {
         "Accept": "application/json, text/plain, */*",
@@ -104,53 +128,53 @@ def fetch_live_scores(region="ng"):
     }
     matches = []
     for page in range(1, 6):
-        url = (f"https://www.sportybet.com/api/{region}/factsCenter/liveEvents"
+        url = (f"https://www.sportybet.com/api/{region}/factsCenter/liveOrPrematchEvents"
                f"?sportId=sr:sport:1&marketId=1&pageSize=100&pageNum={page}")
         r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
         data = r.json()
         if data.get("bizCode") != 10000:
             break
-        d = data.get("data", {}) or {}
-        events = []
-        for t in (d.get("tournaments") or []):
-            cat = ((t.get("category") or {}).get("name")) or t.get("categoryName") or ""
-            for e in (t.get("events") or []):
-                e["_lg"] = t.get("name") or ""
-                e["_cat"] = cat
-                events.append(e)
-        events.extend(d.get("events") or [])
-        if not events:
+        pairs = _extract_events(data.get("data"))
+        if not pairs:
             break
-        for e in events:
+        for lg, e in pairs:
+            if not isinstance(e, dict):
+                continue
+            status_raw = (e.get("matchStatus") or e.get("period")
+                          or e.get("eventStatus") or e.get("playStatus") or "")
+            # keep only in-play events
+            gs = e.get("gameScore")
+            ps = e.get("playedSeconds")
+            is_live = bool(ps) or e.get("matchStatus") in ("H1", "H2", "HT", "ET", "P") \
+                or isinstance(gs, list) and len(gs) > 0
+            if not is_live:
+                continue
             hs = e.get("homeScore")
             aw = e.get("awayScore")
-            ss = e.get("setScore") or e.get("gameScore")
+            ss = e.get("setScore")
+            if (hs is None or aw is None) and isinstance(gs, list) and gs:
+                sc = gs[0]
+                if isinstance(sc, str) and ":" in sc:
+                    try:
+                        p = sc.split(":"); hs = int(p[0]); aw = int(p[1])
+                    except Exception:
+                        pass
             if (hs is None or aw is None) and isinstance(ss, str) and ":" in ss:
                 try:
                     p = ss.split(":"); hs = int(p[0]); aw = int(p[1])
                 except Exception:
                     pass
             minute = None
-            ps = e.get("playedSeconds")
             if isinstance(ps, str) and ps.isdigit():
                 minute = int(ps) // 60
             elif isinstance(ps, (int, float)):
                 minute = int(ps) // 60
-            lg = e.get("_lg") or ""
-            cat = e.get("_cat") or ""
-            if cat and lg:
-                lg = f"{cat} {lg}"
-            try:
-                hs = int(hs) if hs is not None else None
-                aw = int(aw) if aw is not None else None
-            except Exception:
-                pass
             matches.append({
-                "league": lg,
+                "league": lg or "",
                 "home": e.get("homeTeamName"),
                 "away": e.get("awayTeamName"),
                 "homeScore": hs, "awayScore": aw, "minute": minute,
-                "status": _map_live_status(e.get("matchStatus") or e.get("period") or e.get("eventStatus")),
+                "status": _map_live_status(status_raw),
                 "homeGoals": [], "awayGoals": [], "homeReds": 0, "awayReds": 0,
             })
     return matches
@@ -164,39 +188,21 @@ def fetch_live_raw(region="ng"):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
-    candidates = [
-        "factsCenter/liveEvents",
-        "factsCenter/pcLiveEvents",
-        "factsCenter/liveOrPrematchEvents",
-        "factsCenter/wapLiveEvents",
-        "factsCenter/commonLiveEvents",
-        "factsCenter/pcLiveList",
-        "liveEvents/list",
-    ]
-    report = []
-    winner = None
-    for path in candidates:
-        url = (f"https://www.sportybet.com/api/{region}/{path}"
-               f"?sportId=sr:sport:1&marketId=1&pageSize=20&pageNum=1")
-        try:
-            r = requests.get(url, headers=headers, impersonate="chrome120", timeout=12)
-            j = r.json()
-            biz = j.get("bizCode")
-            d = j.get("data") or {}
-            n = len(d.get("tournaments") or []) + len(d.get("events") or [])
-            sample = None
-            if biz == 10000 and n:
-                if d.get("tournaments"):
-                    evs = (d["tournaments"][0] or {}).get("events") or []
-                    sample = evs[0] if evs else None
-                elif d.get("events"):
-                    sample = d["events"][0]
-                if winner is None:
-                    winner = path
-            report.append({"path": path, "bizCode": biz, "blocks": n, "sample": sample})
-        except Exception as ex:
-            report.append({"path": path, "error": str(ex)})
-    return {"winner": winner, "report": report}
+    url = (f"https://www.sportybet.com/api/{region}/factsCenter/liveOrPrematchEvents"
+           f"?sportId=sr:sport:1&marketId=1&pageSize=20&pageNum=1")
+    r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
+    payload = r.json()
+    pairs = _extract_events(payload.get("data"))
+    sample = None
+    for lg, e in pairs:
+        if isinstance(e, dict):
+            sample = {k: e.get(k) for k in (
+                "eventId", "homeTeamName", "awayTeamName", "homeScore", "awayScore",
+                "setScore", "gameScore", "playedSeconds", "matchStatus", "period",
+                "eventStatus", "playStatus", "remainingTimeInPeriod", "estimateStartTime")}
+            sample["_league"] = lg
+            break
+    return {"bizCode": payload.get("bizCode"), "pairs": len(pairs), "sample": sample}
 
 
 @app.route('/api/livescores', methods=['GET'])
