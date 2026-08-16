@@ -61,7 +61,7 @@ def fetch_sportybet_fixtures(region="ng"):
                       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
     matches = []
-    for page in range(1, 8):
+    for page in range(1, 21):
         url = (f"https://www.sportybet.com/api/{region}/factsCenter/pcUpcomingEvents"
                f"?sportId=sr:sport:1&marketId=1&pageSize=100&pageNum={page}")
         r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
@@ -142,8 +142,9 @@ def get_livescores():
                         "count": len(_LIVE_CACHE["data"]), "matches": _LIVE_CACHE["data"]})
     try:
         matches = fetch_live_scores()
-        _LIVE_CACHE["data"] = matches
-        _LIVE_CACHE["at"] = now
+        if matches:
+            _LIVE_CACHE["data"] = matches
+            _LIVE_CACHE["at"] = now
         return jsonify({"success": True, "cached": False,
                         "count": len(matches), "matches": matches})
     except Exception as ex:
