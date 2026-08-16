@@ -85,57 +85,98 @@ def fetch_sportybet_fixtures(region="ng"):
     return matches
 
 
-def fetch_live_scores():
-    url = f"https://{API_FOOTBALL_HOST}/v3/fixtures?live=all"
-    headers = {"X-RapidAPI-Key": API_FOOTBALL_KEY, "X-RapidAPI-Host": API_FOOTBALL_HOST}
-    r = requests.get(url, headers=headers, timeout=15)
-    payload = r.json()
-    errs = payload.get("errors")
-    if errs:
-        raise RuntimeError(f"API-Football: {errs}")
-    out = []
-    for item in payload.get("response", []):
-        fx = item.get("fixture", {}) or {}
-        status = fx.get("status") or {}
-        league = item.get("league", {}) or {}
-        teams = item.get("teams", {}) or {}
-        goals = item.get("goals", {}) or {}
-        home_name = (teams.get("home") or {}).get("name")
-        away_name = (teams.get("away") or {}).get("name")
-        home_goals, away_goals = [], []
-        home_reds = away_reds = 0
-        for ev in (item.get("events") or []):
-            eteam = (ev.get("team") or {}).get("name")
-            player = (ev.get("player") or {}).get("name")
-            minute = (ev.get("time") or {}).get("elapsed")
-            etype = ev.get("type")
-            detail = ev.get("detail") or ""
-            if etype == "Goal":
-                rec = {"player": player, "minute": minute}
-                if eteam == home_name:
-                    home_goals.append(rec)
-                elif eteam == away_name:
-                    away_goals.append(rec)
-            elif etype == "Card" and "Red" in detail:
-                if eteam == home_name:
-                    home_reds += 1
-                elif eteam == away_name:
-                    away_reds += 1
-        lg = league.get("name") or ""
-        if league.get("country") and league.get("country") != "World":
-            lg = f"{league.get('country')} {lg}"
-        out.append({
-            "league": lg, "home": home_name, "away": away_name,
-            "homeScore": goals.get("home"), "awayScore": goals.get("away"),
-            "minute": status.get("elapsed"), "status": status.get("short"),
-            "homeGoals": home_goals, "awayGoals": away_goals,
-            "homeReds": home_reds, "awayReds": away_reds,
-        })
-    return out
+def _map_live_status(s):
+    s = (s or "").upper()
+    if s in ("FT", "AET", "PEN", "ENDED", "FINISHED"):
+        return "FT"
+    if s in ("HT", "HALFTIME", "PAUSE"):
+        return "HT"
+    return s or "LIVE"
+
+
+def fetch_live_scores(region="ng"):
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Origin": "https://www.sportybet.com",
+        "Referer": f"https://www.sportybet.com/{region}/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
+    matches = []
+    for page in range(1, 6):
+        url = (f"https://www.sportybet.com/api/{region}/factsCenter/liveEvents"
+               f"?sportId=sr:sport:1&marketId=1&pageSize=100&pageNum={page}")
+        r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
+        data = r.json()
+        if data.get("bizCode") != 10000:
+            break
+        d = data.get("data", {}) or {}
+        events = []
+        for t in (d.get("tournaments") or []):
+            cat = ((t.get("category") or {}).get("name")) or t.get("categoryName") or ""
+            for e in (t.get("events") or []):
+                e["_lg"] = t.get("name") or ""
+                e["_cat"] = cat
+                events.append(e)
+        events.extend(d.get("events") or [])
+        if not events:
+            break
+        for e in events:
+            hs = e.get("homeScore")
+            aw = e.get("awayScore")
+            ss = e.get("setScore") or e.get("gameScore")
+            if (hs is None or aw is None) and isinstance(ss, str) and ":" in ss:
+                try:
+                    p = ss.split(":"); hs = int(p[0]); aw = int(p[1])
+                except Exception:
+                    pass
+            minute = None
+            ps = e.get("playedSeconds")
+            if isinstance(ps, str) and ps.isdigit():
+                minute = int(ps) // 60
+            elif isinstance(ps, (int, float)):
+                minute = int(ps) // 60
+            lg = e.get("_lg") or ""
+            cat = e.get("_cat") or ""
+            if cat and lg:
+                lg = f"{cat} {lg}"
+            try:
+                hs = int(hs) if hs is not None else None
+                aw = int(aw) if aw is not None else None
+            except Exception:
+                pass
+            matches.append({
+                "league": lg,
+                "home": e.get("homeTeamName"),
+                "away": e.get("awayTeamName"),
+                "homeScore": hs, "awayScore": aw, "minute": minute,
+                "status": _map_live_status(e.get("matchStatus") or e.get("period") or e.get("eventStatus")),
+                "homeGoals": [], "awayGoals": [], "homeReds": 0, "awayReds": 0,
+            })
+    return matches
+
+
+def fetch_live_raw(region="ng"):
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Origin": "https://www.sportybet.com",
+        "Referer": f"https://www.sportybet.com/{region}/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
+    url = (f"https://www.sportybet.com/api/{region}/factsCenter/liveEvents"
+           f"?sportId=sr:sport:1&marketId=1&pageSize=100&pageNum=1")
+    r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
+    return r.json()
 
 
 @app.route('/api/livescores', methods=['GET'])
 def get_livescores():
+    if request.args.get("debug") in ("1", "true"):
+        try:
+            return jsonify(fetch_live_raw())
+        except Exception as ex:
+            return jsonify({"debug_error": str(ex)}), 500
     now = time.time()
     if _LIVE_CACHE["data"] is not None and (now - _LIVE_CACHE["at"]) < _LIVE_TTL:
         return jsonify({"success": True, "cached": True,
