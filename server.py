@@ -1,3 +1,4 @@
+import os
 import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -5,6 +6,12 @@ from curl_cffi import requests
 
 app = Flask(__name__)
 CORS(app)
+
+# Key comes from env on Railway; falls back to the pasted key so it works now.
+# ROTATE this key in RapidAPI and set API_FOOTBALL_KEY in Railway > Variables.
+API_FOOTBALL_KEY = os.environ.get("API_FOOTBALL_KEY",
+                                  "1290ebaa69msh399e14f03021605p1d668fjsnc53f2fc2acbb")
+API_FOOTBALL_HOST = "api-football-v1.p.rapidapi.com"
 
 MARKET_MAP = {
     "1":        {"marketId": "1",  "outcomeId": "1"},
@@ -20,6 +27,11 @@ MARKET_MAP = {
 
 _FIXTURES_CACHE = {"at": 0, "data": None}
 _FIXTURES_TTL = 15 * 60
+
+# Live scores are cached so all visitors share one upstream call per window.
+# Free API-Football tier is ~100 requests/day, so keep this generous.
+_LIVE_CACHE = {"at": 0, "data": None}
+_LIVE_TTL = 30  # seconds
 
 
 def generate_sportybet_code(selections_list, region="ng"):
@@ -74,6 +86,86 @@ def fetch_sportybet_fixtures(region="ng"):
                 "startTime": e.get("estimateStartTime"),
             })
     return matches
+
+
+def fetch_live_scores():
+    url = f"https://{API_FOOTBALL_HOST}/v3/fixtures?live=all"
+    headers = {
+        "X-RapidAPI-Key": API_FOOTBALL_KEY,
+        "X-RapidAPI-Host": API_FOOTBALL_HOST,
+    }
+    r = requests.get(url, headers=headers, timeout=15)
+    payload = r.json()
+    out = []
+    for item in payload.get("response", []):
+        fx = item.get("fixture", {}) or {}
+        status = (fx.get("status") or {})
+        league = item.get("league", {}) or {}
+        teams = item.get("teams", {}) or {}
+        goals = item.get("goals", {}) or {}
+        home_name = (teams.get("home") or {}).get("name")
+        away_name = (teams.get("away") or {}).get("name")
+
+        home_goals, away_goals = [], []
+        home_reds = away_reds = 0
+        for ev in (item.get("events") or []):
+            eteam = (ev.get("team") or {}).get("name")
+            player = (ev.get("player") or {}).get("name")
+            minute = (ev.get("time") or {}).get("elapsed")
+            etype = ev.get("type")
+            detail = ev.get("detail") or ""
+            if etype == "Goal":
+                rec = {"player": player, "minute": minute}
+                if eteam == home_name:
+                    home_goals.append(rec)
+                elif eteam == away_name:
+                    away_goals.append(rec)
+            elif etype == "Card" and "Red" in detail:
+                if eteam == home_name:
+                    home_reds += 1
+                elif eteam == away_name:
+                    away_reds += 1
+
+        lg = league.get("name") or ""
+        if league.get("country") and league.get("country") != "World":
+            lg = f"{league.get('country')} {lg}"
+
+        out.append({
+            "league": lg,
+            "home": home_name,
+            "away": away_name,
+            "homeScore": goals.get("home"),
+            "awayScore": goals.get("away"),
+            "minute": status.get("elapsed"),
+            "status": status.get("short"),
+            "homeGoals": home_goals,
+            "awayGoals": away_goals,
+            "homeReds": home_reds,
+            "awayReds": away_reds,
+        })
+    return out
+
+
+@app.route('/api/livescores', methods=['GET'])
+def get_livescores():
+    now = time.time()
+    if _LIVE_CACHE["data"] is not None and (now - _LIVE_CACHE["at"]) < _LIVE_TTL:
+        return jsonify({"success": True, "cached": True,
+                        "count": len(_LIVE_CACHE["data"]),
+                        "matches": _LIVE_CACHE["data"]})
+    try:
+        matches = fetch_live_scores()
+        _LIVE_CACHE["data"] = matches
+        _LIVE_CACHE["at"] = now
+        return jsonify({"success": True, "cached": False,
+                        "count": len(matches), "matches": matches})
+    except Exception as ex:
+        print(f"Livescores Error: {ex}")
+        if _LIVE_CACHE["data"] is not None:
+            return jsonify({"success": True, "cached": True, "stale": True,
+                            "count": len(_LIVE_CACHE["data"]),
+                            "matches": _LIVE_CACHE["data"]})
+        return jsonify({"success": False, "error": str(ex), "matches": []}), 500
 
 
 @app.route('/api/fixtures', methods=['GET'])
