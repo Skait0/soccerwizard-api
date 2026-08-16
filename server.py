@@ -7,31 +7,28 @@ from curl_cffi import requests
 app = Flask(__name__)
 CORS(app)
 
-# Key comes from env on Railway; falls back to the pasted key so it works now.
 # ROTATE this key in RapidAPI and set API_FOOTBALL_KEY in Railway > Variables.
 API_FOOTBALL_KEY = os.environ.get("API_FOOTBALL_KEY",
                                   "1290ebaa69msh399e14f03021605p1d668fjsnc53f2fc2acbb")
 API_FOOTBALL_HOST = "api-football-v1.p.rapidapi.com"
 
+# marketId + numeric outcomeId (Betradar/SportyBet share format)
 MARKET_MAP = {
-    "1":        {"marketId": "1",  "outcomeId": "1"},
-    "X":        {"marketId": "1",  "outcomeId": "2"},
-    "2":        {"marketId": "1",  "outcomeId": "3"},
-    "OVER_2.5": {"marketId": "18", "outcomeId": "over", "specifier": "total=2.5"},
-    "OVER_1.5": {"marketId": "18", "outcomeId": "over", "specifier": "total=1.5"},
-    "GG":       {"marketId": "29", "outcomeId": "yes"},
-    "1X":       {"marketId": "10", "outcomeId": "1X"},
-    "X2":       {"marketId": "10", "outcomeId": "X2"},
-    "12":       {"marketId": "10", "outcomeId": "12"},
+    "1":        {"marketId": "1",  "outcomeId": "1"},                          # home
+    "X":        {"marketId": "1",  "outcomeId": "2"},                          # draw
+    "2":        {"marketId": "1",  "outcomeId": "3"},                          # away
+    "1X":       {"marketId": "10", "outcomeId": "9"},                          # home/draw
+    "12":       {"marketId": "10", "outcomeId": "10"},                         # home/away
+    "X2":       {"marketId": "10", "outcomeId": "11"},                         # draw/away
+    "OVER_1.5": {"marketId": "18", "outcomeId": "12", "specifier": "total=1.5"},
+    "OVER_2.5": {"marketId": "18", "outcomeId": "12", "specifier": "total=2.5"},
+    "GG":       {"marketId": "29", "outcomeId": "74"},                         # both score yes
 }
 
 _FIXTURES_CACHE = {"at": 0, "data": None}
 _FIXTURES_TTL = 15 * 60
-
-# Live scores are cached so all visitors share one upstream call per window.
-# Free API-Football tier is ~100 requests/day, so keep this generous.
 _LIVE_CACHE = {"at": 0, "data": None}
-_LIVE_TTL = 30  # seconds
+_LIVE_TTL = 30
 
 
 def generate_sportybet_code(selections_list, region="ng"):
@@ -90,22 +87,22 @@ def fetch_sportybet_fixtures(region="ng"):
 
 def fetch_live_scores():
     url = f"https://{API_FOOTBALL_HOST}/v3/fixtures?live=all"
-    headers = {
-        "X-RapidAPI-Key": API_FOOTBALL_KEY,
-        "X-RapidAPI-Host": API_FOOTBALL_HOST,
-    }
+    headers = {"X-RapidAPI-Key": API_FOOTBALL_KEY, "X-RapidAPI-Host": API_FOOTBALL_HOST}
     r = requests.get(url, headers=headers, timeout=15)
     payload = r.json()
+    # API-Football reports auth/quota problems in "errors"
+    errs = payload.get("errors")
+    if errs:
+        raise RuntimeError(f"API-Football: {errs}")
     out = []
     for item in payload.get("response", []):
         fx = item.get("fixture", {}) or {}
-        status = (fx.get("status") or {})
+        status = fx.get("status") or {}
         league = item.get("league", {}) or {}
         teams = item.get("teams", {}) or {}
         goals = item.get("goals", {}) or {}
         home_name = (teams.get("home") or {}).get("name")
         away_name = (teams.get("away") or {}).get("name")
-
         home_goals, away_goals = [], []
         home_reds = away_reds = 0
         for ev in (item.get("events") or []):
@@ -125,23 +122,15 @@ def fetch_live_scores():
                     home_reds += 1
                 elif eteam == away_name:
                     away_reds += 1
-
         lg = league.get("name") or ""
         if league.get("country") and league.get("country") != "World":
             lg = f"{league.get('country')} {lg}"
-
         out.append({
-            "league": lg,
-            "home": home_name,
-            "away": away_name,
-            "homeScore": goals.get("home"),
-            "awayScore": goals.get("away"),
-            "minute": status.get("elapsed"),
-            "status": status.get("short"),
-            "homeGoals": home_goals,
-            "awayGoals": away_goals,
-            "homeReds": home_reds,
-            "awayReds": away_reds,
+            "league": lg, "home": home_name, "away": away_name,
+            "homeScore": goals.get("home"), "awayScore": goals.get("away"),
+            "minute": status.get("elapsed"), "status": status.get("short"),
+            "homeGoals": home_goals, "awayGoals": away_goals,
+            "homeReds": home_reds, "awayReds": away_reds,
         })
     return out
 
@@ -151,8 +140,7 @@ def get_livescores():
     now = time.time()
     if _LIVE_CACHE["data"] is not None and (now - _LIVE_CACHE["at"]) < _LIVE_TTL:
         return jsonify({"success": True, "cached": True,
-                        "count": len(_LIVE_CACHE["data"]),
-                        "matches": _LIVE_CACHE["data"]})
+                        "count": len(_LIVE_CACHE["data"]), "matches": _LIVE_CACHE["data"]})
     try:
         matches = fetch_live_scores()
         _LIVE_CACHE["data"] = matches
@@ -161,10 +149,9 @@ def get_livescores():
                         "count": len(matches), "matches": matches})
     except Exception as ex:
         print(f"Livescores Error: {ex}")
-        if _LIVE_CACHE["data"] is not None:
+        if _LIVE_CACHE["data"]:
             return jsonify({"success": True, "cached": True, "stale": True,
-                            "count": len(_LIVE_CACHE["data"]),
-                            "matches": _LIVE_CACHE["data"]})
+                            "count": len(_LIVE_CACHE["data"]), "matches": _LIVE_CACHE["data"]})
         return jsonify({"success": False, "error": str(ex), "matches": []}), 500
 
 
@@ -175,8 +162,7 @@ def get_fixtures():
     if not refresh and _FIXTURES_CACHE["data"] is not None \
             and (now - _FIXTURES_CACHE["at"]) < _FIXTURES_TTL:
         return jsonify({"success": True, "cached": True,
-                        "count": len(_FIXTURES_CACHE["data"]),
-                        "matches": _FIXTURES_CACHE["data"]})
+                        "count": len(_FIXTURES_CACHE["data"]), "matches": _FIXTURES_CACHE["data"]})
     try:
         matches = fetch_sportybet_fixtures()
         if matches:
@@ -187,8 +173,7 @@ def get_fixtures():
     except Exception as ex:
         if _FIXTURES_CACHE["data"] is not None:
             return jsonify({"success": True, "cached": True, "stale": True,
-                            "count": len(_FIXTURES_CACHE["data"]),
-                            "matches": _FIXTURES_CACHE["data"]})
+                            "count": len(_FIXTURES_CACHE["data"]), "matches": _FIXTURES_CACHE["data"]})
         return jsonify({"success": False, "error": str(ex), "matches": []}), 500
 
 
@@ -208,10 +193,8 @@ def api_generate_code():
     result = generate_sportybet_code(formatted_selections)
     if result.get("code"):
         return jsonify({"success": True, "booking_code": result["code"]})
-    return jsonify({"success": False,
-                    "message": "SportyBet rejected the slip",
-                    "detail": result.get("error"),
-                    "sent": result.get("sent")}), 400
+    return jsonify({"success": False, "message": "SportyBet rejected the slip",
+                    "detail": result.get("error"), "sent": result.get("sent")}), 400
 
 
 @app.route('/', methods=['GET'])
@@ -221,3 +204,8 @@ def home():
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
+Push the frontend:
+
+git add public/index.html
+git commit -m "Manual slip picker, upcoming-only builder, logo home, loader, draw-pill fix"
+git push origin main
