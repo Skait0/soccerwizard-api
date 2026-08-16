@@ -165,8 +165,14 @@ def fetch_live_scores(region="ng"):
                 except Exception:
                     pass
             minute = None
-            if isinstance(ps, str) and ps.isdigit():
-                minute = int(ps) // 60
+            if isinstance(ps, str):
+                if ":" in ps:
+                    try:
+                        minute = int(ps.split(":")[0])
+                    except Exception:
+                        pass
+                elif ps.isdigit():
+                    minute = int(ps) // 60
             elif isinstance(ps, (int, float)):
                 minute = int(ps) // 60
             matches.append({
