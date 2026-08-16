@@ -14,15 +14,15 @@ API_FOOTBALL_HOST = "api-football-v1.p.rapidapi.com"
 
 # marketId + numeric outcomeId (Betradar/SportyBet share format)
 MARKET_MAP = {
-    "1":        {"marketId": "1",  "outcomeId": "1"},                          # home
-    "X":        {"marketId": "1",  "outcomeId": "2"},                          # draw
-    "2":        {"marketId": "1",  "outcomeId": "3"},                          # away
-    "1X":       {"marketId": "10", "outcomeId": "9"},                          # home/draw
-    "12":       {"marketId": "10", "outcomeId": "10"},                         # home/away
-    "X2":       {"marketId": "10", "outcomeId": "11"},                         # draw/away
+    "1":        {"marketId": "1",  "outcomeId": "1"},
+    "X":        {"marketId": "1",  "outcomeId": "2"},
+    "2":        {"marketId": "1",  "outcomeId": "3"},
+    "1X":       {"marketId": "10", "outcomeId": "9"},
+    "12":       {"marketId": "10", "outcomeId": "10"},
+    "X2":       {"marketId": "10", "outcomeId": "11"},
     "OVER_1.5": {"marketId": "18", "outcomeId": "12", "specifier": "total=1.5"},
     "OVER_2.5": {"marketId": "18", "outcomeId": "12", "specifier": "total=2.5"},
-    "GG":       {"marketId": "29", "outcomeId": "74"},                         # both score yes
+    "GG":       {"marketId": "29", "outcomeId": "74"},
 }
 
 _FIXTURES_CACHE = {"at": 0, "data": None}
@@ -90,7 +90,6 @@ def fetch_live_scores():
     headers = {"X-RapidAPI-Key": API_FOOTBALL_KEY, "X-RapidAPI-Host": API_FOOTBALL_HOST}
     r = requests.get(url, headers=headers, timeout=15)
     payload = r.json()
-    # API-Football reports auth/quota problems in "errors"
     errs = payload.get("errors")
     if errs:
         raise RuntimeError(f"API-Football: {errs}")
@@ -204,8 +203,3 @@ def home():
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
-Push the frontend:
-
-git add public/index.html
-git commit -m "Manual slip picker, upcoming-only builder, logo home, loader, draw-pill fix"
-git push origin main
