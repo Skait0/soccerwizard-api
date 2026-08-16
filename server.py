@@ -164,10 +164,39 @@ def fetch_live_raw(region="ng"):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
-    url = (f"https://www.sportybet.com/api/{region}/factsCenter/liveEvents"
-           f"?sportId=sr:sport:1&marketId=1&pageSize=100&pageNum=1")
-    r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
-    return r.json()
+    candidates = [
+        "factsCenter/liveEvents",
+        "factsCenter/pcLiveEvents",
+        "factsCenter/liveOrPrematchEvents",
+        "factsCenter/wapLiveEvents",
+        "factsCenter/commonLiveEvents",
+        "factsCenter/pcLiveList",
+        "liveEvents/list",
+    ]
+    report = []
+    winner = None
+    for path in candidates:
+        url = (f"https://www.sportybet.com/api/{region}/{path}"
+               f"?sportId=sr:sport:1&marketId=1&pageSize=20&pageNum=1")
+        try:
+            r = requests.get(url, headers=headers, impersonate="chrome120", timeout=12)
+            j = r.json()
+            biz = j.get("bizCode")
+            d = j.get("data") or {}
+            n = len(d.get("tournaments") or []) + len(d.get("events") or [])
+            sample = None
+            if biz == 10000 and n:
+                if d.get("tournaments"):
+                    evs = (d["tournaments"][0] or {}).get("events") or []
+                    sample = evs[0] if evs else None
+                elif d.get("events"):
+                    sample = d["events"][0]
+                if winner is None:
+                    winner = path
+            report.append({"path": path, "bizCode": biz, "blocks": n, "sample": sample})
+        except Exception as ex:
+            report.append({"path": path, "error": str(ex)})
+    return {"winner": winner, "report": report}
 
 
 @app.route('/api/livescores', methods=['GET'])
