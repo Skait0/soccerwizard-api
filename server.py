@@ -76,11 +76,28 @@ def fetch_sportybet_fixtures(region="ng"):
         if not events:
             break
         for e in events:
+            odds = {}
+            for mk in (e.get("markets") or []):
+                mid = str(mk.get("id"))
+                spec = mk.get("specifier") or ""
+                for oc in (mk.get("outcomes") or []):
+                    oid = str(oc.get("id"))
+                    od = oc.get("odds")
+                    if od in (None, "", "-"):
+                        continue
+                    for code, mp in MARKET_MAP.items():
+                        if (str(mp["marketId"]) == mid and str(mp["outcomeId"]) == oid
+                                and (mp.get("specifier", "") or "") == spec):
+                            try:
+                                odds[code] = float(od)
+                            except Exception:
+                                pass
             matches.append({
                 "eventId": e.get("eventId"),
                 "homeTeam": e.get("homeTeamName"),
                 "awayTeam": e.get("awayTeamName"),
                 "startTime": e.get("estimateStartTime"),
+                "odds": odds,
             })
     return matches
 
