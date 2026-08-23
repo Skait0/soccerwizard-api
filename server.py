@@ -217,9 +217,12 @@ def fetch_live_scores(region="ng"):
                           or e.get("eventStatus") or e.get("playStatus") or "")
             gs = e.get("gameScore")
             ps = e.get("playedSeconds")
+            _st = _map_live_status(status_raw)
             is_live = bool(ps) or e.get("matchStatus") in ("H1", "H2", "HT", "ET", "P") \
                 or (isinstance(gs, list) and len(gs) > 0)
-            if not is_live:
+            # Ended games have no clock, so they'd be dropped - but the results
+            # capture needs them. Keep FT too.
+            if not is_live and _st != "FT":
                 continue
             hs = e.get("homeScore")
             aw = e.get("awayScore")
@@ -340,6 +343,35 @@ def get_results():
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({"status": "SoccerWizard API is running successfully!"})
+
+
+# --- Background capture ----------------------------------------------------
+# Polling only inside the request handler means finals are caught only when a
+# visitor happens to load the page. A daemon thread polls independently every
+# POLL_SECS so FT games are recorded within seconds of ending, traffic or not.
+import threading
+POLL_SECS = int(os.environ.get("CAPTURE_POLL_SECS", "30"))
+
+def _capture_loop():
+    while True:
+        try:
+            ms = fetch_live_scores()
+            _capture_finals(ms)
+            _LIVE_CACHE["data"] = ms
+            _LIVE_CACHE["at"] = time.time()
+        except Exception as ex:
+            print(f"capture loop: {ex}")
+        time.sleep(POLL_SECS)
+
+_poller_started = False
+def _start_poller():
+    global _poller_started
+    if _poller_started:
+        return
+    _poller_started = True
+    threading.Thread(target=_capture_loop, daemon=True).start()
+
+_start_poller()
 
 
 if __name__ == '__main__':
