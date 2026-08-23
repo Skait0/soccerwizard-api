@@ -34,6 +34,63 @@ _FIXTURES_TTL = 15 * 60
 _LIVE_CACHE = {"at": 0, "data": None}
 _LIVE_TTL = 30
 
+# --- Results capture -------------------------------------------------------
+# SportyBet gives no queryable history, so we accumulate final scores ourselves
+# as games hit FT in the live feed. Persisted to RESULTS_FILE. Set that env var
+# to a path on a Railway VOLUME so it survives redeploys; without a volume the
+# file lives in ephemeral storage and resets on each deploy.
+import os, json
+RESULTS_FILE = os.environ.get("RESULTS_FILE", "/data/results.json")
+_RESULTS = {}   # key "YYYY-MM-DD|home|away" -> {date,home,away,hg,ag,ts}
+
+def _rkey(d, h, a):
+    return d + "|" + (h or "").strip().lower() + "|" + (a or "").strip().lower()
+
+def _load_results():
+    global _RESULTS
+    try:
+        with open(RESULTS_FILE, "r") as fh:
+            _RESULTS = json.load(fh)
+    except Exception:
+        _RESULTS = {}
+
+def _save_results():
+    try:
+        os.makedirs(os.path.dirname(RESULTS_FILE), exist_ok=True)
+        tmp = RESULTS_FILE + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(_RESULTS, fh)
+        os.replace(tmp, RESULTS_FILE)
+    except Exception as ex:
+        print(f"results save failed: {ex}")
+
+def _capture_finals(matches):
+    """Record any FT game with a known score. Called on every live poll."""
+    changed = False
+    import datetime
+    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    for m in matches or []:
+        if m.get("status") != "FT":
+            continue
+        h, a = m.get("home"), m.get("away")
+        hs, as_ = m.get("homeScore"), m.get("awayScore")
+        if not h or not a or hs is None or as_ is None:
+            continue
+        k = _rkey(today, h, a)
+        if k in _RESULTS:
+            continue
+        _RESULTS[k] = {"date": today, "home": h, "away": a,
+                       "hg": int(hs), "ag": int(as_), "ts": int(time.time())}
+        changed = True
+    if changed:
+        # keep last ~10 days only
+        cut = int(time.time()) - 10 * 86400
+        for k in [k for k, v in _RESULTS.items() if v.get("ts", 0) < cut]:
+            _RESULTS.pop(k, None)
+        _save_results()
+
+_load_results()
+
 
 def _headers(region="ng"):
     return {
@@ -231,6 +288,10 @@ def get_livescores():
                         "count": len(_LIVE_CACHE["data"]), "matches": _LIVE_CACHE["data"]})
     try:
         matches = fetch_live_scores()
+        try:
+            _capture_finals(matches)
+        except Exception as _ce:
+            print(f"capture finals failed: {_ce}")
         _LIVE_CACHE["data"] = matches
         _LIVE_CACHE["at"] = now
         return jsonify({"success": True, "cached": False,
@@ -261,6 +322,19 @@ def api_generate_code():
         return jsonify({"success": True, "booking_code": result["code"]})
     return jsonify({"success": False, "message": "SportyBet rejected the slip",
                     "detail": result.get("error"), "sent": result.get("sent")}), 400
+
+
+@app.route('/api/results', methods=['GET'])
+def get_results():
+    # Optional ?days=N (default 7). Returns finals captured from the live feed.
+    try:
+        days = int(request.args.get("days", "7"))
+    except Exception:
+        days = 7
+    cut = int(time.time()) - max(1, days) * 86400
+    out = [v for v in _RESULTS.values() if v.get("ts", 0) >= cut]
+    out.sort(key=lambda v: v.get("ts", 0), reverse=True)
+    return jsonify({"success": True, "count": len(out), "results": out})
 
 
 @app.route('/', methods=['GET'])
