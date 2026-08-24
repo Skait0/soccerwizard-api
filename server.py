@@ -1,10 +1,18 @@
 import time
+import logging
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from curl_cffi import requests
+from curl_cffi.requests import RequestsError
 
 app = Flask(__name__)
 CORS(app)
+
+# Logs go to stdout/stderr, which Railway captures. Prefer log.* over print so
+# messages carry a level + timestamp and exceptions carry a traceback.
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("soccerwizard")
 
 # Prediction code -> SportyBet market/outcome (+ specifier for totals).
 # Both sides of each two-way market are listed so the frontend can de-vig
@@ -59,7 +67,12 @@ def _load_results():
     try:
         with open(RESULTS_FILE, "r") as fh:
             _RESULTS = json.load(fh)
-    except Exception:
+    except FileNotFoundError:
+        _RESULTS = {}  # first run / no volume mounted yet - expected, not an error
+    except (OSError, ValueError) as ex:
+        # ValueError covers json.JSONDecodeError (corrupt file); OSError covers
+        # permission/read failures. Start empty rather than crash on boot.
+        log.warning("results load failed (%s): %s", RESULTS_FILE, ex)
         _RESULTS = {}
 
 def _save_results():
@@ -69,8 +82,8 @@ def _save_results():
         with open(tmp, "w") as fh:
             json.dump(_RESULTS, fh)
         os.replace(tmp, RESULTS_FILE)
-    except Exception as ex:
-        print(f"results save failed: {ex}")
+    except OSError as ex:
+        log.warning("results save failed (%s): %s", RESULTS_FILE, ex)
 
 def _capture_finals(matches):
     """Record any FT game with a known score. Called on every live poll."""
@@ -121,6 +134,9 @@ def generate_sportybet_code(selections_list, region="ng"):
             return {"code": data.get("data", {}).get("shareCode")}
         return {"error": data.get("message") or data, "sent": selections_list}
     except Exception as e:
+        # Deliberately broad: this is a user-facing path and the route relies on
+        # always getting a dict back (never a 500). Log so failures are visible.
+        log.warning("booking request to SportyBet failed: %s", e)
         return {"error": f"request failed: {e}", "sent": selections_list}
 
 
@@ -139,8 +155,8 @@ def _extract_odds(event):
             if code:
                 try:
                     odds[code] = float(od)
-                except Exception:
-                    pass
+                except (ValueError, TypeError):
+                    pass  # non-numeric odds value - skip this outcome
     return odds
 
 
@@ -169,9 +185,9 @@ def fetch_sportybet_fixtures(region="ng"):
             try:
                 r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
                 data = r.json()
-            except Exception as ex:
+            except (RequestsError, ValueError) as ex:
                 errors += 1
-                print(f"fixtures fetch failed (market {market_id} page {page}): {ex}")
+                log.warning("fixtures fetch failed (market %s page %s): %s", market_id, page, ex)
                 break  # give up on this market, move to the next
             if data.get("bizCode") != 10000:
                 break
@@ -273,19 +289,19 @@ def fetch_live_scores(region="ng"):
                 if isinstance(sc, str) and ":" in sc:
                     try:
                         p = sc.split(":"); hs = int(p[0]); aw = int(p[1])
-                    except Exception:
+                    except (ValueError, IndexError):
                         pass
             if (hs is None or aw is None) and isinstance(ss, str) and ":" in ss:
                 try:
                     p = ss.split(":"); hs = int(p[0]); aw = int(p[1])
-                except Exception:
+                except (ValueError, IndexError):
                     pass
             minute = None
             if isinstance(ps, str):
                 if ":" in ps:
                     try:
                         minute = int(ps.split(":")[0])
-                    except Exception:
+                    except (ValueError, IndexError):
                         pass
                 elif ps.isdigit():
                     minute = int(ps) // 60
@@ -318,9 +334,13 @@ def get_fixtures():
         return jsonify({"success": True, "cached": False,
                         "count": len(matches), "matches": matches})
     except Exception as ex:
+        # Broad by design: a fetch failure should degrade to stale data, never
+        # 500 the visitor. Log which path we took so Railway shows the cause.
         if _FIXTURES_CACHE["data"] is not None:
+            log.warning("fixtures fetch failed, serving stale: %s", ex)
             return jsonify({"success": True, "cached": True, "stale": True,
                             "count": len(_FIXTURES_CACHE["data"]), "matches": _FIXTURES_CACHE["data"]})
+        log.exception("fixtures fetch failed and no cache to fall back on")
         return jsonify({"success": False, "error": str(ex), "matches": []}), 500
 
 
@@ -334,17 +354,20 @@ def get_livescores():
         matches = fetch_live_scores()
         try:
             _capture_finals(matches)
-        except Exception as _ce:
-            print(f"capture finals failed: {_ce}")
+        except Exception:
+            # Best-effort persistence - must never break serving live scores.
+            log.exception("capture_finals failed")
         _LIVE_CACHE["data"] = matches
         _LIVE_CACHE["at"] = now
         return jsonify({"success": True, "cached": False,
                         "count": len(matches), "matches": matches})
     except Exception as ex:
-        print(f"Livescores Error: {ex}")
+        # Broad by design - degrade to stale rather than 500. See get_fixtures.
         if _LIVE_CACHE["data"]:
+            log.warning("livescores fetch failed, serving stale: %s", ex)
             return jsonify({"success": True, "cached": True, "stale": True,
                             "count": len(_LIVE_CACHE["data"]), "matches": _LIVE_CACHE["data"]})
+        log.exception("livescores fetch failed and no cache to fall back on")
         return jsonify({"success": False, "error": str(ex), "matches": []}), 500
 
 
@@ -373,8 +396,8 @@ def get_results():
     # Optional ?days=N (default 7). Returns finals captured from the live feed.
     try:
         days = int(request.args.get("days", "7"))
-    except Exception:
-        days = 7
+    except (ValueError, TypeError):
+        days = 7  # bad query param - fall back to default
     cut = int(time.time()) - max(1, days) * 86400
     out = [v for v in _RESULTS.values() if v.get("ts", 0) >= cut]
     out.sort(key=lambda v: v.get("ts", 0), reverse=True)
@@ -400,8 +423,11 @@ def _capture_loop():
             _capture_finals(ms)
             _LIVE_CACHE["data"] = ms
             _LIVE_CACHE["at"] = time.time()
-        except Exception as ex:
-            print(f"capture loop: {ex}")
+        except Exception:
+            # Broad by design: a daemon thread that lets any exception escape
+            # dies silently and stops capturing finals. Log the traceback and
+            # keep looping.
+            log.exception("capture loop iteration failed")
         time.sleep(POLL_SECS)
 
 _poller_started = False
