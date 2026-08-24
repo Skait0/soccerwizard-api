@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import logging
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -62,6 +63,66 @@ _FIXTURES_TTL = 15 * 60
 _LIVE_CACHE = {"at": 0, "data": None}
 _LIVE_TTL = 30
 
+# --- Shared cache (opt-in) -------------------------------------------------
+# With one process the in-memory dicts above are fine. Set REDIS_URL (add a
+# Redis service on Railway) and the fixture/live caches + captured results move
+# to Redis so multiple gunicorn workers / replicas share one copy instead of
+# each keeping its own and each scraping SportyBet. Unset = unchanged behavior.
+# Every Redis call falls back to the local dict on error, so a Redis blip can
+# never take an endpoint down.
+REDIS_URL = os.environ.get("REDIS_URL", "").strip()
+_redis = None
+if REDIS_URL:
+    try:
+        import redis
+        _redis = redis.from_url(REDIS_URL, decode_responses=True,
+                                socket_connect_timeout=3, socket_timeout=3)
+        _redis.ping()
+        log.info("Redis enabled: cache + results shared across workers")
+    except Exception as ex:
+        log.warning("REDIS_URL set but Redis unavailable; using in-memory cache: %s", ex)
+        _redis = None
+
+def _cache_get(name, mem):
+    """Return the {'at','data'} entry for a cache. Prefer Redis when enabled,
+    fall back to the process-local dict on any miss/error."""
+    if _redis:
+        try:
+            v = _redis.get("sw:cache:" + name)
+            if v:
+                return json.loads(v)
+        except Exception as ex:
+            log.warning("redis get %s failed, using local: %s", name, ex)
+    return mem if mem.get("data") is not None else None
+
+def _cache_put(name, mem, data):
+    """Store a cache entry. Always update the local dict (fallback + no-Redis
+    path); mirror to Redis when enabled."""
+    mem["at"] = time.time(); mem["data"] = data
+    if _redis:
+        try:
+            _redis.set("sw:cache:" + name, json.dumps({"at": mem["at"], "data": data}))
+        except Exception as ex:
+            log.warning("redis set %s failed: %s", name, ex)
+
+def _should_poll():
+    """Whether THIS process should run the poll this tick. Without Redis, always
+    (single process). With Redis, hold a short leader lock so only one worker
+    scrapes SportyBet even under `gunicorn -w N` or multiple replicas."""
+    if not _redis:
+        return True
+    try:
+        pid = str(os.getpid())
+        if _redis.set("sw:poll:leader", pid, nx=True, ex=POLL_SECS * 3):
+            return True                              # became leader
+        if _redis.get("sw:poll:leader") == pid:
+            _redis.expire("sw:poll:leader", POLL_SECS * 3)
+            return True                              # still leader, renew
+        return False                                 # another worker leads
+    except Exception as ex:
+        log.warning("poll lock check failed, polling anyway: %s", ex)
+        return True
+
 # Markets pulled for each upcoming fixture, merged by eventId so the frontend
 # gets every side it needs to de-vig, blend, and show real odds:
 #   1  = 1X2 (home/draw/away)      10 = double chance (1X/12/X2)
@@ -72,10 +133,9 @@ FIXTURE_MARKET_IDS = ("1", "10", "18", "29")
 
 # --- Results capture -------------------------------------------------------
 # SportyBet gives no queryable history, so we accumulate final scores ourselves
-# as games hit FT in the live feed. Persisted to RESULTS_FILE. Set that env var
-# to a path on a Railway VOLUME so it survives redeploys; without a volume the
-# file lives in ephemeral storage and resets on each deploy.
-import json
+# as games hit FT in the live feed. Stored in Redis when REDIS_URL is set (shared
+# + survives redeploys); otherwise persisted to RESULTS_FILE - point that at a
+# Railway VOLUME to survive redeploys, else it resets on each deploy.
 RESULTS_FILE = os.environ.get("RESULTS_FILE", "/data/results.json")
 _RESULTS = {}   # key "YYYY-MM-DD|home|away" -> {date,home,away,hg,ag,ts}
 
@@ -84,6 +144,14 @@ def _rkey(d, h, a):
 
 def _load_results():
     global _RESULTS
+    if _redis:
+        try:
+            v = _redis.get("sw:results")
+            _RESULTS = json.loads(v) if v else {}
+        except Exception as ex:
+            log.warning("redis results load failed: %s", ex)
+            _RESULTS = {}
+        return
     try:
         with open(RESULTS_FILE, "r") as fh:
             _RESULTS = json.load(fh)
@@ -96,6 +164,12 @@ def _load_results():
         _RESULTS = {}
 
 def _save_results():
+    if _redis:
+        try:
+            _redis.set("sw:results", json.dumps(_RESULTS))
+        except Exception as ex:
+            log.warning("redis results save failed: %s", ex)
+        return
     try:
         os.makedirs(os.path.dirname(RESULTS_FILE), exist_ok=True)
         tmp = RESULTS_FILE + ".tmp"
@@ -342,24 +416,24 @@ def fetch_live_scores(region="ng"):
 def get_fixtures():
     now = time.time()
     refresh = request.args.get("refresh") in ("1", "true")
-    if not refresh and _FIXTURES_CACHE["data"] is not None \
-            and (now - _FIXTURES_CACHE["at"]) < _FIXTURES_TTL:
+    entry = _cache_get("fixtures", _FIXTURES_CACHE)
+    if not refresh and entry and (now - entry["at"]) < _FIXTURES_TTL:
         return jsonify({"success": True, "cached": True,
-                        "count": len(_FIXTURES_CACHE["data"]), "matches": _FIXTURES_CACHE["data"]})
+                        "count": len(entry["data"]), "matches": entry["data"]})
     try:
         matches = fetch_sportybet_fixtures()
         if matches:
-            _FIXTURES_CACHE["data"] = matches
-            _FIXTURES_CACHE["at"] = now
+            _cache_put("fixtures", _FIXTURES_CACHE, matches)
         return jsonify({"success": True, "cached": False,
                         "count": len(matches), "matches": matches})
     except Exception as ex:
         # Broad by design: a fetch failure should degrade to stale data, never
         # 500 the visitor. Log which path we took so Railway shows the cause.
-        if _FIXTURES_CACHE["data"] is not None:
+        entry = _cache_get("fixtures", _FIXTURES_CACHE)
+        if entry:
             log.warning("fixtures fetch failed, serving stale: %s", ex)
             return jsonify({"success": True, "cached": True, "stale": True,
-                            "count": len(_FIXTURES_CACHE["data"]), "matches": _FIXTURES_CACHE["data"]})
+                            "count": len(entry["data"]), "matches": entry["data"]})
         log.exception("fixtures fetch failed and no cache to fall back on")
         return jsonify({"success": False, "error": str(ex), "matches": []}), 500
 
@@ -367,9 +441,10 @@ def get_fixtures():
 @app.route('/api/livescores', methods=['GET'])
 def get_livescores():
     now = time.time()
-    if _LIVE_CACHE["data"] is not None and (now - _LIVE_CACHE["at"]) < _LIVE_TTL:
+    entry = _cache_get("live", _LIVE_CACHE)
+    if entry and (now - entry["at"]) < _LIVE_TTL:
         return jsonify({"success": True, "cached": True,
-                        "count": len(_LIVE_CACHE["data"]), "matches": _LIVE_CACHE["data"]})
+                        "count": len(entry["data"]), "matches": entry["data"]})
     try:
         matches = fetch_live_scores()
         try:
@@ -377,16 +452,16 @@ def get_livescores():
         except Exception:
             # Best-effort persistence - must never break serving live scores.
             log.exception("capture_finals failed")
-        _LIVE_CACHE["data"] = matches
-        _LIVE_CACHE["at"] = now
+        _cache_put("live", _LIVE_CACHE, matches)
         return jsonify({"success": True, "cached": False,
                         "count": len(matches), "matches": matches})
     except Exception as ex:
         # Broad by design - degrade to stale rather than 500. See get_fixtures.
-        if _LIVE_CACHE["data"]:
+        entry = _cache_get("live", _LIVE_CACHE)
+        if entry:
             log.warning("livescores fetch failed, serving stale: %s", ex)
             return jsonify({"success": True, "cached": True, "stale": True,
-                            "count": len(_LIVE_CACHE["data"]), "matches": _LIVE_CACHE["data"]})
+                            "count": len(entry["data"]), "matches": entry["data"]})
         log.exception("livescores fetch failed and no cache to fall back on")
         return jsonify({"success": False, "error": str(ex), "matches": []}), 500
 
@@ -418,6 +493,8 @@ def get_results():
         days = int(request.args.get("days", "7"))
     except (ValueError, TypeError):
         days = 7  # bad query param - fall back to default
+    if _redis:
+        _load_results()  # only the leader worker captures; refresh from shared store
     cut = int(time.time()) - max(1, days) * 86400
     out = [v for v in _RESULTS.values() if v.get("ts", 0) >= cut]
     out.sort(key=lambda v: v.get("ts", 0), reverse=True)
@@ -439,10 +516,10 @@ POLL_SECS = int(os.environ.get("CAPTURE_POLL_SECS", "30"))
 def _capture_loop():
     while True:
         try:
-            ms = fetch_live_scores()
-            _capture_finals(ms)
-            _LIVE_CACHE["data"] = ms
-            _LIVE_CACHE["at"] = time.time()
+            if _should_poll():   # with Redis, only the leader worker scrapes
+                ms = fetch_live_scores()
+                _capture_finals(ms)
+                _cache_put("live", _LIVE_CACHE, ms)
         except Exception:
             # Broad by design: a daemon thread that lets any exception escape
             # dies silently and stops capturing finals. Log the traceback and

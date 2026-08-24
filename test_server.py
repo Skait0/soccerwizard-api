@@ -127,5 +127,50 @@ class ResultsPersistence(unittest.TestCase):
         self.assertEqual(server._RESULTS, {})
 
 
+class CacheLayer(unittest.TestCase):
+    """The Redis layer is gated: with _redis None it must behave exactly like the
+    old in-memory dict; with a (fake) Redis it round-trips through it."""
+
+    def tearDown(self):
+        server._redis = None  # never leak the fake client between tests
+
+    def test_inmemory_roundtrip_when_no_redis(self):
+        server._redis = None
+        mem = {"at": 0, "data": None}
+        self.assertIsNone(server._cache_get("x", mem))          # empty -> None
+        server._cache_put("x", mem, [1, 2, 3])
+        entry = server._cache_get("x", mem)
+        self.assertEqual(entry["data"], [1, 2, 3])
+        self.assertGreater(entry["at"], 0)
+        self.assertEqual(mem["data"], [1, 2, 3])                # local dict updated
+
+    def test_should_poll_always_true_without_redis(self):
+        server._redis = None
+        self.assertTrue(server._should_poll())
+
+    def test_redis_roundtrip_and_single_leader(self):
+        # Minimal in-process fake of the redis commands we use.
+        class FakeRedis:
+            def __init__(self): self.kv = {}
+            def get(self, k): return self.kv.get(k)
+            def set(self, k, v, nx=False, ex=None):
+                if nx and k in self.kv:
+                    return None
+                self.kv[k] = v
+                return True
+            def expire(self, k, ex): return True
+        server._redis = FakeRedis()
+        mem = {"at": 0, "data": None}
+        server._cache_put("fixtures", mem, [{"eventId": "1"}])
+        # A DIFFERENT process/dict reads the same value from shared Redis:
+        other = {"at": 0, "data": None}
+        entry = server._cache_get("fixtures", other)
+        self.assertEqual(entry["data"], [{"eventId": "1"}])
+        # Leader lock: first caller leads, a second (simulated) caller does not.
+        self.assertTrue(server._should_poll())          # acquires lock
+        server._redis.kv["sw:poll:leader"] = "some-other-pid"  # someone else holds it
+        self.assertFalse(server._should_poll())         # we are not the leader
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
