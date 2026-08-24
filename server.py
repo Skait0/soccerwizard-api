@@ -34,6 +34,14 @@ _FIXTURES_TTL = 15 * 60
 _LIVE_CACHE = {"at": 0, "data": None}
 _LIVE_TTL = 30
 
+# Markets pulled for each upcoming fixture, merged by eventId so the frontend
+# gets every side it needs to de-vig, blend, and show real odds:
+#   1  = 1X2 (home/draw/away)      10 = double chance (1X/12/X2)
+#   18 = over/under totals          29 = both teams to score (GG/NG)
+# Double chance is a default-enabled market and legOdd() reads its odds directly,
+# so 10 must be fetched or those picks fall back to estimated odds.
+FIXTURE_MARKET_IDS = ("1", "10", "18", "29")
+
 # --- Results capture -------------------------------------------------------
 # SportyBet gives no queryable history, so we accumulate final scores ourselves
 # as games hit FT in the live feed. Persisted to RESULTS_FILE. Set that env var
@@ -137,31 +145,64 @@ def _extract_odds(event):
 
 
 def fetch_sportybet_fixtures(region="ng"):
+    """Fetch upcoming events and merge odds across the markets we bet on.
+
+    The pcUpcomingEvents endpoint returns each event's `markets` array filtered
+    to the marketId requested, so a single-market fetch (the old behaviour) only
+    ever yielded 1X2 odds - OVER/UNDER and GG/NG never arrived and the frontend
+    had nothing to de-vig or blend for those. We now fetch each market and merge
+    odds by eventId. Event metadata (teams, kickoff) is taken from whichever
+    market first surfaces the event.
+
+    Cost: ~3x the requests, paid only on a cache miss (TTL {}m). Partial failure
+    (one market down) still returns the odds we did get; total failure raises so
+    the caller can serve stale.
+    """.format(_FIXTURES_TTL // 60)
     headers = _headers(region)
-    matches = []
-    for page in range(1, 8):  # up to ~700 events
-        url = (f"https://www.sportybet.com/api/{region}/factsCenter/pcUpcomingEvents"
-               f"?sportId=sr:sport:1&marketId=1&pageSize=100&pageNum={page}")
-        r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
-        data = r.json()
-        if data.get("bizCode") != 10000:
-            break
-        d = data.get("data", {}) or {}
-        events = []
-        for t in (d.get("tournaments") or []):
-            events.extend(t.get("events") or [])
-        events.extend(d.get("events") or [])
-        if not events:
-            break
-        for e in events:
-            matches.append({
-                "eventId": e.get("eventId"),
-                "homeTeam": e.get("homeTeamName"),
-                "awayTeam": e.get("awayTeamName"),
-                "startTime": e.get("estimateStartTime"),
-                "odds": _extract_odds(e),
-            })
-    return matches
+    by_event = {}   # eventId -> merged match dict
+    order = []      # preserve first-seen order
+    errors = 0
+    for market_id in FIXTURE_MARKET_IDS:
+        for page in range(1, 8):  # up to ~700 events per market
+            url = (f"https://www.sportybet.com/api/{region}/factsCenter/pcUpcomingEvents"
+                   f"?sportId=sr:sport:1&marketId={market_id}&pageSize=100&pageNum={page}")
+            try:
+                r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
+                data = r.json()
+            except Exception as ex:
+                errors += 1
+                print(f"fixtures fetch failed (market {market_id} page {page}): {ex}")
+                break  # give up on this market, move to the next
+            if data.get("bizCode") != 10000:
+                break
+            d = data.get("data", {}) or {}
+            events = []
+            for t in (d.get("tournaments") or []):
+                events.extend(t.get("events") or [])
+            events.extend(d.get("events") or [])
+            if not events:
+                break
+            for e in events:
+                eid = e.get("eventId")
+                if not eid:
+                    continue
+                m = by_event.get(eid)
+                if m is None:
+                    m = {
+                        "eventId": eid,
+                        "homeTeam": e.get("homeTeamName"),
+                        "awayTeam": e.get("awayTeamName"),
+                        "startTime": e.get("estimateStartTime"),
+                        "odds": {},
+                    }
+                    by_event[eid] = m
+                    order.append(eid)
+                # Merge this market's odds into whatever we already have.
+                m["odds"].update(_extract_odds(e))
+    if not by_event and errors:
+        # Total failure - let the route serve stale rather than cache an empty set.
+        raise RuntimeError("all SportyBet fixture fetches failed")
+    return [by_event[eid] for eid in order]
 
 
 def _map_live_status(s):
