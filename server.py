@@ -458,7 +458,10 @@ def _start_poller():
     _poller_started = True
     threading.Thread(target=_capture_loop, daemon=True).start()
 
-_start_poller()
+# DISABLE_POLLER lets tests (and one-off script imports) load this module without
+# spawning the background network thread.
+if not os.environ.get("DISABLE_POLLER"):
+    _start_poller()
 
 
 if __name__ == '__main__':
