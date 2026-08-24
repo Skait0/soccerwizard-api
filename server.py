@@ -65,11 +65,10 @@ _LIVE_TTL = 30
 
 # --- Shared cache (opt-in) -------------------------------------------------
 # With one process the in-memory dicts above are fine. Set REDIS_URL (add a
-# Redis service on Railway) and the fixture/live caches + captured results move
-# to Redis so multiple gunicorn workers / replicas share one copy instead of
-# each keeping its own and each scraping SportyBet. Unset = unchanged behavior.
-# Every Redis call falls back to the local dict on error, so a Redis blip can
-# never take an endpoint down.
+# Redis service on Railway) and the fixture/live caches move to Redis so multiple
+# gunicorn workers / replicas share one copy instead of each keeping its own and
+# each scraping SportyBet. Unset = unchanged behavior. Every Redis call falls
+# back to the local dict on error, so a Redis blip can never take an endpoint down.
 REDIS_URL = os.environ.get("REDIS_URL", "").strip()
 _redis = None
 if REDIS_URL:
@@ -78,7 +77,7 @@ if REDIS_URL:
         _redis = redis.from_url(REDIS_URL, decode_responses=True,
                                 socket_connect_timeout=3, socket_timeout=3)
         _redis.ping()
-        log.info("Redis enabled: cache + results shared across workers")
+        log.info("Redis enabled: fixture/live cache shared across workers")
     except Exception as ex:
         log.warning("REDIS_URL set but Redis unavailable; using in-memory cache: %s", ex)
         _redis = None
@@ -105,24 +104,6 @@ def _cache_put(name, mem, data):
         except Exception as ex:
             log.warning("redis set %s failed: %s", name, ex)
 
-def _should_poll():
-    """Whether THIS process should run the poll this tick. Without Redis, always
-    (single process). With Redis, hold a short leader lock so only one worker
-    scrapes SportyBet even under `gunicorn -w N` or multiple replicas."""
-    if not _redis:
-        return True
-    try:
-        pid = str(os.getpid())
-        if _redis.set("sw:poll:leader", pid, nx=True, ex=POLL_SECS * 3):
-            return True                              # became leader
-        if _redis.get("sw:poll:leader") == pid:
-            _redis.expire("sw:poll:leader", POLL_SECS * 3)
-            return True                              # still leader, renew
-        return False                                 # another worker leads
-    except Exception as ex:
-        log.warning("poll lock check failed, polling anyway: %s", ex)
-        return True
-
 # Markets pulled for each upcoming fixture, merged by eventId so the frontend
 # gets every side it needs to de-vig, blend, and show real odds:
 #   1  = 1X2 (home/draw/away)      10 = double chance (1X/12/X2)
@@ -130,81 +111,6 @@ def _should_poll():
 # Double chance is a default-enabled market and legOdd() reads its odds directly,
 # so 10 must be fetched or those picks fall back to estimated odds.
 FIXTURE_MARKET_IDS = ("1", "10", "18", "29")
-
-# --- Results capture -------------------------------------------------------
-# SportyBet gives no queryable history, so we accumulate final scores ourselves
-# as games hit FT in the live feed. Stored in Redis when REDIS_URL is set (shared
-# + survives redeploys); otherwise persisted to RESULTS_FILE - point that at a
-# Railway VOLUME to survive redeploys, else it resets on each deploy.
-RESULTS_FILE = os.environ.get("RESULTS_FILE", "/data/results.json")
-_RESULTS = {}   # key "YYYY-MM-DD|home|away" -> {date,home,away,hg,ag,ts}
-
-def _rkey(d, h, a):
-    return d + "|" + (h or "").strip().lower() + "|" + (a or "").strip().lower()
-
-def _load_results():
-    global _RESULTS
-    if _redis:
-        try:
-            v = _redis.get("sw:results")
-            _RESULTS = json.loads(v) if v else {}
-        except Exception as ex:
-            log.warning("redis results load failed: %s", ex)
-            _RESULTS = {}
-        return
-    try:
-        with open(RESULTS_FILE, "r") as fh:
-            _RESULTS = json.load(fh)
-    except FileNotFoundError:
-        _RESULTS = {}  # first run / no volume mounted yet - expected, not an error
-    except (OSError, ValueError) as ex:
-        # ValueError covers json.JSONDecodeError (corrupt file); OSError covers
-        # permission/read failures. Start empty rather than crash on boot.
-        log.warning("results load failed (%s): %s", RESULTS_FILE, ex)
-        _RESULTS = {}
-
-def _save_results():
-    if _redis:
-        try:
-            _redis.set("sw:results", json.dumps(_RESULTS))
-        except Exception as ex:
-            log.warning("redis results save failed: %s", ex)
-        return
-    try:
-        os.makedirs(os.path.dirname(RESULTS_FILE), exist_ok=True)
-        tmp = RESULTS_FILE + ".tmp"
-        with open(tmp, "w") as fh:
-            json.dump(_RESULTS, fh)
-        os.replace(tmp, RESULTS_FILE)
-    except OSError as ex:
-        log.warning("results save failed (%s): %s", RESULTS_FILE, ex)
-
-def _capture_finals(matches):
-    """Record any FT game with a known score. Called on every live poll."""
-    changed = False
-    import datetime
-    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
-    for m in matches or []:
-        if m.get("status") != "FT":
-            continue
-        h, a = m.get("home"), m.get("away")
-        hs, as_ = m.get("homeScore"), m.get("awayScore")
-        if not h or not a or hs is None or as_ is None:
-            continue
-        k = _rkey(today, h, a)
-        if k in _RESULTS:
-            continue
-        _RESULTS[k] = {"date": today, "home": h, "away": a,
-                       "hg": int(hs), "ag": int(as_), "ts": int(time.time())}
-        changed = True
-    if changed:
-        # keep last ~10 days only
-        cut = int(time.time()) - 10 * 86400
-        for k in [k for k, v in _RESULTS.items() if v.get("ts", 0) < cut]:
-            _RESULTS.pop(k, None)
-        _save_results()
-
-_load_results()
 
 
 def _headers(region="ng"):
@@ -447,11 +353,6 @@ def get_livescores():
                         "count": len(entry["data"]), "matches": entry["data"]})
     try:
         matches = fetch_live_scores()
-        try:
-            _capture_finals(matches)
-        except Exception:
-            # Best-effort persistence - must never break serving live scores.
-            log.exception("capture_finals failed")
         _cache_put("live", _LIVE_CACHE, matches)
         return jsonify({"success": True, "cached": False,
                         "count": len(matches), "matches": matches})
@@ -486,59 +387,9 @@ def api_generate_code():
                     "detail": result.get("error"), "sent": result.get("sent")}), 400
 
 
-@app.route('/api/results', methods=['GET'])
-def get_results():
-    # Optional ?days=N (default 7). Returns finals captured from the live feed.
-    try:
-        days = int(request.args.get("days", "7"))
-    except (ValueError, TypeError):
-        days = 7  # bad query param - fall back to default
-    if _redis:
-        _load_results()  # only the leader worker captures; refresh from shared store
-    cut = int(time.time()) - max(1, days) * 86400
-    out = [v for v in _RESULTS.values() if v.get("ts", 0) >= cut]
-    out.sort(key=lambda v: v.get("ts", 0), reverse=True)
-    return jsonify({"success": True, "count": len(out), "results": out})
-
-
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({"status": "SoccerWizard API is running successfully!"})
-
-
-# --- Background capture ----------------------------------------------------
-# Polling only inside the request handler means finals are caught only when a
-# visitor happens to load the page. A daemon thread polls independently every
-# POLL_SECS so FT games are recorded within seconds of ending, traffic or not.
-import threading
-POLL_SECS = int(os.environ.get("CAPTURE_POLL_SECS", "30"))
-
-def _capture_loop():
-    while True:
-        try:
-            if _should_poll():   # with Redis, only the leader worker scrapes
-                ms = fetch_live_scores()
-                _capture_finals(ms)
-                _cache_put("live", _LIVE_CACHE, ms)
-        except Exception:
-            # Broad by design: a daemon thread that lets any exception escape
-            # dies silently and stops capturing finals. Log the traceback and
-            # keep looping.
-            log.exception("capture loop iteration failed")
-        time.sleep(POLL_SECS)
-
-_poller_started = False
-def _start_poller():
-    global _poller_started
-    if _poller_started:
-        return
-    _poller_started = True
-    threading.Thread(target=_capture_loop, daemon=True).start()
-
-# DISABLE_POLLER lets tests (and one-off script imports) load this module without
-# spawning the background network thread.
-if not os.environ.get("DISABLE_POLLER"):
-    _start_poller()
 
 
 if __name__ == '__main__':

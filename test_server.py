@@ -1,13 +1,10 @@
-"""Tests for server.py - matching-adjacent odds decode, multi-market merge,
-error paths, and market-map integrity. Zero external deps (stdlib unittest).
+"""Tests for server.py - odds decode, multi-market merge, error paths, market-map
+integrity, and the optional Redis cache layer. Zero external deps (stdlib unittest).
 
-Run:  DISABLE_POLLER=1 python -m unittest test_server -v
-(DISABLE_POLLER stops the background network thread from starting on import.)
+Run:  python -m unittest test_server -v
 """
 import os, json, tempfile, unittest
-os.environ["DISABLE_POLLER"] = "1"          # no background thread during tests
 os.environ.pop("SENTRY_DSN", None)          # keep Sentry a no-op
-os.environ["RESULTS_FILE"] = os.path.join(tempfile.mkdtemp(), "results.json")
 
 import server
 
@@ -112,21 +109,6 @@ class BookingErrorPath(unittest.TestCase):
         self.assertIn("error", res)
 
 
-class ResultsPersistence(unittest.TestCase):
-    def test_corrupt_file_loads_empty(self):
-        p = os.path.join(tempfile.mkdtemp(), "r.json")
-        with open(p, "w") as f:
-            f.write("{ not valid json ")
-        server.RESULTS_FILE = p
-        server._load_results()
-        self.assertEqual(server._RESULTS, {})
-
-    def test_missing_file_loads_empty(self):
-        server.RESULTS_FILE = os.path.join(tempfile.mkdtemp(), "nope.json")
-        server._load_results()
-        self.assertEqual(server._RESULTS, {})
-
-
 class CacheLayer(unittest.TestCase):
     """The Redis layer is gated: with _redis None it must behave exactly like the
     old in-memory dict; with a (fake) Redis it round-trips through it."""
@@ -144,11 +126,7 @@ class CacheLayer(unittest.TestCase):
         self.assertGreater(entry["at"], 0)
         self.assertEqual(mem["data"], [1, 2, 3])                # local dict updated
 
-    def test_should_poll_always_true_without_redis(self):
-        server._redis = None
-        self.assertTrue(server._should_poll())
-
-    def test_redis_roundtrip_and_single_leader(self):
+    def test_redis_roundtrip_shared_across_processes(self):
         # Minimal in-process fake of the redis commands we use.
         class FakeRedis:
             def __init__(self): self.kv = {}
@@ -158,7 +136,6 @@ class CacheLayer(unittest.TestCase):
                     return None
                 self.kv[k] = v
                 return True
-            def expire(self, k, ex): return True
         server._redis = FakeRedis()
         mem = {"at": 0, "data": None}
         server._cache_put("fixtures", mem, [{"eventId": "1"}])
@@ -166,10 +143,6 @@ class CacheLayer(unittest.TestCase):
         other = {"at": 0, "data": None}
         entry = server._cache_get("fixtures", other)
         self.assertEqual(entry["data"], [{"eventId": "1"}])
-        # Leader lock: first caller leads, a second (simulated) caller does not.
-        self.assertTrue(server._should_poll())          # acquires lock
-        server._redis.kv["sw:poll:leader"] = "some-other-pid"  # someone else holds it
-        self.assertFalse(server._should_poll())         # we are not the leader
 
 
 if __name__ == "__main__":
