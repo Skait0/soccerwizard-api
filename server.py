@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 from flask import Flask, request, jsonify
@@ -13,6 +14,25 @@ CORS(app)
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("soccerwizard")
+
+# Error tracking (opt-in). Set SENTRY_DSN in Railway > Variables to enable; with
+# it unset this is a complete no-op. Wrapped so a missing/broken SDK degrades to
+# a warning instead of taking the app down on boot.
+SENTRY_DSN = os.environ.get("SENTRY_DSN", "").strip()
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[FlaskIntegration()],
+            traces_sample_rate=0.0,  # errors only - no perf tracing overhead on the trial
+            environment=os.environ.get("RAILWAY_ENVIRONMENT_NAME", "production"),
+        )
+        log.info("Sentry error tracking enabled")
+    except Exception as ex:
+        log.warning("SENTRY_DSN set but Sentry init failed (is sentry-sdk installed?): %s", ex)
+
 
 # Prediction code -> SportyBet market/outcome (+ specifier for totals).
 # Both sides of each two-way market are listed so the frontend can de-vig
@@ -55,7 +75,7 @@ FIXTURE_MARKET_IDS = ("1", "10", "18", "29")
 # as games hit FT in the live feed. Persisted to RESULTS_FILE. Set that env var
 # to a path on a Railway VOLUME so it survives redeploys; without a volume the
 # file lives in ephemeral storage and resets on each deploy.
-import os, json
+import json
 RESULTS_FILE = os.environ.get("RESULTS_FILE", "/data/results.json")
 _RESULTS = {}   # key "YYYY-MM-DD|home|away" -> {date,home,away,hg,ag,ts}
 

@@ -2,3 +2,4 @@ flask
 flask-cors
 curl_cffi
 gunicorn
+sentry-sdk[flask]
