@@ -192,13 +192,24 @@ def fetch_sportybet_fixtures(region="ng"):
             if data.get("bizCode") != 10000:
                 break
             d = data.get("data", {}) or {}
+            # Keep each event paired with its tournament. Flattening the events
+            # out of `tournaments` used to throw the competition away, which left
+            # every fixture league-less and forced the consumer to guess - so a
+            # cup tie between two Premier League sides came out as the Premier
+            # League, and ordinary league games came out as "England Cup".
+            # Same "{category} {name}" shape the livescores feed uses.
             events = []
             for t in (d.get("tournaments") or []):
-                events.extend(t.get("events") or [])
-            events.extend(d.get("events") or [])
+                cat = ((t.get("category") or {}).get("name")) or t.get("categoryName") or ""
+                nm = t.get("name") or ""
+                lg = (f"{cat} {nm}").strip() if cat else nm
+                for e in (t.get("events") or []):
+                    events.append((lg, e))
+            for e in (d.get("events") or []):
+                events.append(("", e))
             if not events:
                 break
-            for e in events:
+            for lg, e in events:
                 eid = e.get("eventId")
                 if not eid:
                     continue
@@ -209,10 +220,15 @@ def fetch_sportybet_fixtures(region="ng"):
                         "homeTeam": e.get("homeTeamName"),
                         "awayTeam": e.get("awayTeamName"),
                         "startTime": e.get("estimateStartTime"),
+                        "league": lg,
                         "odds": {},
                     }
                     by_event[eid] = m
                     order.append(eid)
+                elif lg and not m.get("league"):
+                    # A later market can surface a tournament the first one
+                    # listed loose under `events`, so fill the gap if we can.
+                    m["league"] = lg
                 # Merge this market's odds into whatever we already have.
                 m["odds"].update(_extract_odds(e))
     if not by_event and errors:

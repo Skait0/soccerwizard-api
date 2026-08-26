@@ -145,5 +145,75 @@ class CacheLayer(unittest.TestCase):
         self.assertEqual(entry["data"], [{"eventId": "1"}])
 
 
+class FixtureLeagueLabel(unittest.TestCase):
+    """Each fixture must carry its real competition.
+
+    Flattening events out of `tournaments` used to drop the tournament, so
+    every fixture arrived league-less and the consumer had to guess - which is
+    how ordinary league games ended up labelled "England Cup" and a cup tie
+    between two Premier League sides came out as the Premier League.
+    """
+
+    def _mock(self, payload_for_market):
+        import re
+
+        def fake_get(url, headers=None, impersonate=None, timeout=None):
+            mid = re.search(r"marketId=(\d+)", url).group(1)
+            page = int(re.search(r"pageNum=(\d+)", url).group(1))
+
+            class R:
+                def json(self):
+                    if page > 1:
+                        return {"bizCode": 10000, "data": {"tournaments": [], "events": []}}
+                    return {"bizCode": 10000,
+                            "data": payload_for_market.get(mid,
+                                                           {"tournaments": [], "events": []})}
+            return R()
+        return fake_get
+
+    def _run(self, payload_for_market):
+        orig = server.requests.get
+        server.requests.get = self._mock(payload_for_market)
+        try:
+            return server.fetch_sportybet_fixtures()
+        finally:
+            server.requests.get = orig
+
+    @staticmethod
+    def _event(eid="sr:match:1"):
+        return {"eventId": eid, "homeTeamName": "A", "awayTeamName": "B",
+                "estimateStartTime": 1756000000000, "markets": []}
+
+    def _tournament(self, cat, name, eid="sr:match:1"):
+        return {"tournaments": [{"category": {"name": cat}, "name": name,
+                                 "events": [self._event(eid)]}]}
+
+    def test_league_game_keeps_its_league(self):
+        m = self._run({"1": self._tournament("England", "Premier League")})
+        self.assertEqual(m[0]["league"], "England Premier League")
+
+    def test_cup_tie_is_labelled_as_the_cup_not_the_league(self):
+        m = self._run({"1": self._tournament("England", "FA Cup")})
+        self.assertEqual(m[0]["league"], "England FA Cup")
+
+    def test_event_without_a_tournament_gets_no_league_rather_than_a_guess(self):
+        m = self._run({"1": {"tournaments": [], "events": [self._event()]}})
+        self.assertEqual(m[0]["league"], "")
+
+    def test_later_market_fills_a_league_the_first_one_lacked(self):
+        # Market 1 lists the event loose (no tournament); market 10 names it.
+        m = self._run({
+            "1": {"tournaments": [], "events": [self._event()]},
+            "10": self._tournament("Spain", "LaLiga"),
+        })
+        self.assertEqual(len(m), 1)                     # still merged, not duplicated
+        self.assertEqual(m[0]["league"], "Spain LaLiga")
+
+    def test_categoryless_tournament_falls_back_to_bare_name(self):
+        m = self._run({"1": {"tournaments": [
+            {"name": "Club Friendlies", "events": [self._event()]}]}})
+        self.assertEqual(m[0]["league"], "Club Friendlies")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
