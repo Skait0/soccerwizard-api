@@ -85,7 +85,10 @@ for _code, _m in MARKET_MAP.items():
     _ODDS_LOOKUP[(str(_m["marketId"]), str(_m["outcomeId"]), _m.get("specifier", "") or "")] = _code
 
 _FIXTURES_CACHE = {"at": 0, "data": None}
-_FIXTURES_TTL = 15 * 60
+# Longer than it was. Every refresh is fifty-odd requests to SportyBet, and
+# fixtures for the days ahead barely move between builds - so the useful
+# thing to optimise is how rarely we ask, not how fast we ask.
+_FIXTURES_TTL = 45 * 60
 _LIVE_CACHE = {"at": 0, "data": None}
 _LIVE_TTL = 30
 
@@ -232,13 +235,27 @@ def fetch_sportybet_fixtures(region="ng"):
                 break
             url = (f"https://www.sportybet.com/api/{region}/factsCenter/pcUpcomingEvents"
                    f"?sportId=sr:sport:1&marketId={market_id}&pageSize=100&pageNum={page}")
-            try:
-                r = requests.get(url, headers=headers, impersonate="chrome120", timeout=12)
-                data = r.json()
-            except (RequestsError, ValueError) as ex:
-                errors += 1
-                log.warning("fixtures fetch failed (market %s page %s): %s", market_id, page, ex)
+            # One retry before abandoning a market. A single refused request
+            # used to zero every market it touched, which is how one bad
+            # minute turned into an empty feed.
+            data = None
+            for attempt in (1, 2):
+                try:
+                    r = requests.get(url, headers=headers, impersonate="chrome120", timeout=12)
+                    data = r.json()
+                    break
+                except (RequestsError, ValueError) as ex:
+                    errors += 1
+                    log.warning("fixtures fetch failed (market %s page %s, try %s): %s",
+                                market_id, page, attempt, ex)
+                    if attempt == 1:
+                        time.sleep(1.5)
+            if data is None:
                 break  # give up on this market, move to the next
+            # A short pause between pages. Bursting these got the whole
+            # endpoint refused for this server once already; a steady caller
+            # is tolerated where a fast one is not.
+            time.sleep(0.12)
             if data.get("bizCode") != 10000:
                 break
             d = data.get("data", {}) or {}
