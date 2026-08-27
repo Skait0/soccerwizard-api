@@ -51,6 +51,11 @@ MARKET_MAP = {
     "UNDER_2.5": {"marketId": "18", "outcomeId": "13", "specifier": "total=2.5"},
     "GG":        {"marketId": "29", "outcomeId": "74"},
     "NG":        {"marketId": "29", "outcomeId": "76"},
+    # First half, at least one goal. The model has predicted this all along
+    # (fh_o05) but it was not bookable, so the site could only ever show it.
+    # Market 68 carries total=0.5 on 199 of 200 upcoming events.
+    "FH_OVER_0.5":  {"marketId": "68", "outcomeId": "12", "specifier": "total=0.5"},
+    "FH_UNDER_0.5": {"marketId": "68", "outcomeId": "13", "specifier": "total=0.5"},
 }
 
 # Reverse lookup: (marketId, outcomeId, specifier) -> code, for reading odds.
@@ -108,9 +113,12 @@ def _cache_put(name, mem, data):
 # gets every side it needs to de-vig, blend, and show real odds:
 #   1  = 1X2 (home/draw/away)      10 = double chance (1X/12/X2)
 #   18 = over/under totals          29 = both teams to score (GG/NG)
+#   68 = first-half over/under      (total=0.5 is the one the model predicts)
 # Double chance is a default-enabled market and legOdd() reads its odds directly,
-# so 10 must be fetched or those picks fall back to estimated odds.
-FIXTURE_MARKET_IDS = ("1", "10", "18", "29")
+# so 10 must be fetched or those picks fall back to estimated odds. The same
+# now applies to 68: a market the builder can select has to arrive with real
+# odds, or every first-half leg is priced off an estimate.
+FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68")
 
 
 def _headers(region="ng"):
