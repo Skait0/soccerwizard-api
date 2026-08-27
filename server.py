@@ -216,7 +216,13 @@ def fetch_sportybet_fixtures(region="ng"):
     # partial data serves the site, a killed worker serves nothing. The
     # gunicorn timeout sits well beyond this so the deadline is always what
     # ends the fetch.
-    deadline = time.time() + 55
+    # Seven markets by seven pages is forty-nine round trips at roughly a
+    # second each, plus the pause between them - a fifty-five second budget
+    # cut the last markets off entirely and cached a partial feed, which is
+    # why team totals had no real odds after the first successful fetch.
+    # Gunicorn allows ninety, so this leaves headroom and still ends the
+    # fetch itself rather than letting a killed worker do it.
+    deadline = time.time() + 75
 
     for market_id in FIXTURE_MARKET_IDS:
         for page in range(1, 8):
