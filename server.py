@@ -50,6 +50,10 @@ MARKET_MAP = {
     "UNDER_1.5": {"marketId": "18", "outcomeId": "13", "specifier": "total=1.5"},
     "OVER_2.5":  {"marketId": "18", "outcomeId": "12", "specifier": "total=2.5"},
     "UNDER_2.5": {"marketId": "18", "outcomeId": "13", "specifier": "total=2.5"},
+    # Over 3.5 rides market 18, already fetched for Over 1.5 and Over 2.5, so
+    # it costs no extra request - and the model has produced o35 all along.
+    "OVER_3.5":  {"marketId": "18", "outcomeId": "12", "specifier": "total=3.5"},
+    "UNDER_3.5": {"marketId": "18", "outcomeId": "13", "specifier": "total=3.5"},
     "GG":        {"marketId": "29", "outcomeId": "74"},
     "NG":        {"marketId": "29", "outcomeId": "76"},
     # First half, at least one goal. The model has predicted this all along
