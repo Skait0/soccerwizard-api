@@ -2,6 +2,7 @@ import os
 import time
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from curl_cffi import requests
@@ -209,19 +210,53 @@ def fetch_sportybet_fixtures(region="ng"):
     by_event = {}   # eventId -> merged match dict
     order = []      # preserve first-seen order
     errors = 0
-    for market_id in FIXTURE_MARKET_IDS:
-        for page in range(1, 8):  # up to ~700 events per market
-            url = (f"https://www.sportybet.com/api/{region}/factsCenter/pcUpcomingEvents"
-                   f"?sportId=sr:sport:1&marketId={market_id}&pageSize=100&pageNum={page}")
-            try:
-                r = requests.get(url, headers=headers, impersonate="chrome120", timeout=15)
-                data = r.json()
-            except (RequestsError, ValueError) as ex:
+
+    # Fetched in parallel, which is not an optimisation - it is what keeps this
+    # endpoint alive. Serially, eight markets by seven pages is fifty-six
+    # round trips to SportyBet; at roughly a second each that runs past
+    # gunicorn's worker timeout, and the worker is killed before the route can
+    # even fall back to stale data. The visitor gets a bare 500 and the cache
+    # can never refresh, so the market list is frozen at whatever was in it
+    # when the fetch last fit. Adding three markets is exactly what tipped it.
+    #
+    # Every page of every market is requested up front rather than paging until
+    # a market runs dry: an empty page costs one request and returns nothing,
+    # which is cheaper than the round trip needed to discover it was the last.
+    # Workers are capped low to stay a polite client.
+    deadline = time.time() + 20
+
+    def fetch_page(job):
+        market_id, page = job
+        if time.time() > deadline:
+            return job, None, "deadline"
+        url = (f"https://www.sportybet.com/api/{region}/factsCenter/pcUpcomingEvents"
+               f"?sportId=sr:sport:1&marketId={market_id}&pageSize=100&pageNum={page}")
+        try:
+            r = requests.get(url, headers=headers, impersonate="chrome120", timeout=12)
+            return job, r.json(), None
+        except (RequestsError, ValueError) as ex:
+            return job, None, str(ex)
+
+    jobs = [(m, pg) for m in FIXTURE_MARKET_IDS for pg in range(1, 8)]
+    results = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for job, data, err in pool.map(fetch_page, jobs):
+            if err:
                 errors += 1
-                log.warning("fixtures fetch failed (market %s page %s): %s", market_id, page, ex)
-                break  # give up on this market, move to the next
-            if data.get("bizCode") != 10000:
-                break
+                if err != "deadline":
+                    log.warning("fixtures fetch failed (market %s page %s): %s",
+                                job[0], job[1], err)
+                continue
+            results[job] = data
+
+    # Merged in the original market-then-page order, so which market first
+    # surfaces an event - and therefore whose metadata it keeps - does not
+    # depend on which thread happened to finish first.
+    for market_id in FIXTURE_MARKET_IDS:
+        for page in range(1, 8):
+            data = results.get((market_id, page))
+            if not data or data.get("bizCode") != 10000:
+                continue
             d = data.get("data", {}) or {}
             # Keep each event paired with its tournament. Flattening the events
             # out of `tournaments` used to throw the competition away, which left
@@ -238,8 +273,6 @@ def fetch_sportybet_fixtures(region="ng"):
                     events.append((lg, e))
             for e in (d.get("events") or []):
                 events.append(("", e))
-            if not events:
-                break
             for lg, e in events:
                 eid = e.get("eventId")
                 if not eid:
