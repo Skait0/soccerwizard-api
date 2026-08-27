@@ -2,6 +2,7 @@ import os
 import time
 import json
 import logging
+import threading
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from curl_cffi import requests
@@ -222,7 +223,9 @@ def fetch_sportybet_fixtures(region="ng"):
     # why team totals had no real odds after the first successful fetch.
     # Gunicorn allows ninety, so this leaves headroom and still ends the
     # fetch itself rather than letting a killed worker do it.
-    deadline = time.time() + 75
+    # Generous, because nobody is waiting on this any more - it runs on a
+    # background thread, not inside a visitor's request.
+    deadline = time.time() + 240
 
     for market_id in FIXTURE_MARKET_IDS:
         for page in range(1, 8):
@@ -398,30 +401,61 @@ def fetch_live_scores(region="ng"):
     return matches
 
 
-@app.route('/api/fixtures', methods=['GET'])
-def get_fixtures():
-    now = time.time()
-    refresh = request.args.get("refresh") in ("1", "true")
-    entry = _cache_get("fixtures", _FIXTURES_CACHE)
-    if not refresh and entry and (now - entry["at"]) < _FIXTURES_TTL:
-        return jsonify({"success": True, "cached": True,
-                        "count": len(entry["data"]), "matches": entry["data"]})
+# --- background refresher -------------------------------------------------
+# Seven markets by seven pages is forty-nine round trips to SportyBet. That
+# never belonged inside a visitor's request: done serially it outran the
+# worker timeout and the worker was killed before it could fall back to stale
+# data, and done concurrently the burst got this server refused outright.
+# Either way the endpoint answered 500 and the cache could never refresh.
+#
+# So the fetch runs on its own thread and the route only ever reads what that
+# thread has stored. Nobody waits for SportyBet, a slow or refused fetch costs
+# a stale answer rather than an error, and the request path cannot time out
+# because it does no network work at all.
+_REFRESH_LOCK = threading.Lock()
+
+def _refresh_fixtures_once():
     try:
         matches = fetch_sportybet_fixtures()
         if matches:
             _cache_put("fixtures", _FIXTURES_CACHE, matches)
-        return jsonify({"success": True, "cached": False,
-                        "count": len(matches), "matches": matches})
+            log.info("fixtures refreshed: %d events", len(matches))
+            return True
+        log.warning("fixtures refresh returned nothing; keeping previous copy")
     except Exception as ex:
-        # Broad by design: a fetch failure should degrade to stale data, never
-        # 500 the visitor. Log which path we took so Railway shows the cause.
-        entry = _cache_get("fixtures", _FIXTURES_CACHE)
-        if entry:
-            log.warning("fixtures fetch failed, serving stale: %s", ex)
-            return jsonify({"success": True, "cached": True, "stale": True,
-                            "count": len(entry["data"]), "matches": entry["data"]})
-        log.exception("fixtures fetch failed and no cache to fall back on")
-        return jsonify({"success": False, "error": str(ex), "matches": []}), 500
+        log.warning("fixtures refresh failed, keeping previous copy: %s", ex)
+    return False
+
+def _fixtures_loop():
+    while True:
+        ok = _refresh_fixtures_once()
+        # Retry sooner after a failure than after a success, but never so
+        # soon that a refused IP gets hammered back into refusing.
+        time.sleep(_FIXTURES_TTL if ok else 300)
+
+def _start_fixtures_thread():
+    if not _REFRESH_LOCK.acquire(blocking=False):
+        return
+    t = threading.Thread(target=_fixtures_loop, name="fixtures-refresh", daemon=True)
+    t.start()
+    log.info("fixtures refresher started (every %dm)", _FIXTURES_TTL // 60)
+
+_start_fixtures_thread()
+
+
+@app.route('/api/fixtures', methods=['GET'])
+def get_fixtures():
+    entry = _cache_get("fixtures", _FIXTURES_CACHE)
+    if entry and entry.get("data"):
+        age = int(time.time() - entry["at"])
+        return jsonify({"success": True, "cached": True, "ageSeconds": age,
+                        "stale": age > _FIXTURES_TTL,
+                        "count": len(entry["data"]), "matches": entry["data"]})
+    # Nothing stored yet - the refresher is on its first pass. 503 rather than
+    # 500 so callers treat it as "not ready", and the CDN in front does not
+    # store it as the answer.
+    return jsonify({"success": False, "warming": True,
+                    "error": "fixtures not loaded yet", "matches": []}), 503
 
 
 @app.route('/api/livescores', methods=['GET'])
