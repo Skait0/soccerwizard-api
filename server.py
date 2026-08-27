@@ -427,6 +427,19 @@ def _refresh_fixtures_once():
     return False
 
 def _fixtures_loop():
+    # With a shared cache the copy in Redis outlives this process, so a
+    # redeploy usually starts with data that is minutes old. Refetching it
+    # straight away would spend forty-nine requests to replace something we
+    # already have - and every one of those is a request that got this server
+    # refused once. Wait out whatever is left of its life instead.
+    entry = _cache_get("fixtures", _FIXTURES_CACHE)
+    if entry and entry.get("data"):
+        age = time.time() - entry["at"]
+        if age < _FIXTURES_TTL:
+            wait = _FIXTURES_TTL - age
+            log.info("fixtures cache is %ds old; first refresh in %ds",
+                     int(age), int(wait))
+            time.sleep(wait)
     while True:
         ok = _refresh_fixtures_once()
         # Retry sooner after a failure than after a success, but never so
@@ -503,7 +516,32 @@ def api_generate_code():
 
 @app.route('/', methods=['GET'])
 def home():
-    return jsonify({"status": "SoccerWizard API is running successfully!"})
+    """Also reports where the cache lives, so adding Redis can be confirmed
+    from a browser rather than by trawling deploy logs. If this says
+    "memory" after REDIS_URL is set, the variable did not take."""
+    entry = _cache_get("fixtures", _FIXTURES_CACHE)
+    live = _cache_get("live", _LIVE_CACHE)
+    redis_ok = False
+    if _redis:
+        try:
+            _redis.ping()
+            redis_ok = True
+        except Exception:
+            redis_ok = False
+    return jsonify({
+        "status": "SoccerWizard API is running successfully!",
+        "cache": "redis" if redis_ok else "memory",
+        "redisConfigured": bool(REDIS_URL),
+        "fixtures": {
+            "count": len((entry or {}).get("data") or []),
+            "ageSeconds": int(time.time() - entry["at"]) if entry else None,
+        },
+        "livescores": {
+            "count": len((live or {}).get("data") or []),
+            "ageSeconds": int(time.time() - live["at"]) if live else None,
+        },
+        "markets": list(FIXTURE_MARKET_IDS),
+    })
 
 
 if __name__ == '__main__':
