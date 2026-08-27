@@ -64,6 +64,19 @@ MARKET_MAP = {
     # way to back a favourite. Present on 199 of 200 upcoming events.
     "DNB_1": {"marketId": "11", "outcomeId": "4"},
     "DNB_2": {"marketId": "11", "outcomeId": "5"},
+    # How many one side scores on its own. Market 19 is always the HOME
+    # team's total and 20 the AWAY team's - verified across 200 events, where
+    # 19's own description matched the home team 96 times and the away team
+    # never, and 20 the reverse. Getting these round the wrong way would book
+    # the opposing team's goals, so it was worth proving rather than assuming.
+    "HOME_OVER_0.5":  {"marketId": "19", "outcomeId": "12", "specifier": "total=0.5"},
+    "HOME_UNDER_0.5": {"marketId": "19", "outcomeId": "13", "specifier": "total=0.5"},
+    "HOME_OVER_1.5":  {"marketId": "19", "outcomeId": "12", "specifier": "total=1.5"},
+    "HOME_UNDER_1.5": {"marketId": "19", "outcomeId": "13", "specifier": "total=1.5"},
+    "AWAY_OVER_0.5":  {"marketId": "20", "outcomeId": "12", "specifier": "total=0.5"},
+    "AWAY_UNDER_0.5": {"marketId": "20", "outcomeId": "13", "specifier": "total=0.5"},
+    "AWAY_OVER_1.5":  {"marketId": "20", "outcomeId": "12", "specifier": "total=1.5"},
+    "AWAY_UNDER_1.5": {"marketId": "20", "outcomeId": "13", "specifier": "total=1.5"},
 }
 
 # Reverse lookup: (marketId, outcomeId, specifier) -> code, for reading odds.
@@ -123,11 +136,12 @@ def _cache_put(name, mem, data):
 #   18 = over/under totals          29 = both teams to score (GG/NG)
 #   68 = first-half over/under      (total=0.5 is the one the model predicts)
 #   11 = draw no bet                 (stake returned on a draw)
+#   19 = home team goals             20 = away team goals
 # Double chance is a default-enabled market and legOdd() reads its odds directly,
 # so 10 must be fetched or those picks fall back to estimated odds. The same
 # now applies to 68: a market the builder can select has to arrive with real
 # odds, or every first-half leg is priced off an estimate.
-FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "11")
+FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "11", "19", "20")
 
 
 def _headers(region="ng"):
