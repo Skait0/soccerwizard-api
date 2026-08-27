@@ -232,7 +232,14 @@ def fetch_sportybet_fixtures(region="ng"):
     deadline = time.time() + 240
 
     for market_id in FIXTURE_MARKET_IDS:
-        for page in range(1, 8):
+        # Seven pages was seven hundred events, and SportyBet currently lists
+        # sixteen hundred across seventeen. Everything past the seventh page
+        # simply did not exist as far as this site was concerned - which is
+        # why a National League tie on page eight showed as unavailable while
+        # SportyBet was plainly offering it, and why the cup ties were thin.
+        # Empty pages break the loop below, so a market with less to say
+        # still costs only one wasted request rather than thirteen.
+        for page in range(1, 21):
             if time.time() > deadline:
                 log.warning("fixtures fetch hit its deadline at market %s page %s; "
                             "returning %d events", market_id, page, len(by_event))
@@ -253,13 +260,20 @@ def fetch_sportybet_fixtures(region="ng"):
                     log.warning("fixtures fetch failed (market %s page %s, try %s): %s",
                                 market_id, page, attempt, ex)
                     if attempt == 1:
-                        time.sleep(1.5)
+                        # Longer than it looks like it needs to be. These
+                        # failures are a throttle, not a blip, and coming
+                        # straight back just spends the second try on the
+                        # same refusal.
+                        time.sleep(4)
             if data is None:
                 break  # give up on this market, move to the next
-            # A short pause between pages. Bursting these got the whole
-            # endpoint refused for this server once already; a steady caller
-            # is tolerated where a fast one is not.
-            time.sleep(0.12)
+            # A real pause between pages, not a token one. At roughly one and
+            # a half requests a second SportyBet started refusing partway
+            # through - and because a refused first page abandons the whole
+            # market, that silently dropped the team-total odds from the feed.
+            # Slower here costs nothing: this runs on a background thread every
+            # forty-five minutes, and nobody is waiting for it.
+            time.sleep(0.45)
             if data.get("bizCode") != 10000:
                 break
             d = data.get("data", {}) or {}
@@ -419,13 +433,31 @@ def fetch_live_scores(region="ng"):
 _REFRESH_LOCK = threading.Lock()
 
 def _refresh_fixtures_once():
+    """Replace the stored feed only with something at least as complete.
+
+    A throttled pass does not fail outright, it comes back short. SportyBet
+    starts refusing partway through, a refused page abandons the rest of that
+    market, and what returns is a smaller feed that looks perfectly valid.
+    Storing it would drop fixtures and whole markets from the site while every
+    health check still read green, which is the worst kind of failure: quiet,
+    and indistinguishable from a thin day.
+    """
     try:
         matches = fetch_sportybet_fixtures()
-        if matches:
-            _cache_put("fixtures", _FIXTURES_CACHE, matches)
-            log.info("fixtures refreshed: %d events", len(matches))
-            return True
-        log.warning("fixtures refresh returned nothing; keeping previous copy")
+        if not matches:
+            log.warning("fixtures refresh returned nothing; keeping previous copy")
+            return False
+        prev = _cache_get("fixtures", _FIXTURES_CACHE)
+        prev_n = len((prev or {}).get("data") or [])
+        # A fifth down is weather: a card genuinely thins out overnight. Much
+        # beyond that on a feed this size is the throttle, not the day.
+        if prev_n and len(matches) < prev_n * 0.8:
+            log.warning("fixtures refresh returned %d against %d stored, looks "
+                        "truncated; keeping the fuller copy", len(matches), prev_n)
+            return False
+        _cache_put("fixtures", _FIXTURES_CACHE, matches)
+        log.info("fixtures refreshed: %d events", len(matches))
+        return True
     except Exception as ex:
         log.warning("fixtures refresh failed, keeping previous copy: %s", ex)
     return False
