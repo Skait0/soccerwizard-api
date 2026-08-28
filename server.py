@@ -573,10 +573,61 @@ def get_livescores():
         return jsonify({"success": False, "error": str(ex), "matches": []}), 500
 
 
+def _unbookable(raw_selections):
+    """Which of these picks SportyBet has no market for.
+
+    Roughly half the card carries no team-totals market at all - 888 of 1797
+    fixtures on the day this was written - and asking to book one comes back
+    "invalid event data, no market there", which takes the whole slip down.
+    One unplaceable leg among forty loses all forty.
+
+    We already hold every event's odds in the fixtures cache, so the answer is
+    known here without asking SportyBet. Checking costs nothing and turns a
+    flat rejection into a list of exactly which picks are the problem.
+
+    Silent when the cache is empty: no prices is not the same as prices that
+    exclude a market, and refusing a slip because this server has just started
+    would be worse than the failure it prevents.
+    """
+    entry = _cache_get("fixtures", _FIXTURES_CACHE)
+    rows = (entry or {}).get("data") or []
+    if not rows:
+        return []
+    odds_by_event = {}
+    for m in rows:
+        if isinstance(m, dict) and m.get("eventId"):
+            odds_by_event[m["eventId"]] = m.get("odds") or {}
+    bad = []
+    for item in raw_selections:
+        ev, pred = item.get("eventId"), item.get("prediction")
+        prices = odds_by_event.get(ev)
+        if prices is None:          # event not in the cache - cannot judge it
+            continue
+        price = prices.get(pred)
+        if not price or price <= 1.01:
+            bad.append({"eventId": ev, "prediction": pred})
+    return bad
+
+
 @app.route('/api/generate-booking-code', methods=['POST'])
 def api_generate_code():
     data = request.json or {}
     raw_selections = data.get("selections", [])
+
+    bad = _unbookable(raw_selections)
+    if bad:
+        # Named rather than counted, so the caller can drop exactly these and
+        # retry instead of guessing which leg broke it.
+        log.warning("booking blocked before sending: %d of %d picks have no "
+                    "market (%s)", len(bad), len(raw_selections),
+                    ", ".join(sorted({b["prediction"] for b in bad})))
+        return jsonify({
+            "success": False,
+            "message": "SportyBet rejected the slip",
+            "detail": "no market there for %d of %d picks" % (len(bad), len(raw_selections)),
+            "unbookable": bad,
+        }), 400
+
     formatted_selections = []
     for item in raw_selections:
         mapping = MARKET_MAP.get(item.get("prediction"), MARKET_MAP["1"])
@@ -589,6 +640,13 @@ def api_generate_code():
     result = generate_sportybet_code(formatted_selections)
     if result.get("code"):
         return jsonify({"success": True, "booking_code": result["code"]})
+
+    # Got past our own check and SportyBet still said no. That is the case
+    # worth seeing: it means the cache disagreed with them, or something else
+    # is wrong, and until now it was thrown away silently.
+    log.warning("SportyBet rejected a slip that passed validation: %s | legs=%d "
+                "markets=%s", result.get("error"), len(raw_selections),
+                ",".join(sorted({(i.get("prediction") or "?") for i in raw_selections})))
     return jsonify({"success": False, "message": "SportyBet rejected the slip",
                     "detail": result.get("error"), "sent": result.get("sent")}), 400
 

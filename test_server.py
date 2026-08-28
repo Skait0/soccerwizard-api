@@ -323,3 +323,69 @@ class LiveFeedDoesNotRepeatItself(unittest.TestCase):
         pages.append({"bizCode": 10000, "data": []})
         out, _ = t._fetch(None, pages=pages)
         self.assertEqual(len(out), 3, "distinct pages must all be kept")
+
+class BookingIsCheckedBeforeItIsSent(unittest.TestCase):
+    """Half the card has no team-totals market, and one unplaceable leg among
+    forty loses all forty. We hold every event's odds already, so the answer is
+    known here without asking SportyBet - and naming the bad picks lets the
+    caller drop exactly those instead of guessing."""
+
+    def setUp(self):
+        server._FIXTURES_CACHE.clear()
+        server._FIXTURES_CACHE.update({"at": 9e9, "data": [
+            {"eventId": "ev:good", "homeTeam": "A", "awayTeam": "B",
+             "odds": {"OVER_1.5": 1.2, "GG": 1.7, "HOME_OVER_0.5": 1.11}},
+            {"eventId": "ev:thin", "homeTeam": "C", "awayTeam": "D",
+             "odds": {"OVER_1.5": 1.3}},          # no team-totals market
+        ]})
+
+    def tearDown(self):
+        server._FIXTURES_CACHE.clear()
+
+    def test_a_pick_with_no_market_is_named(self):
+        bad = server._unbookable([
+            {"eventId": "ev:good", "prediction": "OVER_1.5"},
+            {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
+        ])
+        self.assertEqual(bad, [{"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"}])
+
+    def test_a_fully_bookable_slip_is_left_alone(self):
+        self.assertEqual(server._unbookable([
+            {"eventId": "ev:good", "prediction": "OVER_1.5"},
+            {"eventId": "ev:good", "prediction": "GG"},
+            {"eventId": "ev:thin", "prediction": "OVER_1.5"},
+        ]), [])
+
+    def test_an_event_we_hold_no_prices_for_is_not_judged(self):
+        # absent from the cache entirely - we cannot say, so we do not
+        self.assertEqual(server._unbookable([
+            {"eventId": "ev:unknown", "prediction": "HOME_OVER_0.5"},
+        ]), [])
+
+    def test_an_empty_cache_blocks_nothing(self):
+        """A server that has just started holds no prices. Refusing every slip
+        until the first refresh would be worse than the failure this prevents."""
+        server._FIXTURES_CACHE.clear()
+        self.assertEqual(server._unbookable([
+            {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
+        ]), [])
+
+    def test_the_route_refuses_early_and_says_which(self):
+        called = {"n": 0}
+        real = server.generate_sportybet_code
+        server.generate_sportybet_code = lambda *a, **k: called.__setitem__("n", called["n"] + 1)
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/generate-booking-code", json={"selections": [
+                    {"eventId": "ev:good", "prediction": "OVER_1.5"},
+                    {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
+                ]})
+                self.assertEqual(r.status_code, 400)
+                body = r.get_json()
+                self.assertFalse(body["success"])
+                self.assertEqual(body["unbookable"],
+                                 [{"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"}])
+                self.assertIn("no market there", body["detail"])
+            self.assertEqual(called["n"], 0, "must not spend a call on a doomed slip")
+        finally:
+            server.generate_sportybet_code = real
