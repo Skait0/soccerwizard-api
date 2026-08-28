@@ -358,6 +358,13 @@ def _extract_live_events(d):
 def fetch_live_scores(region="ng"):
     headers = _headers(region)
     matches = []
+    # liveOrPrematchEvents ignores pageNum: pages 1 through 5 come back with
+    # byte-identical event lists. Looping them appended the same 71 events five
+    # times, so the feed served 400 entries for 80 matches and every client
+    # polling it every 30 seconds paid for four fifths of nothing. The loop
+    # stays in case the endpoint ever grows real paging, but it now stops the
+    # moment a page brings nothing new.
+    seen_ids = set()
     for page in range(1, 6):
         url = (f"https://www.sportybet.com/api/{region}/factsCenter/liveOrPrematchEvents"
                f"?sportId=sr:sport:1&marketId=1&pageSize=100&pageNum={page}")
@@ -368,6 +375,21 @@ def fetch_live_scores(region="ng"):
         pairs = _extract_live_events(data.get("data"))
         if not pairs:
             break
+        fresh = []
+        for lg, e in pairs:
+            if not isinstance(e, dict):
+                continue
+            # eventId when there is one, otherwise the pairing and its
+            # competition - an event with no id must still not arrive twice.
+            key = e.get("eventId") or "%s|%s|%s" % (
+                e.get("homeTeamName"), e.get("awayTeamName"), lg)
+            if key in seen_ids:
+                continue
+            seen_ids.add(key)
+            fresh.append((lg, e))
+        if not fresh:
+            break
+        pairs = fresh
         for lg, e in pairs:
             if not isinstance(e, dict):
                 continue
@@ -385,18 +407,39 @@ def fetch_live_scores(region="ng"):
             hs = e.get("homeScore")
             aw = e.get("awayScore")
             ss = e.get("setScore")
-            if (hs is None or aw is None) and isinstance(gs, list) and gs:
-                sc = gs[0]
-                if isinstance(sc, str) and ":" in sc:
-                    try:
-                        p = sc.split(":"); hs = int(p[0]); aw = int(p[1])
-                    except (ValueError, IndexError):
-                        pass
+            # setScore is the running total. gameScore is the same thing split
+            # by period - Crystal Palace v Man City at 73 minutes carried
+            # setScore "1:3" and gameScore ["0:1","1:2"], which sums to it.
+            #
+            # This used to read gameScore[0] first, so it published the FIRST
+            # HALF as the live score and never reached the setScore branch
+            # below, because hs and aw were no longer None by then. Every match
+            # that scored in the second half was reported wrong: 45 of the 71
+            # live games on the board when this was found, Bayern Munich among
+            # them, showing 1-0 at the 90th minute of a game that finished 4-1.
+            # Downstream that is worse than a wrong number on a screen - the
+            # results sweep banks these as final scores, so a tip that landed
+            # gets recorded as a loss.
             if (hs is None or aw is None) and isinstance(ss, str) and ":" in ss:
                 try:
                     p = ss.split(":"); hs = int(p[0]); aw = int(p[1])
                 except (ValueError, IndexError):
                     pass
+            # Only if setScore is missing: add the periods up rather than
+            # taking one of them.
+            if (hs is None or aw is None) and isinstance(gs, list) and gs:
+                th = ta = 0
+                ok = False
+                for part in gs:
+                    if not isinstance(part, str) or ":" not in part:
+                        continue
+                    try:
+                        a, b = part.split(":"); th += int(a); ta += int(b); ok = True
+                    except (ValueError, IndexError):
+                        ok = False
+                        break
+                if ok:
+                    hs, aw = th, ta
             minute = None
             if isinstance(ps, str):
                 if ":" in ps:

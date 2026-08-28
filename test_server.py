@@ -26,7 +26,18 @@ class MarketMapIntegrity(unittest.TestCase):
         # regression: double chance (market 10) must be fetched or 1X/X2 picks
         # fall back to estimated odds
         self.assertIn("10", server.FIXTURE_MARKET_IDS)
-        self.assertEqual(set(server.FIXTURE_MARKET_IDS), {"1", "10", "18", "29"})
+
+    def test_every_mapped_market_is_actually_fetched(self):
+        # This replaces an exact-set assertion that went stale the moment the
+        # first-half (68) and team-total (19, 20) markets were added, and then
+        # sat red long enough to stop meaning anything. The invariant is what
+        # was wanted: a market we can decode is no use if nothing asks for it,
+        # and the symptom is silent - those picks quietly fall back to
+        # estimated odds instead of real ones.
+        need = {str(m["marketId"]) for m in server.MARKET_MAP.values()}
+        missing = need - set(server.FIXTURE_MARKET_IDS)
+        self.assertEqual(missing, set(),
+                         "mapped but never fetched: %s" % sorted(missing))
 
 
 class ExtractOdds(unittest.TestCase):
@@ -217,3 +228,98 @@ class FixtureLeagueLabel(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+class LiveScoreIsNotTheFirstHalf(unittest.TestCase):
+    """The live board published half-time scores for four months.
+
+    SportyBet sends setScore as the running total and gameScore as the same
+    thing split by period - Crystal Palace v Man City at 73 minutes carried
+    setScore "1:3" and gameScore ["0:1","1:2"]. fetch_live_scores read
+    gameScore[0] first, so it published the first half and never reached the
+    setScore branch. 45 of the 71 live matches on the board were wrong when
+    this was found, Bayern Munich among them, showing 1-0 at the 90th minute
+    of a game that finished 4-1.
+
+    It is not only cosmetic: the results sweep banks these as final scores, so
+    a tip that landed is recorded as a loss.
+    """
+
+    def _one(self, **over):
+        e = {"homeTeamName": "Crystal Palace", "awayTeamName": "Man City",
+             "matchStatus": "H2", "playedSeconds": "73:29",
+             "setScore": "1:3", "gameScore": ["0:1", "1:2"]}
+        e.update(over)
+        return {"bizCode": 10000,
+                "data": [{"category": {"name": "England"}, "name": "Premier League",
+                          "events": [e]}]}
+
+    def _fetch(self, payload, pages=None):
+        """Run fetch_live_scores against a stubbed SportyBet."""
+        calls = {"n": 0}
+        seq = pages if pages is not None else [payload]
+
+        def fake_get(url, **kw):
+            i = min(calls["n"], len(seq) - 1)
+            calls["n"] += 1
+            class R:
+                @staticmethod
+                def json():
+                    return seq[i]
+            return R()
+
+        real = server.requests.get
+        server.requests.get = fake_get
+        try:
+            return server.fetch_live_scores(), calls["n"]
+        finally:
+            server.requests.get = real
+
+    def test_second_half_goals_are_counted(self):
+        out, _ = self._fetch(self._one())
+        self.assertEqual(len(out), 1)
+        self.assertEqual((out[0]["homeScore"], out[0]["awayScore"]), (1, 3),
+                         "must publish the running score, not the first half")
+
+    def test_falls_back_to_summing_periods(self):
+        # no setScore at all: add the halves up rather than taking one
+        out, _ = self._fetch(self._one(setScore=None))
+        self.assertEqual((out[0]["homeScore"], out[0]["awayScore"]), (1, 3))
+
+    def test_goalless_first_half_is_not_reported_as_the_score(self):
+        out, _ = self._fetch(self._one(setScore="1:0", gameScore=["0:0", "1:0"]))
+        self.assertEqual((out[0]["homeScore"], out[0]["awayScore"]), (1, 0))
+
+    def test_a_match_still_in_the_first_half_is_unaffected(self):
+        out, _ = self._fetch(self._one(setScore="1:0", gameScore=["1:0"]))
+        self.assertEqual((out[0]["homeScore"], out[0]["awayScore"]), (1, 0))
+
+
+class LiveFeedDoesNotRepeatItself(unittest.TestCase):
+    """liveOrPrematchEvents ignores pageNum.
+
+    Pages 1 through 5 come back byte-identical, so looping them appended the
+    same events five times: 400 entries for 80 matches, every client polling
+    it every 30 seconds paying for four fifths of nothing.
+    """
+
+    def _page(self, event_id):
+        return {"bizCode": 10000,
+                "data": [{"category": {"name": "England"}, "name": "Premier League",
+                          "events": [{"eventId": event_id,
+                                      "homeTeamName": "A", "awayTeamName": "B",
+                                      "matchStatus": "H2", "playedSeconds": "50:00",
+                                      "setScore": "1:0", "gameScore": ["1:0"]}]}]}
+
+    def test_identical_pages_are_fetched_once(self):
+        t = LiveScoreIsNotTheFirstHalf()
+        same = [self._page("sr:match:1")] * 5
+        out, calls = t._fetch(None, pages=same)
+        self.assertEqual(len(out), 1, "the same event must not be repeated")
+        self.assertEqual(calls, 2, "stop after the first page that adds nothing")
+
+    def test_real_paging_would_still_be_followed(self):
+        t = LiveScoreIsNotTheFirstHalf()
+        pages = [self._page("sr:match:%d" % i) for i in range(1, 4)]
+        pages.append({"bizCode": 10000, "data": []})
+        out, _ = t._fetch(None, pages=pages)
+        self.assertEqual(len(out), 3, "distinct pages must all be kept")
