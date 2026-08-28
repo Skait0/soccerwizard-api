@@ -389,3 +389,82 @@ class BookingIsCheckedBeforeItIsSent(unittest.TestCase):
             self.assertEqual(called["n"], 0, "must not spend a call on a doomed slip")
         finally:
             server.generate_sportybet_code = real
+
+class FailuresAreReported(unittest.TestCase):
+    """A booking rejection is not an exception, so nothing raised and Sentry
+    never saw one. report() makes them searchable events - and must never be
+    able to break the booking it is reporting on."""
+
+    def test_no_sentry_configured_is_a_silent_no_op(self):
+        real = server._sentry
+        server._sentry = None
+        try:
+            server.report("nothing should explode", legs=3)   # must not raise
+        finally:
+            server._sentry = real
+
+    def test_it_tags_and_sends_when_sentry_is_present(self):
+        sent = {}
+
+        class Scope:
+            def set_tag(self, k, v): sent.setdefault("tags", {})[k] = v
+            def set_extra(self, k, v): sent.setdefault("extra", {})[k] = v
+
+        class Ctx:
+            def __enter__(self): return Scope()
+            def __exit__(self, *a): return False
+
+        class FakeSentry:
+            @staticmethod
+            def push_scope(): return Ctx()
+            @staticmethod
+            def capture_message(msg, level=None):
+                sent["msg"] = msg; sent["level"] = level
+
+        real = server._sentry
+        server._sentry = FakeSentry
+        try:
+            server.report("booking: picks with no market at SportyBet",
+                          bad_legs=2, total_legs=40, markets="HOME_OVER_0.5")
+        finally:
+            server._sentry = real
+
+        self.assertEqual(sent["msg"], "booking: picks with no market at SportyBet")
+        self.assertEqual(sent["level"], "warning")
+        self.assertEqual(sent["tags"]["area"], "booking")
+        self.assertEqual(sent["extra"]["bad_legs"], 2)
+        self.assertEqual(sent["extra"]["markets"], "HOME_OVER_0.5")
+
+    def test_a_broken_reporter_cannot_break_a_booking(self):
+        class Exploding:
+            @staticmethod
+            def push_scope(): raise RuntimeError("sentry is down")
+
+        real = server._sentry
+        server._sentry = Exploding
+        try:
+            server.report("still fine", legs=1)   # swallowed, not raised
+        finally:
+            server._sentry = real
+
+    def test_the_route_still_answers_when_reporting_explodes(self):
+        """The whole point: reporting sits on the booking path."""
+        class Exploding:
+            @staticmethod
+            def push_scope(): raise RuntimeError("sentry is down")
+
+        server._FIXTURES_CACHE.clear()
+        server._FIXTURES_CACHE.update({"at": 9e9, "data": [
+            {"eventId": "ev:thin", "odds": {"OVER_1.5": 1.3}}]})
+        real = server._sentry
+        server._sentry = Exploding
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/generate-booking-code", json={"selections": [
+                    {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"}]})
+                self.assertEqual(r.status_code, 400)
+                self.assertEqual(r.get_json()["unbookable"],
+                                 [{"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"}])
+        finally:
+            server._sentry = real
+            server._FIXTURES_CACHE.clear()

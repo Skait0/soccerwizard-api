@@ -32,8 +32,44 @@ if SENTRY_DSN:
             environment=os.environ.get("RAILWAY_ENVIRONMENT_NAME", "production"),
         )
         log.info("Sentry error tracking enabled")
+        _sentry = sentry_sdk
     except Exception as ex:
         log.warning("SENTRY_DSN set but Sentry init failed (is sentry-sdk installed?): %s", ex)
+        _sentry = None
+else:
+    _sentry = None
+
+
+def report(message, level="warning", **context):
+    """Log it, and send it to Sentry as a searchable event when one is set up.
+
+    A booking rejection is not an exception, so nothing here ever raised and
+    Sentry never saw one - the only record of a failed slip was the line the
+    user read on their phone. Log lines are fine for reading after the fact but
+    poor for noticing: nobody trawls Railway output to discover that a market
+    started failing an hour ago.
+
+    The tag is what makes it useful. Sentry groups by message, so every "no
+    market" rejection lands in one issue with a count and a graph, rather than
+    scattering. Context carries the detail - which markets, how many legs -
+    without putting it in the title.
+
+    A complete no-op with SENTRY_DSN unset, and it never raises: this sits on
+    the booking path, and an error reporter that can break a booking is worse
+    than no error reporter.
+    """
+    log.warning("%s | %s", message,
+                " ".join("%s=%s" % (k, v) for k, v in sorted(context.items())))
+    if not _sentry:
+        return
+    try:
+        with _sentry.push_scope() as scope:
+            scope.set_tag("area", "booking")
+            for k, v in context.items():
+                scope.set_extra(k, v)
+            _sentry.capture_message(message, level=level)
+    except Exception as ex:   # never let reporting break the thing it reports on
+        log.warning("sentry capture failed: %s", ex)
 
 
 # Prediction code -> SportyBet market/outcome (+ specifier for totals).
@@ -618,9 +654,10 @@ def api_generate_code():
     if bad:
         # Named rather than counted, so the caller can drop exactly these and
         # retry instead of guessing which leg broke it.
-        log.warning("booking blocked before sending: %d of %d picks have no "
-                    "market (%s)", len(bad), len(raw_selections),
-                    ", ".join(sorted({b["prediction"] for b in bad})))
+        report("booking: picks with no market at SportyBet",
+               bad_legs=len(bad), total_legs=len(raw_selections),
+               markets=", ".join(sorted({b["prediction"] for b in bad})),
+               events=", ".join(sorted({b["eventId"] for b in bad})[:10]))
         return jsonify({
             "success": False,
             "message": "SportyBet rejected the slip",
@@ -644,9 +681,11 @@ def api_generate_code():
     # Got past our own check and SportyBet still said no. That is the case
     # worth seeing: it means the cache disagreed with them, or something else
     # is wrong, and until now it was thrown away silently.
-    log.warning("SportyBet rejected a slip that passed validation: %s | legs=%d "
-                "markets=%s", result.get("error"), len(raw_selections),
-                ",".join(sorted({(i.get("prediction") or "?") for i in raw_selections})))
+    # Got past our own check and SportyBet still said no: our cache and theirs
+    # disagree, which is the one worth being told about rather than reading later.
+    report("booking: SportyBet rejected a slip that passed validation",
+           reason=str(result.get("error"))[:200], legs=len(raw_selections),
+           markets=",".join(sorted({(i.get("prediction") or "?") for i in raw_selections})))
     return jsonify({"success": False, "message": "SportyBet rejected the slip",
                     "detail": result.get("error"), "sent": result.get("sent")}), 400
 
