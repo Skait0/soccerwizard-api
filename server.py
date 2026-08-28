@@ -708,6 +708,12 @@ def home():
         "status": "SoccerWizard API is running successfully!",
         "cache": "redis" if redis_ok else "memory",
         "redisConfigured": bool(REDIS_URL),
+        # Same reason as redisConfigured: after setting SENTRY_DSN this says
+        # whether the variable actually took, without reading deploy logs.
+        # "configured" is the DSN being present; "active" is the SDK having
+        # started, which is the one that matters and can differ.
+        "sentryConfigured": bool(SENTRY_DSN),
+        "sentryActive": bool(_sentry),
         "fixtures": {
             "count": len((entry or {}).get("data") or []),
             "ageSeconds": int(time.time() - entry["at"]) if entry else None,
