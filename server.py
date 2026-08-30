@@ -265,7 +265,26 @@ def fetch_sportybet_fixtures(region="ng"):
     # fetch itself rather than letting a killed worker do it.
     # Generous, because nobody is waiting on this any more - it runs on a
     # background thread, not inside a visitor's request.
-    deadline = time.time() + 240
+    # Raised from 240 after measuring what it was actually costing.
+    #
+    # Coverage of the published feed fell almost exactly in fetch order:
+    # 1X2 100%, double chance 98%, totals 90%, GG 86%, then team totals 75%
+    # and 70%. Splitting the feed by position made the cause plain - across
+    # the first tenth of events every market sat at 98%, and across the last
+    # tenth 1X2 was still 100% while away totals had collapsed to 36%. Missing
+    # odds were clustered in the last pages of the last markets, which is the
+    # shape of a fetch running out of time, not of a bookmaker declining to
+    # price a game.
+    #
+    # That cost real money: a leg with no odds cannot be booked, and one
+    # unbookable leg rejects the whole slip. The site was reporting "SportyBet
+    # wouldn't take this slip" for markets SportyBet was in fact offering.
+    #
+    # Nothing waits on this. It runs on a background thread every forty-five
+    # minutes, so even a full fifteen-minute fetch is a third of the cycle.
+    # The old budget was the constraint; there was never a reason for it to be
+    # this tight.
+    deadline = time.time() + 900
 
     for market_id in FIXTURE_MARKET_IDS:
         # Seven pages was seven hundred events, and SportyBet currently lists
@@ -277,6 +296,14 @@ def fetch_sportybet_fixtures(region="ng"):
         # still costs only one wasted request rather than thirteen.
         for page in range(1, 21):
             if time.time() > deadline:
+                # Reported, not just logged. This truncates the feed and the
+                # damage shows up far away - as an unbookable slip - so it has
+                # to be visible somewhere other than a log nobody trawls.
+                report("fixtures fetch hit its deadline",
+                       level="warning", market=market_id, page=page,
+                       events=len(by_event),
+                       markets_done=FIXTURE_MARKET_IDS.index(market_id),
+                       markets_total=len(FIXTURE_MARKET_IDS))
                 log.warning("fixtures fetch hit its deadline at market %s page %s; "
                             "returning %d events", market_id, page, len(by_event))
                 break
@@ -355,6 +382,23 @@ def fetch_sportybet_fixtures(region="ng"):
     if not by_event and errors:
         # Total failure - let the route serve stale rather than cache an empty set.
         raise RuntimeError("all SportyBet fixture fetches failed")
+
+    # Per-market coverage, so a thin feed is a number rather than a guess.
+    # A market well below the 1X2 count means its later pages did not arrive,
+    # and every event it is missing is a leg that cannot be booked.
+    total = len(by_event)
+    priced = {}
+    for m in by_event.values():
+        for code in m["odds"]:
+            priced[code] = priced.get(code, 0) + 1
+    thin = sorted(
+        ((c, n) for c, n in priced.items() if total and n < total * 0.9),
+        key=lambda x: x[1])
+    log.info("fixtures: %d events, %d markets priced, %d errors",
+             total, len(priced), errors)
+    if thin:
+        log.warning("fixtures: thin coverage on %s",
+                    ", ".join(f"{c} {n}/{total}" for c, n in thin[:8]))
     return [by_event[eid] for eid in order]
 
 
