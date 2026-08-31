@@ -675,21 +675,23 @@ def api_bet9ja_code():
     if not picks:
         return jsonify({"success": False, "error": "no selections"}), 400
 
-    # One fetch per league, not per selection.
-    leagues = {}
+    # One fetch per SELECTION, against the per-event endpoint. That is the only
+    # way to get every market for any league: the league listings either miss
+    # team goals or miss most of the competitions. A slip is a handful of legs,
+    # so a request each is cheap, and the odds are read fresh at book time
+    # anyway because Bet9ja rejects a slip whose prices have moved.
     resolved = []
     try:
         for p in picks:
-            lg = int(p.get("league") or 0)
-            if lg not in leagues:
-                leagues[lg] = bet9ja.fetch_league(lg)
-            ev = leagues[lg].get(str(p.get("eventId")))
+            ev = bet9ja.fetch_event(p.get("eventId"))
             if not ev:
                 return jsonify({"success": False,
                                 "error": "event %s not on Bet9ja" % p.get("eventId")}), 409
+            if p.get("code") not in ev["raw"]:
+                return jsonify({"success": False,
+                                "error": "Bet9ja is not pricing %s on event %s"
+                                         % (p.get("code"), p.get("eventId"))}), 409
             resolved.append({"event": ev, "code": p.get("code")})
-    except (TypeError, ValueError):
-        return jsonify({"success": False, "error": "league must be a number"}), 400
     except Exception as ex:                      # noqa: BLE001 - user-facing path
         report("bet9ja odds fetch failed", error=str(ex))
         return jsonify({"success": False, "error": str(ex)}), 502

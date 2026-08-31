@@ -117,16 +117,29 @@ def parse_odds_key(key):
     return parts[0] + "_" + market, parts[2], aux
 
 
-def fetch_events(league_id, group=POPULAR, timeout=15):
+def fetch_events(league_id, group=POPULAR, timeout=15, by_group=True):
     """Every event in one league, for one market group.
 
-    Returns {eventId: {...}} with the teams as a single "Home - Away" string,
-    a UTC kickoff, and the odds keyed by market. Empty dict on any failure -
-    this feeds a page, and a bookmaker being unreachable is not a reason to
-    return a 500.
+    `by_group` picks which of their two endpoints to use, and it matters:
+
+      GetEventsInGroup?GROUPID=   any competition they carry, keyed by the GID
+                                  that GetSports lists - all 75 countries
+      GetEventsInCouponV2?SCHID=  only the 14 "popular coupons" for soccer
+
+    The coupon route was found first and covers the majors, but a SCHID exists
+    only for a league they have chosen to feature. Fetching by GID needs no
+    lookup table and reaches everything, which matters when the board carries
+    47 leagues and their popular list has 14.
+
+    Returns {eventId: {...}}. Empty dict on any failure - this feeds a page,
+    and a bookmaker being unreachable is not a reason to return a 500.
     """
-    url = ("%s/GetEventsInCouponV2?SCHID=%s&DISP=0&MKEY=%s"
-           % (BASE, league_id, group))
+    if by_group:
+        url = ("%s/GetEventsInGroup?GROUPID=%s&DISP=0&MKEY=%s"
+               % (BASE, league_id, group))
+    else:
+        url = ("%s/GetEventsInCouponV2?SCHID=%s&DISP=0&MKEY=%s"
+               % (BASE, league_id, group))
     try:
         r = requests.get(url, headers=_headers(), timeout=timeout)
         data = r.json()
@@ -134,8 +147,13 @@ def fetch_events(league_id, group=POPULAR, timeout=15):
         log.warning("bet9ja events %s/%s failed: %s", league_id, group, ex)
         return {}
 
+    # The two endpoints wrap the group differently: the coupon one nests it
+    # under D.G keyed by GID, the group one IS the group.
+    node = data.get("D") or {}
+    groups = _values(node.get("G")) if node.get("G") else ([node] if node.get("E") else [])
+
     out = {}
-    for grp in _values(data.get("D", {}).get("G", {})):
+    for grp in groups:
         # `E` comes back as a dict keyed by slot id on some groups and as a
         # plain list on others. Both carry the same event objects.
         for eid, ev in _items(grp.get("E")):
@@ -176,7 +194,31 @@ def fetch_events(league_id, group=POPULAR, timeout=15):
     return out
 
 
-def fetch_league(league_id, timeout=15):
+def leagues(timeout=20):
+    """Every soccer competition Bet9ja carries: {gid: {"league", "country"}}.
+
+    Their whole catalogue in one call - 75 countries - so fetch_league can be
+    pointed at anything without a lookup table. Named by GID, which is what
+    GetEventsInGroup wants.
+    """
+    try:
+        r = requests.get("%s/GetSports?SPORTID=1&DISP=0" % BASE,
+                         headers=_headers(), timeout=timeout)
+        pal = r.json().get("D", {}).get("PAL", {})
+    except Exception as ex:
+        log.warning("bet9ja league list failed: %s", ex)
+        return {}
+
+    soccer = pal.get("1") or {}
+    out = {}
+    for country in _values(soccer.get("SG")):
+        name = country.get("SG_DESC") or ""
+        for gid, grp in _items(country.get("G")):
+            out[str(gid)] = {"league": grp.get("G_DESC") or "", "country": name}
+    return out
+
+
+def fetch_league(league_id, timeout=15, by_group=True):
     """One league across every market group we care about, merged.
 
     Two requests rather than one, because the markets we offer are split
@@ -184,7 +226,7 @@ def fetch_league(league_id, timeout=15):
     """
     merged = {}
     for group in MARKET_GROUPS:
-        for eid, row in fetch_events(league_id, group, timeout).items():
+        for eid, row in fetch_events(league_id, group, timeout, by_group).items():
             if eid in merged:
                 # Both maps, or a market from the second group is priced for
                 # our own arithmetic and then missing when the slip is built.
@@ -204,6 +246,52 @@ def selection_id(event_id, odds_key):
     was well-formed and referred to selections that did not resolve.
     """
     return "%s$%s" % (event_id, odds_key)
+
+
+def fetch_event(event_id, timeout=15):
+    """Every market Bet9ja lists for one fixture - about 1,300 of them.
+
+    This is what makes full coverage possible. The two list endpoints each fall
+    short on their own: GetEventsInGroup reaches all 172 competitions but
+    ignores MKEY and only ever returns the default markets, while the coupon
+    route honours MKEY and has team goals but exists only for the 14 leagues
+    they feature. Asking about one event gets everything, for any league.
+
+    So: list fixtures cheaply per league, and pull the full book only for the
+    handful actually going on a slip.
+    """
+    url = "%s/GetEvent?EVENTID=%s&DISP=0" % (BASE, event_id)
+    try:
+        r = requests.get(url, headers=_headers(), timeout=timeout)
+        ev = r.json().get("D") or {}
+    except Exception as ex:
+        log.warning("bet9ja event %s failed: %s", event_id, ex)
+        return None
+    if not ev.get("ID"):
+        return None
+
+    odds, raw = {}, {}
+    for key, val in (ev.get("O") or {}).items():
+        code = _BY_KEY.get(key)
+        if not code:
+            continue
+        try:
+            odds[code] = float(val)
+        except (TypeError, ValueError):
+            continue
+        raw[code] = str(val)
+    return {
+        "eventId": ev.get("ID"),
+        "slotId": str(ev.get("ID")),
+        "eventCode": str(ev.get("C") or ""),
+        "teams": ev.get("DS") or "",
+        "kickoff": ev.get("STARTDATEUTC") or "",
+        "league": ev.get("GN") or "",
+        "country": ev.get("SG") or "",
+        "startdate": (ev.get("STARTDATE") or "").replace("-", "/"),
+        "odds": odds,
+        "raw": raw,
+    }
 
 
 def build_selection(event, code):

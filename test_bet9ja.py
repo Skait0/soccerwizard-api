@@ -180,6 +180,61 @@ class FetchLeagueMerges(unittest.TestCase):
         self.assertEqual(row["raw"]["HOME_OVER_0.5"], "1.38")
 
 
+class Leagues(unittest.TestCase):
+    def test_flattens_countries_into_gid_keyed_competitions(self):
+        payload = {"D": {"PAL": {"1": {"S_DESC": "Soccer", "SG": {
+            "11058": {"SG_DESC": "England", "G": {
+                "170880": {"G_DESC": "Premier League"},
+                "170881": {"G_DESC": "Championship"}}},
+            "11060": {"SG_DESC": "Sweden", "G": {
+                "1348874": {"G_DESC": "Allsvenskan"}}}}}}}}
+        r = mock.Mock(); r.json.return_value = payload
+        with mock.patch.object(bet9ja.requests, "get", return_value=r):
+            out = bet9ja.leagues()
+        self.assertEqual(out["170880"], {"league": "Premier League", "country": "England"})
+        self.assertEqual(out["1348874"], {"league": "Allsvenskan", "country": "Sweden"})
+
+    def test_a_dead_catalogue_is_empty_not_an_exception(self):
+        with mock.patch.object(bet9ja.requests, "get", side_effect=OSError("nope")):
+            self.assertEqual(bet9ja.leagues(), {})
+
+
+class FetchEvent(unittest.TestCase):
+    """The per-event book is what makes every league bookable.
+
+    Neither listing endpoint is enough alone: GetEventsInGroup reaches all 172
+    competitions but ignores MKEY and only returns the default markets, while
+    the coupon route honours MKEY and has team goals but exists for just the 14
+    featured leagues. Asking about a single event returns roughly 1,300 markets
+    and works anywhere.
+    """
+
+    def _run(self, payload):
+        r = mock.Mock(); r.json.return_value = payload
+        with mock.patch.object(bet9ja.requests, "get", return_value=r):
+            return bet9ja.fetch_event("825683591")
+
+    def test_reads_the_markets_we_offer_out_of_the_full_book(self):
+        out = self._run({"D": {"ID": "825683591", "DS": "Ipswich Town - Liverpool",
+                               "C": "1079", "GN": "Premier League", "SG": "England",
+                               "STARTDATE": "2026-09-04 19:00:00",
+                               "STARTDATEUTC": "2026-09-04T19:00:00Z",
+                               "O": {"S_DC_1X": "2.4", "S_HTS_Y": "1.38",
+                                     "S_CORNERS_O": "1.5"}}})
+        self.assertEqual(out["odds"], {"1X": 2.4, "HOME_OVER_0.5": 1.38})
+        self.assertEqual(out["raw"]["HOME_OVER_0.5"], "1.38",
+                         "the wire value must be the string the feed gave")
+        self.assertEqual(out["eventCode"], "1079")
+        self.assertEqual(out["country"], "England")
+
+    def test_an_unknown_event_is_none_not_a_half_built_dict(self):
+        self.assertIsNone(self._run({"D": {}}))
+
+    def test_a_dead_endpoint_is_none(self):
+        with mock.patch.object(bet9ja.requests, "get", side_effect=OSError("nope")):
+            self.assertIsNone(bet9ja.fetch_event("1"))
+
+
 class BuildSelection(unittest.TestCase):
     def setUp(self):
         r = mock.Mock(); r.json.return_value = _feed({"7": _event()})
