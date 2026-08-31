@@ -636,11 +636,9 @@ def get_fixtures():
 # use to somebody who holds an account with the bookmaker that issued it - so
 # this is a second source alongside, not a replacement.
 #
-# Odds are done and verified against their live feed. Booking is NOT wired up:
-# bet9ja.generate_code builds what their own bundle says a betslip should look
-# like, and their API still answers 500, which means one or more fields are
-# wrong in a way the response does not explain. It is deliberately not exposed
-# until it can be tested end to end. See bet9ja.py.
+# Both halves are verified end to end: a slip built here was booked through
+# Bet9ja and the code loaded on their own site with the right three selections.
+# See bet9ja.py for the fields that had to be exact.
 @app.route('/api/bet9ja/fixtures', methods=['GET'])
 def get_bet9ja_fixtures():
     """Odds for one Bet9ja league. `league` is their SCHID (492 = EPL).
@@ -659,6 +657,48 @@ def get_bet9ja_fixtures():
         return jsonify({"success": False, "error": str(ex), "matches": {}}), 502
     return jsonify({"success": True, "league": league,
                     "count": len(events), "matches": events})
+
+
+@app.route('/api/bet9ja/booking-code', methods=['POST'])
+def api_bet9ja_code():
+    """Turn a set of picks into a Bet9ja booking code.
+
+    Body: {"selections": [{"league": 492, "eventId": "825683591",
+                           "code": "1X"}, ...]}
+
+    Odds are re-read from the live feed rather than trusted from the caller: a
+    price the site showed a minute ago may have moved, and Bet9ja rejects a
+    slip whose odds do not match theirs.
+    """
+    data = request.get_json(silent=True) or {}
+    picks = data.get("selections") or []
+    if not picks:
+        return jsonify({"success": False, "error": "no selections"}), 400
+
+    # One fetch per league, not per selection.
+    leagues = {}
+    resolved = []
+    try:
+        for p in picks:
+            lg = int(p.get("league") or 0)
+            if lg not in leagues:
+                leagues[lg] = bet9ja.fetch_league(lg)
+            ev = leagues[lg].get(str(p.get("eventId")))
+            if not ev:
+                return jsonify({"success": False,
+                                "error": "event %s not on Bet9ja" % p.get("eventId")}), 409
+            resolved.append({"event": ev, "code": p.get("code")})
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "league must be a number"}), 400
+    except Exception as ex:                      # noqa: BLE001 - user-facing path
+        report("bet9ja odds fetch failed", error=str(ex))
+        return jsonify({"success": False, "error": str(ex)}), 502
+
+    out = bet9ja.generate_code(resolved)
+    if out.get("code"):
+        return jsonify({"success": True, **out})
+    report("bet9ja booking refused", legs=len(resolved), detail=str(out.get("error"))[:300])
+    return jsonify({"success": False, **out}), 502
 
 
 @app.route('/api/livescores', methods=['GET'])

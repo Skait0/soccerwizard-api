@@ -157,6 +157,28 @@ class FetchLeagueMerges(unittest.TestCase):
         self.assertEqual(row["odds"],
                          {"1X": 2.40, "HOME_OVER_0.5": 1.38, "AWAY_OVER_0.5": 1.07})
 
+    def test_the_raw_prices_are_merged_too_not_just_the_floats(self):
+        """Caught by the first live booking, not by a test.
+
+        `odds` is for our arithmetic, `raw` is what goes on the wire. Merging
+        only the first meant a market from the second group priced fine and
+        then raised KeyError the moment a slip tried to use it - so team goals,
+        which live in the Home/Away group, could never be booked.
+        """
+        popular = _feed({"0": _event(odds={"S_DC_1X": "2.40"})})
+        home_away = _feed({"0": _event(odds={"S_HTS_Y": "1.38"})})
+
+        def fake_get(url, **kw):
+            r = mock.Mock()
+            r.json.return_value = home_away if "MKEY=170" in url else popular
+            return r
+
+        with mock.patch.object(bet9ja.requests, "get", side_effect=fake_get):
+            row = list(bet9ja.fetch_league(492).values())[0]
+        self.assertEqual(set(row["raw"]), set(row["odds"]),
+                         "every priced market must also have its wire value")
+        self.assertEqual(row["raw"]["HOME_OVER_0.5"], "1.38")
+
 
 class BuildSelection(unittest.TestCase):
     def setUp(self):
@@ -165,16 +187,37 @@ class BuildSelection(unittest.TestCase):
             self.ev = list(bet9ja.fetch_events(492).values())[0]
 
     def test_carries_the_fields_their_slip_wants(self):
+        """Matched field by field against a real booking, not inferred.
+
+        Six of these were wrong on the first pass: sid was the split market
+        rather than the whole key, oddValue was a float, the id was the feed's
+        slot number, and market, SG and eventCode were missing entirely.
+        """
         leg = bet9ja.build_selection(self.ev, "1X")
-        self.assertEqual(leg["sid"], "S_DC")
+        self.assertEqual(leg["sid"], "S_DC_1X", "sid is the full odds key")
         self.assertEqual(leg["sign"], "1X")
+        self.assertEqual(leg["market"], "DC", "the human market label")
         self.assertEqual(leg["hnd"], "")
-        self.assertEqual(leg["oddValue"], 2.40)
+        self.assertEqual(leg["oddValue"], "2.40", "odds go on the wire as strings")
         self.assertEqual(leg["eventId"], "825683591")
+        self.assertEqual(leg["sportName"], "", "their own client sends empty")
+
+    def test_the_selection_id_is_event_and_key(self):
+        """The field that cost the most.
+
+        Both EVS and ODDS are keyed by "{eventId}${oddsKey}". Using the feed's
+        slot number instead produced a slip that passed format validation and
+        then failed to resolve - a 500 with an empty body and nothing to say
+        why.
+        """
+        leg = bet9ja.build_selection(self.ev, "1X")
+        self.assertEqual(leg["id"], "825683591$S_DC_1X")
+        self.assertEqual(leg["id"], bet9ja.selection_id("825683591", "S_DC_1X"))
 
     def test_a_handicap_goes_to_hnd_not_into_the_market(self):
         leg = bet9ja.build_selection(self.ev, "OVER_1.5")
-        self.assertEqual((leg["sid"], leg["sign"], leg["hnd"]), ("S_OU", "O", "1.5"))
+        self.assertEqual((leg["sid"], leg["sign"], leg["hnd"], leg["market"]),
+                         ("S_OU@1.5_O", "O", "1.5", "OU"))
 
     def test_the_name_is_rewritten_the_way_their_own_ui_does(self):
         # The feed says "A - B"; their client posts "A v B".
@@ -227,7 +270,8 @@ class GenerateCode(unittest.TestCase):
     def test_a_single_is_shaped_as_a_single(self):
         seen, _ = self._posted({"D": {"BOOKINGNUMBER": "X"}})
         bet = seen["slip"]["BETS"][0]
-        self.assertEqual((bet["BSTYPE"], bet["TAB"]), ("singles", "singles"))
+        # Integers, not the tab names. A real slip sends 0 for both.
+        self.assertEqual((bet["BSTYPE"], bet["TAB"]), (0, 0))
         self.assertEqual((bet["NUMLINES"], bet["COMB"], bet["TYPE"]), (1, 1, 1))
 
     def test_an_accumulator_is_one_bet_carrying_every_leg(self):
@@ -244,7 +288,7 @@ class GenerateCode(unittest.TestCase):
                                   {"event": ev2, "code": "OVER_1.5"}])
         self.assertEqual(len(seen["slip"]["BETS"]), 1, "an accumulator is one bet")
         bet = seen["slip"]["BETS"][0]
-        self.assertEqual(bet["TAB"], "multiples")
+        self.assertEqual(bet["TAB"], 0)
         self.assertEqual((bet["NUMLINES"], bet["COMB"], bet["TYPE"]), (2, 1, 2))
 
     def test_a_booking_carries_no_money(self):
@@ -254,13 +298,23 @@ class GenerateCode(unittest.TestCase):
         for field in ("STAKE", "POTWINMIN", "POTWINMAX", "BONUSMIN", "BONUSMAX"):
             self.assertEqual(bet[field], 0, field)
 
-    def test_the_code_is_found_wherever_they_put_it(self):
-        for body in ({"D": {"BOOKINGNUMBER": "5PTJJVX"}},
-                     {"D": {"CODE": "5PTJJVX"}},
-                     {"data": {"code": "5PTJJVX"}},
-                     {"BOOKINGNUMBER": "5PTJJVX"}):
-            _seen, out = self._posted(body)
-            self.assertEqual(out.get("code"), "5PTJJVX", body)
+    def test_the_code_is_read_from_ris(self):
+        """It is data[0].RIS, seven characters, the same shape their own site
+        shows. Not COUPONCODE, which sits beside it and is an internal UUID -
+        handing somebody that gives them a code Bet9ja will not load."""
+        body = {"status": 1, "error": {"code": 0, "message": ""},
+                "data": [{"RIS": "5PTL8WL",
+                          "COUPONCODE": "043528ed-ced1-44b7-ac05-0f21b89d03f0",
+                          "STATUS": 1}]}
+        _seen, out = self._posted(body)
+        self.assertEqual(out["code"], "5PTL8WL")
+        self.assertNotIn("043528ed", str(out), "never hand back the internal id")
+
+    def test_a_failed_status_is_not_mined_for_a_code(self):
+        body = {"status": -1, "error": {"code": 100, "message": "checkformatbetsliperror"},
+                "data": [{"RIS": "IGNORE"}]}
+        _seen, out = self._posted(body)
+        self.assertNotIn("code", out)
 
     def test_a_refusal_is_reported_not_swallowed(self):
         _seen, out = self._posted(

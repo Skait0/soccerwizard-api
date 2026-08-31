@@ -153,13 +153,26 @@ def fetch_events(league_id, group=POPULAR, timeout=15):
             row = out.setdefault(str(ev.get("ID") or eid), {
                 "eventId": ev.get("ID"),
                 "slotId": eid,
+                # Their betslip wants this, and it is not EXTID: a real slip
+                # carries "3070" where EXTID is an eight-digit provider id.
+                "eventCode": str(ev.get("C") or ""),
                 "teams": ev.get("DS") or "",
                 "kickoff": ev.get("STARTDATEUTC") or "",
                 "league": ev.get("GN") or grp.get("GN") or "",
+                # The country. Their slip sends it as SG.
+                "country": grp.get("SG") or ev.get("SG") or "",
                 "startdate": (ev.get("STARTDATE") or "").replace("-", "/"),
                 "odds": {},
+                # The prices exactly as the feed gave them. A booking sends
+                # odds as STRINGS - "4.25", not 4.25 - so the float above is
+                # for our own arithmetic and this is what goes on the wire.
+                "raw": {},
             })
             row["odds"].update(odds)
+            for key, val in (ev.get("O") or {}).items():
+                code = _BY_KEY.get(key)
+                if code and code in odds:
+                    row["raw"][code] = str(val)
     return out
 
 
@@ -173,40 +186,61 @@ def fetch_league(league_id, timeout=15):
     for group in MARKET_GROUPS:
         for eid, row in fetch_events(league_id, group, timeout).items():
             if eid in merged:
+                # Both maps, or a market from the second group is priced for
+                # our own arithmetic and then missing when the slip is built.
                 merged[eid]["odds"].update(row["odds"])
+                merged[eid]["raw"].update(row["raw"])
             else:
                 merged[eid] = row
     return merged
 
 
+def selection_id(event_id, odds_key):
+    """The key their betslip uses for a selection: eventId, "$", odds key.
+
+    Not guessable and not the feed's slot number, which is what an earlier pass
+    used. Both EVS and ODDS are keyed by this, and getting it wrong is why the
+    API accepted the format and then answered 500 with an empty body: the slip
+    was well-formed and referred to selections that did not resolve.
+    """
+    return "%s$%s" % (event_id, odds_key)
+
+
 def build_selection(event, code):
-    """One leg of a betslip, in the shape their EVS map wants."""
+    """One leg of a betslip, in the shape their EVS map wants.
+
+    Every field here was matched against a real booking rather than inferred.
+    The ones that are not obvious:
+
+      sid         the FULL odds key ("S_1X2_2"), not the market half of it
+      market      the human label ("1X2"), which is the middle of the key
+      oddValue    a string, exactly as the feed gave it
+      eventCode   the event's C field, not EXTID
+      sportName   empty - their own client sends ""
+    """
     key, _group = MARKET_MAP[code]
-    sid, sign, aux = parse_odds_key(key)
-    odd = event["odds"].get(code)
-    if odd is None:
+    _sid_unused, sign, aux = parse_odds_key(key)
+    raw = (event.get("raw") or {}).get(code)
+    if raw is None:
         raise KeyError("no %s on event %s" % (code, event.get("eventId")))
+    market = key.split("_")[1].split("@")[0]
     return {
-        "id": event["slotId"],
+        "id": selection_id(event["eventId"], key),
         "eventId": event["eventId"],
-        "eventCode": event.get("eventCode"),
+        "eventCode": event.get("eventCode") or "",
         # Their own UI rewrites the "A - B" the feed gives into "A v B" before
         # sending it, so this matches what their site would have posted.
         "eventName": (event.get("teams") or "").replace(" - ", " v "),
-        "sid": sid,
+        "market": market,
+        "sid": key,
         "sign": sign,
-        "hnd": aux or "",
-        "oddValue": odd,
-        "startdate": event.get("startdate") or "",
         "GN": event.get("league") or "",
         "leagueName": event.get("league") or "",
-        "sportName": "Soccer",
-        # Their validator rejects a slip without this and names it in the
-        # response: {"code":100,"message":"checkformatbetsliperror",
-        # "data":{"LIVE":"not defined"}}. We only ever book fixtures that have
-        # not kicked off, so it is always 0.
-        "LIVE": 0,
-        "isLive": False,
+        "SG": event.get("country") or "",
+        "startdate": event.get("startdate") or "",
+        "oddValue": raw,
+        "hnd": aux or "",
+        "sportName": "",
     }
 
 
@@ -229,28 +263,27 @@ def generate_code(selections, timeout=15):
         return {"error": "could not build selection: %s" % ex}
 
     n = len(evs)
-    # ODDS is not decoration: it maps selection id -> odd, and their own code
-    # fills it (`c.ODDS[sel] = odd`) before pushing the bet. Sending it empty
-    # is what produced `checkformatbetsliperror`, whose `data` names "LIVE" and
-    # sends you looking in the wrong place entirely.
+    # ODDS maps selection id -> the odd as a STRING, keyed identically to EVS.
+    # Their own code fills it (`ODDS[sel] = odd`) before pushing the bet.
     odds_by_sel = {sid: leg["oddValue"] for sid, leg in evs.items()}
 
-    # Argument order taken from their builder rather than assumed. For a
-    # multiple they call it with (NUMLINES=count, COMB=1, TYPE=count); for a
-    # single, (1, 1, 1). An accumulator is one bet carrying every selection.
-    tab = "multiples" if n > 1 else "singles"
     betslip = {
         "BETS": [{
-            "BSTYPE": tab,
-            "TAB": tab,
-            "NUMLINES": n if n > 1 else 1,
+            # Integers, not the tab names. A real slip sends 0 for both.
+            "BSTYPE": 0,
+            "TAB": 0,
+            # From their builder: a multiple is (NUMLINES=count, COMB=1,
+            # TYPE=count); a single is (1, 1, 1).
+            "NUMLINES": n,
             "COMB": 1,
-            "TYPE": n if n > 1 else 1,
+            "TYPE": n,
             # A booking carries no money - it is a shareable slip, not a bet.
-            # Their own UI books with zeros in all of these.
             "STAKE": 0, "POTWINMIN": 0, "POTWINMAX": 0,
             "BONUSMIN": 0, "BONUSMAX": 0,
-            "ODDMIN": round(odds_total, 2), "ODDMAX": round(odds_total, 2),
+            # Not rounded. A real slip sends the full product (49.9375 for
+            # 4.25 x 11.75), and rounding it is a mismatch their validator can
+            # see.
+            "ODDMIN": odds_total, "ODDMAX": odds_total,
             "ODDS": odds_by_sel,
             "FIXED": {},
         }],
@@ -277,22 +310,27 @@ def generate_code(selections, timeout=15):
 
 
 def _find_code(body):
-    """Pull the booking number out, wherever they put it.
+    """Pull the booking number out of a successful response.
 
-    Deliberately not pinned to one path. Their response shape is undocumented
-    and the one thing worth being robust about is finding a code that is
-    plainly there.
+    It is `data[0].RIS` - seven characters, the same shape as the codes their
+    own site shows and as the ones tipsters post. Not COUPONCODE, which sits
+    beside it and is an internal UUID: sending somebody that would give them a
+    code Bet9ja will not load.
+
+    Success is `status: 1` with an empty error. A refusal comes back with
+    status -1 and a message, and must not be mistaken for a code.
     """
     if not isinstance(body, dict):
         return None
-    for path in (("D", "BOOKINGNUMBER"), ("D", "CODE"), ("data", "code"),
-                 ("BOOKINGNUMBER",), ("CODE",)):
-        cur = body
-        for step in path:
-            if not isinstance(cur, dict) or step not in cur:
-                cur = None
-                break
-            cur = cur[step]
-        if isinstance(cur, (str, int)) and str(cur).strip():
-            return str(cur).strip()
+    if body.get("status") != 1:
+        return None
+    rows = body.get("data")
+    if isinstance(rows, dict):
+        rows = [rows]
+    for row in (rows or []):
+        if not isinstance(row, dict):
+            continue
+        ris = row.get("RIS")
+        if isinstance(ris, (str, int)) and str(ris).strip():
+            return str(ris).strip()
     return None
