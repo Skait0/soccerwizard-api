@@ -6,6 +6,7 @@ import threading
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from curl_cffi import requests
+import bet9ja
 from curl_cffi.requests import RequestsError
 
 app = Flask(__name__)
@@ -628,6 +629,36 @@ def get_fixtures():
     # store it as the answer.
     return jsonify({"success": False, "warming": True,
                     "error": "fixtures not loaded yet", "matches": []}), 503
+
+
+# --- Bet9ja (odds only, for now) -------------------------------------------
+# Bet9ja rivals SportyBet for users in Nigeria, and a booking code is only any
+# use to somebody who holds an account with the bookmaker that issued it - so
+# this is a second source alongside, not a replacement.
+#
+# Odds are done and verified against their live feed. Booking is NOT wired up:
+# bet9ja.generate_code builds what their own bundle says a betslip should look
+# like, and their API still answers 500, which means one or more fields are
+# wrong in a way the response does not explain. It is deliberately not exposed
+# until it can be tested end to end. See bet9ja.py.
+@app.route('/api/bet9ja/fixtures', methods=['GET'])
+def get_bet9ja_fixtures():
+    """Odds for one Bet9ja league. `league` is their SCHID (492 = EPL).
+
+    Uncached on purpose while this is new: it is not on the hot path yet, and
+    caching a source nobody depends on only hides how it behaves.
+    """
+    try:
+        league = int(request.args.get("league", "492"))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "league must be a number"}), 400
+    try:
+        events = bet9ja.fetch_league(league)
+    except Exception as ex:                      # noqa: BLE001 - user-facing path
+        report("bet9ja fixtures failed", league=league, error=str(ex))
+        return jsonify({"success": False, "error": str(ex), "matches": {}}), 502
+    return jsonify({"success": True, "league": league,
+                    "count": len(events), "matches": events})
 
 
 @app.route('/api/livescores', methods=['GET'])
