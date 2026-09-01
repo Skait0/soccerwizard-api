@@ -767,21 +767,38 @@ def api_bet9ja_code():
     # team goals or miss most of the competitions. A slip is a handful of legs,
     # so a request each is cheap, and the odds are read fresh at book time
     # anyway because Bet9ja rejects a slip whose prices have moved.
-    resolved = []
+    # Every bad leg, not the first one.
+    #
+    # This used to return on the first pick Bet9ja would not price, which told
+    # the caller about one leg out of forty and gave it nothing to retry with:
+    # drop that leg, resend, discover the next one, forty round trips. The
+    # SportyBet route has answered with a named `unbookable` list since the
+    # "no market there" incident and the client already knows how to drop
+    # exactly those and try again. Same shape here, so one client path serves
+    # both bookmakers.
+    resolved, bad = [], []
     try:
         for p in picks:
             ev = bet9ja.fetch_event(p.get("eventId"))
-            if not ev:
-                return jsonify({"success": False,
-                                "error": "event %s not on Bet9ja" % p.get("eventId")}), 409
-            if p.get("code") not in ev["raw"]:
-                return jsonify({"success": False,
-                                "error": "Bet9ja is not pricing %s on event %s"
-                                         % (p.get("code"), p.get("eventId"))}), 409
+            if not ev or p.get("code") not in (ev.get("raw") or {}):
+                bad.append({"eventId": p.get("eventId"), "prediction": p.get("code")})
+                continue
             resolved.append({"event": ev, "code": p.get("code")})
     except Exception as ex:                      # noqa: BLE001 - user-facing path
         report("bet9ja odds fetch failed", error=str(ex))
         return jsonify({"success": False, "error": str(ex)}), 502
+
+    if bad:
+        report("booking: picks with no market at Bet9ja",
+               bad_legs=len(bad), total_legs=len(picks),
+               markets=", ".join(sorted({str(b["prediction"]) for b in bad})),
+               events=", ".join(sorted({str(b["eventId"]) for b in bad})[:10]))
+        return jsonify({
+            "success": False,
+            "message": "Bet9ja rejected the slip",
+            "detail": "no market there for %d of %d picks" % (len(bad), len(picks)),
+            "unbookable": bad,
+        }), 400
 
     out = bet9ja.generate_code(resolved)
     if out.get("code"):

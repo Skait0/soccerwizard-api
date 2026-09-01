@@ -583,3 +583,56 @@ class Bet9jaRefreshGuards(unittest.TestCase):
         finally:
             server.bet9ja.all_fixtures = real
         self.assertEqual(len(server._cache_get("bet9ja", server._BET9JA_CACHE)["data"]), 100)
+
+
+class Bet9jaRejectsLikeSportyBet(unittest.TestCase):
+    """One bad leg must name every bad leg, not just itself.
+
+    The route used to return on the first pick Bet9ja would not price. That
+    told the caller about one leg out of forty and gave it nothing to retry
+    with. The SportyBet route has answered with a named `unbookable` list since
+    the "no market there" incident, and the client drops exactly those and
+    retries - so both bookmakers answer in the same shape or that path only
+    works for one of them.
+    """
+
+    def _post(self, priced):
+        """priced: {eventId: [codes Bet9ja will take]}"""
+        real_ev, real_gen = server.bet9ja.fetch_event, server.bet9ja.generate_code
+        server.bet9ja.fetch_event = lambda eid: (
+            {"eventId": eid, "raw": {c: "2.00" for c in priced.get(str(eid), [])}}
+            if str(eid) in priced else None)
+        server.bet9ja.generate_code = lambda sels: {"code": "B9CODE", "legs": len(sels)}
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/bet9ja/booking-code", json={"selections": [
+                    {"eventId": "1", "code": "1X"},
+                    {"eventId": "2", "code": "HOME_OVER_0.5"},
+                    {"eventId": "3", "code": "OVER_1.5"},
+                ]})
+            return r.status_code, r.get_json()
+        finally:
+            server.bet9ja.fetch_event, server.bet9ja.generate_code = real_ev, real_gen
+
+    def test_every_unpriced_leg_is_named(self):
+        code, body = self._post({"1": ["1X"]})   # 2 and 3 unbookable
+        self.assertEqual(code, 400)
+        self.assertFalse(body["success"])
+        self.assertEqual(body["unbookable"], [
+            {"eventId": "2", "prediction": "HOME_OVER_0.5"},
+            {"eventId": "3", "prediction": "OVER_1.5"},
+        ])
+
+    def test_the_shape_matches_the_sportybet_route(self):
+        _code, body = self._post({"1": ["1X"]})
+        for k in ("success", "message", "detail", "unbookable"):
+            self.assertIn(k, body, k + " is missing, so dropUnbookable cannot read it")
+
+    def test_an_event_bet9ja_does_not_carry_is_unbookable_not_a_crash(self):
+        _code, body = self._post({})             # fetch_event returns None for all
+        self.assertEqual(len(body["unbookable"]), 3)
+
+    def test_a_fully_priced_slip_still_books(self):
+        code, body = self._post({"1": ["1X"], "2": ["HOME_OVER_0.5"], "3": ["OVER_1.5"]})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["code"], "B9CODE")
