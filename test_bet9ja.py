@@ -137,8 +137,9 @@ class FetchEvents(unittest.TestCase):
 
 class FetchLeagueMerges(unittest.TestCase):
     def test_market_groups_are_merged_onto_one_event(self):
-        """The markets we offer are split across groups, and no single group
-        carries them all - so two requests, merged by event."""
+        """On the COUPON route the markets we offer are split across groups
+        and no single group carries them all, so two requests, merged by
+        event. The GID route is different - see TheGidRouteIgnoresMkey."""
         popular = _feed({"0": _event(odds={"S_DC_1X": "2.40"})})
         home_away = _feed({"0": _event(odds={"S_HTS_Y": "1.38",
                                              "S_AWAYSCORE_Y": "1.07"})})
@@ -151,7 +152,7 @@ class FetchLeagueMerges(unittest.TestCase):
             return r
 
         with mock.patch.object(bet9ja.requests, "get", side_effect=fake_get):
-            out = bet9ja.fetch_league(492)
+            out = bet9ja.fetch_league(492, by_group=False)
 
         self.assertEqual(len(calls), len(bet9ja.MARKET_GROUPS))
         row = list(out.values())[0]
@@ -175,7 +176,7 @@ class FetchLeagueMerges(unittest.TestCase):
             return r
 
         with mock.patch.object(bet9ja.requests, "get", side_effect=fake_get):
-            row = list(bet9ja.fetch_league(492).values())[0]
+            row = list(bet9ja.fetch_league(492, by_group=False).values())[0]
         self.assertEqual(set(row["raw"]), set(row["odds"]),
                          "every priced market must also have its wire value")
         self.assertEqual(row["raw"]["HOME_OVER_0.5"], "1.38")
@@ -192,8 +193,24 @@ class Leagues(unittest.TestCase):
         r = mock.Mock(); r.json.return_value = payload
         with mock.patch.object(bet9ja.requests, "get", return_value=r):
             out = bet9ja.leagues()
-        self.assertEqual(out["170880"], {"league": "Premier League", "country": "England"})
-        self.assertEqual(out["1348874"], {"league": "Allsvenskan", "country": "Sweden"})
+        self.assertEqual(out["170880"], {"league": "Premier League",
+                                         "country": "England", "events": 0, "next": ""})
+        self.assertEqual(out["1348874"], {"league": "Allsvenskan",
+                                          "country": "Sweden", "events": 0, "next": ""})
+
+    def test_their_own_event_count_is_kept(self):
+        """The only independent check that a sweep collected what was there.
+        A run that returns 300 events instead of 1,150 raises nothing."""
+        payload = {"D": {"PAL": {"1": {"SG": {"11058": {"SG_DESC": "England", "G": {
+            "170880": {"G_DESC": "Premier League", "NUM": 24,
+                       "D": "2026-09-05 14:00:00"},
+            "170882": {"G_DESC": "Out of season", "NUM": "bad"}}}}}}}}
+        r = mock.Mock(); r.json.return_value = payload
+        with mock.patch.object(bet9ja.requests, "get", return_value=r):
+            out = bet9ja.leagues()
+        self.assertEqual(out["170880"]["events"], 24)
+        self.assertEqual(out["170880"]["next"], "2026-09-05 14:00:00")
+        self.assertEqual(out["170882"]["events"], 0, "a junk count must not raise")
 
     def test_a_dead_catalogue_is_empty_not_an_exception(self):
         with mock.patch.object(bet9ja.requests, "get", side_effect=OSError("nope")):
@@ -387,6 +404,127 @@ class GenerateCode(unittest.TestCase):
         with mock.patch.object(bet9ja.requests, "post",
                                side_effect=OSError("connection reset")):
             self.assertIn("error", bet9ja.generate_code(self.picks))
+
+
+class TheGidRouteIgnoresMkey(unittest.TestCase):
+    """Measured against the live feed, not assumed.
+
+    GetEventsInGroup returns the identical twenty odds keys for MKEY=1 and
+    MKEY=170. Looping the market groups on that route is therefore the same
+    request twice - it was half of a 155-second sweep. The coupon route does
+    honour MKEY, which is why fetch_league still loops there.
+    """
+
+    def _calls(self, **kw):
+        calls = []
+
+        def fake_get(url, **_kw):
+            calls.append(url)
+            r = mock.Mock(); r.json.return_value = _feed({"0": _event()})
+            return r
+
+        with mock.patch.object(bet9ja.requests, "get", side_effect=fake_get):
+            bet9ja.fetch_league(492, **kw)
+        return calls
+
+    def test_the_gid_route_asks_once(self):
+        self.assertEqual(len(self._calls()), 1)
+
+    def test_the_coupon_route_still_asks_per_group(self):
+        self.assertEqual(len(self._calls(by_group=False)),
+                         len(bet9ja.MARKET_GROUPS))
+
+
+class AllFixtures(unittest.TestCase):
+    CAT = {"1": {"league": "Allsvenskan", "country": "Sweden", "events": 2},
+           "2": {"league": "Liga MX", "country": "Mexico", "events": 1}}
+
+    def test_it_reports_their_count_beside_ours(self):
+        """The failure worth catching is a sweep that comes back a third full
+        and raises nothing. Their catalogue is the only outside opinion."""
+        with mock.patch.object(bet9ja, "fetch_league",
+                               side_effect=lambda gid, **kw:
+                               {"a": {"odds": {}}, "b": {"odds": {}}} if gid == "1"
+                               else {"c": {"odds": {}}}):
+            fx, st = bet9ja.all_fixtures(pause=0, catalogue=self.CAT)
+        self.assertEqual(st["expected"], 3)
+        self.assertEqual(st["collected"], 3)
+        self.assertEqual(st["short"], [])
+        self.assertEqual(len(fx), 3)
+
+    def test_a_competition_that_comes_back_short_is_named(self):
+        with mock.patch.object(bet9ja, "fetch_league",
+                               side_effect=lambda gid, **kw:
+                               {} if gid == "1" else {"c": {"odds": {}}}):
+            _fx, st = bet9ja.all_fixtures(pause=0, catalogue=self.CAT)
+        self.assertEqual([s["gid"] for s in st["short"]], ["1"])
+        self.assertEqual(st["short"][0], {"gid": "1", "league": "Allsvenskan",
+                                          "want": 2, "got": 0})
+
+    def test_one_competition_failing_does_not_lose_the_rest(self):
+        def flaky(gid, **kw):
+            if gid == "1":
+                raise OSError("connection reset")
+            return {"c": {"odds": {}}}
+        with mock.patch.object(bet9ja, "fetch_league", side_effect=flaky):
+            fx, st = bet9ja.all_fixtures(pause=0, catalogue=self.CAT)
+        self.assertEqual(st["failed"], ["1"])
+        self.assertEqual(len(fx), 1)
+
+    def test_the_catalogue_names_the_competition(self):
+        with mock.patch.object(bet9ja, "fetch_league",
+                               side_effect=lambda gid, **kw: {"c": {"odds": {}}}):
+            fx, _st = bet9ja.all_fixtures(pause=0, catalogue=self.CAT)
+        row = fx["c"]
+        self.assertTrue(row["league"])
+        self.assertTrue(row["country"])
+        self.assertIn(row["groupId"], self.CAT)
+
+    def test_no_catalogue_is_empty_not_a_crash(self):
+        fx, st = bet9ja.all_fixtures(pause=0, catalogue={})
+        self.assertEqual((fx, st["collected"]), ({}, 0))
+
+
+class RetryTransport(unittest.TestCase):
+    """Ten events went missing from a sweep because their feed closed a
+    connection mid-handshake and an empty competition looks exactly like a
+    competition with no fixtures."""
+
+    def test_a_dropped_connection_is_retried(self):
+        tries = []
+
+        def flaky(url, **kw):
+            tries.append(url)
+            if len(tries) < 3:
+                raise OSError("SSL_connect: Connection closed abruptly")
+            r = mock.Mock(); r.json.return_value = {"ok": True}
+            return r
+
+        with mock.patch.object(bet9ja.requests, "get", side_effect=flaky):
+            with mock.patch.object(bet9ja.time, "sleep"):
+                self.assertEqual(bet9ja._get_json("u"), {"ok": True})
+        self.assertEqual(len(tries), 3)
+
+    def test_it_gives_up_rather_than_retrying_for_ever(self):
+        with mock.patch.object(bet9ja.requests, "get", side_effect=OSError("down")):
+            with mock.patch.object(bet9ja.time, "sleep"):
+                with self.assertRaises(OSError):
+                    bet9ja._get_json("u", attempts=2)
+
+    def test_a_block_page_is_not_retried(self):
+        """A reply that arrives and will not parse is a block page. Asking
+        again from the same IP gets the same block page."""
+        calls = []
+
+        def blocked(url, **kw):
+            calls.append(url)
+            r = mock.Mock(); r.json.side_effect = ValueError("not json")
+            return r
+
+        with mock.patch.object(bet9ja.requests, "get", side_effect=blocked):
+            with self.assertRaises(ValueError):
+                bet9ja._get_json("u")
+        self.assertEqual(len(calls), 1)
 
 
 class TheContainerCanActuallyRunThis(unittest.TestCase):

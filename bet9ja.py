@@ -22,6 +22,7 @@ that produces a rejected payload with nothing to explain it.
 
 import json
 import logging
+import time
 
 # curl_cffi, not requests, and the reason is not style.
 #
@@ -131,6 +132,32 @@ def parse_odds_key(key):
     return parts[0] + "_" + market, parts[2], aux
 
 
+def _get_json(url, timeout=15, attempts=3):
+    """GET and decode, retrying a dropped connection but not a bad reply.
+
+    Under a steady sweep their feed closes a connection mid-handshake roughly
+    once in eighty requests. Unretried that is an empty competition, which is
+    indistinguishable from a competition with no fixtures - ten events went
+    missing from a sweep exactly this way and the run still reported no
+    failures.
+
+    Only the request is retried. A reply that arrives and does not parse is a
+    block page, and asking again from the same IP gets the same block page.
+    """
+    last = None
+    for i in range(attempts):
+        try:
+            r = requests.get(url, headers=_headers(), timeout=timeout,
+                             impersonate=IMPERSONATE)
+        except Exception as ex:                      # noqa: BLE001 - transport
+            last = ex
+            if i + 1 < attempts:
+                time.sleep(0.4 * (i + 1))
+            continue
+        return r.json()
+    raise last
+
+
 def fetch_events(league_id, group=POPULAR, timeout=15, by_group=True):
     """Every event in one league, for one market group.
 
@@ -155,9 +182,7 @@ def fetch_events(league_id, group=POPULAR, timeout=15, by_group=True):
         url = ("%s/GetEventsInCouponV2?SCHID=%s&DISP=0&MKEY=%s"
                % (BASE, league_id, group))
     try:
-        r = requests.get(url, headers=_headers(), timeout=timeout,
-                         impersonate=IMPERSONATE)
-        data = r.json()
+        data = _get_json(url, timeout)
     except Exception as ex:
         log.warning("bet9ja events %s/%s failed: %s", league_id, group, ex)
         return {}
@@ -210,17 +235,21 @@ def fetch_events(league_id, group=POPULAR, timeout=15, by_group=True):
 
 
 def leagues(timeout=20):
-    """Every soccer competition Bet9ja carries: {gid: {"league", "country"}}.
+    """Every soccer competition Bet9ja carries.
 
-    Their whole catalogue in one call - 75 countries - so fetch_league can be
-    pointed at anything without a lookup table. Named by GID, which is what
-    GetEventsInGroup wants.
+    {gid: {"league", "country", "events", "next"}} - their whole catalogue in
+    one call, 75 countries, so fetch_league can be pointed at anything without
+    a lookup table. Named by GID, which is what GetEventsInGroup wants.
+
+    `events` is their own count for the competition and `next` its earliest
+    kick-off. Both come free with the catalogue and both are worth having:
+    the count is the only independent check that a sweep collected what was
+    there, and the date lets one skip a competition whose season has not
+    started without spending a request to find that out.
     """
     try:
-        r = requests.get("%s/GetSports?SPORTID=1&DISP=0" % BASE,
-                         headers=_headers(), timeout=timeout,
-                         impersonate=IMPERSONATE)
-        pal = r.json().get("D", {}).get("PAL", {})
+        pal = (_get_json("%s/GetSports?SPORTID=1&DISP=0" % BASE, timeout)
+               .get("D", {}).get("PAL", {}))
     except Exception as ex:
         log.warning("bet9ja league list failed: %s", ex)
         return {}
@@ -230,18 +259,96 @@ def leagues(timeout=20):
     for country in _values(soccer.get("SG")):
         name = country.get("SG_DESC") or ""
         for gid, grp in _items(country.get("G")):
-            out[str(gid)] = {"league": grp.get("G_DESC") or "", "country": name}
+            try:
+                num = int(grp.get("NUM") or 0)
+            except (TypeError, ValueError):
+                num = 0
+            out[str(gid)] = {"league": grp.get("G_DESC") or "", "country": name,
+                             "events": num, "next": grp.get("D") or ""}
     return out
 
 
-def fetch_league(league_id, timeout=15, by_group=True):
-    """One league across every market group we care about, merged.
+def all_fixtures(timeout=15, pause=0.05, catalogue=None):
+    """Every soccer event Bet9ja is pricing, across every competition.
 
-    Two requests rather than one, because the markets we offer are split
-    across groups and there is no group that carries them all.
+    The site matches a fixture to a bookmaker event on team names and kick-off
+    time, never on league, so what it needs is one flat bag - not 47 lookups
+    against a league mapping we would then have to maintain by hand.
+
+    There is no bulk endpoint. GetEventsInGroup takes one GROUPID - a
+    comma-separated list returns an empty group - so this is one request per
+    competition, 171 of them and about eighty seconds. That is fine in a
+    background refresher and hopeless in a request handler, which is why
+    nothing calls this from a route.
+
+    What comes back is 1X2, double chance and the over/under lines. NOT team
+    goals: that route ignores MKEY (see fetch_league). Team over 0.5 is one of
+    the site's four default markets, so a Bet9ja price for it is unavailable
+    here and is read per event at booking time instead. Matching does not care
+    - it pairs on names and kick-off - and an unpriced leg still books.
+
+    Returns (fixtures, stats). `stats` carries their own event count beside
+    ours, because the failure worth catching here is not an exception - it is a
+    sweep that returns 300 events instead of 1,150 and looks entirely healthy.
     """
+    cat = catalogue if catalogue is not None else leagues(timeout=timeout)
+    stats = {"competitions": len(cat), "expected": 0, "collected": 0,
+             "failed": [], "short": []}
+    if not cat:
+        log.warning("bet9ja sweep: no catalogue, nothing to fetch")
+        return {}, stats
+
+    out = {}
+    for gid, meta in cat.items():
+        stats["expected"] += meta.get("events") or 0
+        try:
+            rows = fetch_league(gid, timeout=timeout)
+        except Exception as ex:                      # noqa: BLE001 - one league
+            # One competition failing is not a reason to lose the other 170.
+            log.warning("bet9ja sweep: %s (%s) failed: %s",
+                        gid, meta.get("league"), ex)
+            stats["failed"].append(gid)
+            continue
+        # "Nothing came back" and "they are not pricing anything here" look
+        # identical from the return value, and only one of them is a problem.
+        # The catalogue said how many events this competition has, so compare.
+        want = meta.get("events") or 0
+        if len(rows) < want:
+            stats["short"].append({"gid": gid, "league": meta.get("league"),
+                                   "want": want, "got": len(rows)})
+        for eid, row in rows.items():
+            # The catalogue names the competition better than the event does,
+            # and the site shows this.
+            row.setdefault("league", meta.get("league") or "")
+            if not row.get("country"):
+                row["country"] = meta.get("country") or ""
+            row["groupId"] = str(gid)
+            out[eid] = row
+        if pause:
+            # Not politeness for its own sake: a tight loop over their feed
+            # started closing connections mid-handshake while this was being
+            # measured.
+            time.sleep(pause)
+
+    stats["collected"] = len(out)
+    return out, stats
+
+
+def fetch_league(league_id, timeout=15, by_group=True):
+    """One league across every market group that route actually serves.
+
+    The coupon route honours MKEY, so the markets we offer are split across
+    two groups there and both have to be asked for and merged.
+
+    GetEventsInGroup does NOT. MKEY=1 and MKEY=170 return byte-for-byte the
+    same twenty odds keys, so asking twice is the same request twice - it cost
+    half of a 155-second sweep before this was measured. It also means team
+    goals are simply not reachable by GID: they come from fetch_event, which
+    is what the booking route uses anyway.
+    """
+    groups = MARKET_GROUPS if not by_group else [POPULAR]
     merged = {}
-    for group in MARKET_GROUPS:
+    for group in groups:
         for eid, row in fetch_events(league_id, group, timeout, by_group).items():
             if eid in merged:
                 # Both maps, or a market from the second group is priced for
@@ -278,9 +385,7 @@ def fetch_event(event_id, timeout=15):
     """
     url = "%s/GetEvent?EVENTID=%s&DISP=0" % (BASE, event_id)
     try:
-        r = requests.get(url, headers=_headers(), timeout=timeout,
-                         impersonate=IMPERSONATE)
-        ev = r.json().get("D") or {}
+        ev = _get_json(url, timeout).get("D") or {}
     except Exception as ex:
         log.warning("bet9ja event %s failed: %s", event_id, ex)
         return None

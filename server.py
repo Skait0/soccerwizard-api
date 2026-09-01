@@ -125,6 +125,11 @@ _FIXTURES_CACHE = {"at": 0, "data": None}
 _FIXTURES_TTL = 45 * 60
 _LIVE_CACHE = {"at": 0, "data": None}
 _LIVE_TTL = 30
+# Bet9ja has no bulk endpoint: one request per competition, 170 of them, about
+# two minutes. Same reasoning as above - the thing to optimise is how rarely we
+# ask. Their fixtures move no faster than SportyBet's.
+_BET9JA_CACHE = {"at": 0, "data": None}
+_BET9JA_TTL = 45 * 60
 
 # --- Shared cache (opt-in) -------------------------------------------------
 # With one process the in-memory dicts above are fine. Set REDIS_URL (add a
@@ -616,6 +621,71 @@ def _start_fixtures_thread():
 _start_fixtures_thread()
 
 
+# --- Bet9ja fixtures -------------------------------------------------------
+# The same pattern as above and for the same reasons, with one addition: Bet9ja
+# publishes its own event count per competition, so a sweep can be checked
+# against an outside opinion rather than only against the last one we stored.
+# That matters here more than it does for SportyBet. Bet9ja answers a datacentre
+# with a block page rather than an error, which is how these routes spent the
+# first hour of their life reporting a successful fetch of nothing.
+_BET9JA_LOCK = threading.Lock()
+
+def _refresh_bet9ja_once():
+    try:
+        fixtures, stats = bet9ja.all_fixtures()
+    except Exception as ex:                          # noqa: BLE001 - background
+        log.warning("bet9ja refresh failed, keeping previous copy: %s", ex)
+        return False
+
+    expected = stats.get("expected") or 0
+    got = len(fixtures)
+    if not fixtures:
+        log.warning("bet9ja refresh returned nothing; keeping previous copy")
+        return False
+    # Their own catalogue said how many events exist. Coming back well under
+    # that is a throttled or blocked sweep, not a thin day, and storing it
+    # would quietly shrink the board.
+    if expected and got < expected * 0.9:
+        log.warning("bet9ja refresh collected %d of %d they list; keeping "
+                    "previous copy (failed=%d short=%d)", got, expected,
+                    len(stats.get("failed") or []), len(stats.get("short") or []))
+        return False
+    prev = _cache_get("bet9ja", _BET9JA_CACHE)
+    prev_n = len((prev or {}).get("data") or {})
+    if prev_n and got < prev_n * 0.8:
+        log.warning("bet9ja refresh returned %d against %d stored, looks "
+                    "truncated; keeping the fuller copy", got, prev_n)
+        return False
+
+    _cache_put("bet9ja", _BET9JA_CACHE, fixtures)
+    log.info("bet9ja refreshed: %d events of %d listed, %d competitions, "
+             "%d failed", got, expected, stats.get("competitions"),
+             len(stats.get("failed") or []))
+    for s in (stats.get("short") or [])[:5]:
+        log.info("bet9ja short: %s wanted %s got %s",
+                 s.get("league"), s.get("want"), s.get("got"))
+    return True
+
+def _bet9ja_loop():
+    entry = _cache_get("bet9ja", _BET9JA_CACHE)
+    if entry and entry.get("data"):
+        age = time.time() - entry["at"]
+        if age < _BET9JA_TTL:
+            time.sleep(_BET9JA_TTL - age)
+    while True:
+        ok = _refresh_bet9ja_once()
+        time.sleep(_BET9JA_TTL if ok else 300)
+
+def _start_bet9ja_thread():
+    if not _BET9JA_LOCK.acquire(blocking=False):
+        return
+    t = threading.Thread(target=_bet9ja_loop, name="bet9ja-refresh", daemon=True)
+    t.start()
+    log.info("bet9ja refresher started (every %dm)", _BET9JA_TTL // 60)
+
+_start_bet9ja_thread()
+
+
 @app.route('/api/fixtures', methods=['GET'])
 def get_fixtures():
     entry = _cache_get("fixtures", _FIXTURES_CACHE)
@@ -641,22 +711,39 @@ def get_fixtures():
 # See bet9ja.py for the fields that had to be exact.
 @app.route('/api/bet9ja/fixtures', methods=['GET'])
 def get_bet9ja_fixtures():
-    """Odds for one Bet9ja league. `league` is their SCHID (492 = EPL).
+    """Every Bet9ja event, served from the background sweep.
 
-    Uncached on purpose while this is new: it is not on the hot path yet, and
-    caching a source nobody depends on only hides how it behaves.
+    No `league` argument: the site pairs a fixture to a bookmaker event on team
+    names and kick-off time, never on competition, so what it wants is one flat
+    bag. Matching by league would mean maintaining a mapping from our 47
+    leagues to their GIDs by hand, and buying nothing with it.
+
+    `?league={gid}` still fetches a single competition live, which is for
+    debugging one league rather than for the site.
     """
-    try:
-        league = int(request.args.get("league", "492"))
-    except (TypeError, ValueError):
-        return jsonify({"success": False, "error": "league must be a number"}), 400
-    try:
-        events = bet9ja.fetch_league(league)
-    except Exception as ex:                      # noqa: BLE001 - user-facing path
-        report("bet9ja fixtures failed", league=league, error=str(ex))
-        return jsonify({"success": False, "error": str(ex), "matches": {}}), 502
-    return jsonify({"success": True, "league": league,
-                    "count": len(events), "matches": events})
+    gid = request.args.get("league")
+    if gid:
+        try:
+            events = bet9ja.fetch_league(int(gid))
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "league must be a number"}), 400
+        except Exception as ex:                  # noqa: BLE001 - user-facing path
+            report("bet9ja fixtures failed", league=gid, error=str(ex))
+            return jsonify({"success": False, "error": str(ex), "matches": {}}), 502
+        return jsonify({"success": True, "league": int(gid), "cached": False,
+                        "count": len(events), "matches": events})
+
+    entry = _cache_get("bet9ja", _BET9JA_CACHE)
+    data = (entry or {}).get("data")
+    if not data:
+        # The sweep takes two minutes, so doing it here would time out. Say so
+        # rather than returning an empty bag with success: true - that lie is
+        # what made this integration's first outage invisible.
+        return jsonify({"success": False, "count": 0, "matches": {},
+                        "error": "bet9ja fixtures not loaded yet"}), 503
+    return jsonify({"success": True, "cached": True,
+                    "ageSeconds": int(time.time() - entry["at"]),
+                    "count": len(data), "matches": data})
 
 
 @app.route('/api/bet9ja/booking-code', methods=['POST'])

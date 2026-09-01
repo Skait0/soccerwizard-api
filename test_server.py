@@ -468,3 +468,118 @@ class FailuresAreReported(unittest.TestCase):
         finally:
             server._sentry = real
             server._FIXTURES_CACHE.clear()
+
+
+class Bet9jaFixturesRoute(unittest.TestCase):
+    """The route serves the background sweep, and says so when it has none.
+
+    An empty bag with success: true is exactly how the Bet9ja integration spent
+    its first hour live: the sweep was getting a block page, every league came
+    back empty, and the route reported a healthy fetch of nothing. A 503 is the
+    honest answer and the one that shows up in monitoring.
+    """
+
+    def setUp(self):
+        server._BET9JA_CACHE.clear()
+        server._BET9JA_CACHE.update({"at": 0, "data": None})
+
+    tearDown = setUp
+
+    def test_no_sweep_yet_is_a_503_not_an_empty_success(self):
+        with server.app.test_client() as c:
+            r = c.get("/api/bet9ja/fixtures")
+        self.assertEqual(r.status_code, 503)
+        self.assertFalse(r.get_json()["success"])
+
+    def test_it_serves_the_swept_bag(self):
+        server._cache_put("bet9ja", server._BET9JA_CACHE,
+                          {"1": {"teams": "A - B"}, "2": {"teams": "C - D"}})
+        with server.app.test_client() as c:
+            r = c.get("/api/bet9ja/fixtures")
+        body = r.get_json()
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(body["count"], 2)
+        self.assertTrue(body["cached"])
+        self.assertIn("ageSeconds", body)
+
+    def test_the_route_never_sweeps_on_the_request_path(self):
+        """Two minutes of work behind a web request is a timeout, not a page."""
+        called = {"n": 0}
+        real = server.bet9ja.all_fixtures
+        server.bet9ja.all_fixtures = lambda *a, **k: called.__setitem__("n", 1)
+        try:
+            with server.app.test_client() as c:
+                c.get("/api/bet9ja/fixtures")
+        finally:
+            server.bet9ja.all_fixtures = real
+        self.assertEqual(called["n"], 0)
+
+    def test_a_single_competition_is_still_fetchable_for_debugging(self):
+        real = server.bet9ja.fetch_league
+        server.bet9ja.fetch_league = lambda gid, **k: {"9": {"teams": "E - F"}}
+        try:
+            with server.app.test_client() as c:
+                r = c.get("/api/bet9ja/fixtures?league=1348874")
+        finally:
+            server.bet9ja.fetch_league = real
+        body = r.get_json()
+        self.assertEqual(body["league"], 1348874)
+        self.assertEqual(body["count"], 1)
+        self.assertFalse(body["cached"])
+
+    def test_a_junk_league_is_a_400(self):
+        with server.app.test_client() as c:
+            r = c.get("/api/bet9ja/fixtures?league=notanumber")
+        self.assertEqual(r.status_code, 400)
+
+
+class Bet9jaRefreshGuards(unittest.TestCase):
+    """A sweep that comes back short must not replace a fuller one."""
+
+    def setUp(self):
+        server._BET9JA_CACHE.clear()
+        server._BET9JA_CACHE.update({"at": 0, "data": None})
+
+    tearDown = setUp
+
+    def _sweep(self, fixtures, expected):
+        real = server.bet9ja.all_fixtures
+        server.bet9ja.all_fixtures = lambda *a, **k: (
+            fixtures, {"expected": expected, "collected": len(fixtures),
+                       "competitions": 170, "failed": [], "short": []})
+        try:
+            return server._refresh_bet9ja_once()
+        finally:
+            server.bet9ja.all_fixtures = real
+
+    def test_a_full_sweep_is_stored(self):
+        self.assertTrue(self._sweep({str(i): {} for i in range(100)}, 100))
+        self.assertEqual(len(server._cache_get("bet9ja", server._BET9JA_CACHE)["data"]), 100)
+
+    def test_far_under_their_own_count_is_refused(self):
+        # Their catalogue is an outside opinion; a third of it is a block, not
+        # a quiet day.
+        self.assertFalse(self._sweep({str(i): {} for i in range(30)}, 100))
+        self.assertIsNone(server._BET9JA_CACHE["data"])
+
+    def test_nothing_at_all_is_refused(self):
+        self.assertFalse(self._sweep({}, 100))
+
+    def test_a_shrunken_sweep_does_not_replace_a_fuller_one(self):
+        self._sweep({str(i): {} for i in range(100)}, 100)
+        # Their count drops with it, so only the previous-copy guard can catch
+        # this one.
+        self.assertFalse(self._sweep({str(i): {} for i in range(50)}, 50))
+        self.assertEqual(len(server._cache_get("bet9ja", server._BET9JA_CACHE)["data"]), 100)
+
+    def test_a_raising_sweep_keeps_the_previous_copy(self):
+        self._sweep({str(i): {} for i in range(100)}, 100)
+        real = server.bet9ja.all_fixtures
+        def boom(*a, **k):
+            raise OSError("bet9ja down")
+        server.bet9ja.all_fixtures = boom
+        try:
+            self.assertFalse(server._refresh_bet9ja_once())
+        finally:
+            server.bet9ja.all_fixtures = real
+        self.assertEqual(len(server._cache_get("bet9ja", server._BET9JA_CACHE)["data"]), 100)
