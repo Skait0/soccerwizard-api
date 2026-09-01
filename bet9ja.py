@@ -7,8 +7,9 @@ needs both, not a better one.
 
 It is the easier of the two integrations, which was not the expectation:
 
-  odds      a plain GET; SportyBet needs curl_cffi faking a Chrome TLS
-            fingerprint, this needs a Referer header and nothing else
+  odds      a GET with a Referer; no auth, no cookie, no token. It does need
+            curl_cffi's Chrome TLS fingerprint, same as SportyBet, but only
+            from a datacentre - see the import below
   markets   self-describing keys ("S_DC_1X"); SportyBet needs a hand-built
             table mapping (marketId, outcomeId, specifier) triples
   booking   a form POST, anonymous, same as SportyBet's orders/share
@@ -22,9 +23,22 @@ that produces a rejected payload with nothing to explain it.
 import json
 import logging
 
-import requests
+# curl_cffi, not requests, and the reason is not style.
+#
+# Plain requests works perfectly from a laptop and gets a block page from a
+# datacentre - Bet9ja answered Railway with HTML, which surfaced as "Expecting
+# value: line 1 column 1" and an empty fixture list on a route that still
+# reported success. Nothing in local testing can catch that: the whole
+# difference is which IP asks. SportyBet needed the same treatment, which is
+# why curl_cffi was already a dependency here.
+#
+# IMPERSONATE goes on every call. Sending it only on the ones that seemed to
+# need it is how you end up debugging this twice.
+from curl_cffi import requests
 
 log = logging.getLogger(__name__)
+
+IMPERSONATE = "chrome120"
 
 BASE = "https://sports.bet9ja.com/desktop/feapi/PalimpsestAjax"
 BOOK_URL = "https://apigw.bet9ja.com/sportsbook/placebet/BookABetV2"
@@ -141,7 +155,8 @@ def fetch_events(league_id, group=POPULAR, timeout=15, by_group=True):
         url = ("%s/GetEventsInCouponV2?SCHID=%s&DISP=0&MKEY=%s"
                % (BASE, league_id, group))
     try:
-        r = requests.get(url, headers=_headers(), timeout=timeout)
+        r = requests.get(url, headers=_headers(), timeout=timeout,
+                         impersonate=IMPERSONATE)
         data = r.json()
     except Exception as ex:
         log.warning("bet9ja events %s/%s failed: %s", league_id, group, ex)
@@ -203,7 +218,8 @@ def leagues(timeout=20):
     """
     try:
         r = requests.get("%s/GetSports?SPORTID=1&DISP=0" % BASE,
-                         headers=_headers(), timeout=timeout)
+                         headers=_headers(), timeout=timeout,
+                         impersonate=IMPERSONATE)
         pal = r.json().get("D", {}).get("PAL", {})
     except Exception as ex:
         log.warning("bet9ja league list failed: %s", ex)
@@ -262,7 +278,8 @@ def fetch_event(event_id, timeout=15):
     """
     url = "%s/GetEvent?EVENTID=%s&DISP=0" % (BASE, event_id)
     try:
-        r = requests.get(url, headers=_headers(), timeout=timeout)
+        r = requests.get(url, headers=_headers(), timeout=timeout,
+                         impersonate=IMPERSONATE)
         ev = r.json().get("D") or {}
     except Exception as ex:
         log.warning("bet9ja event %s failed: %s", event_id, ex)
@@ -384,7 +401,7 @@ def generate_code(selections, timeout=15):
         r = requests.post(BOOK_URL, data={"BETSLIP": json.dumps(betslip)},
                           headers=_headers({
                               "Content-Type": "application/x-www-form-urlencoded"}),
-                          timeout=timeout)
+                          timeout=timeout, impersonate=IMPERSONATE)
         body = r.json()
     except Exception as ex:
         log.warning("bet9ja booking failed: %s", ex)

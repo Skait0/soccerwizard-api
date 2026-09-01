@@ -4,6 +4,7 @@ API rejects. Zero external deps (stdlib unittest), no network.
 Run:  python -m unittest test_bet9ja -v
 """
 import json
+import re
 import unittest
 from unittest import mock
 
@@ -294,7 +295,7 @@ class GenerateCode(unittest.TestCase):
     def _posted(self, response):
         seen = {}
 
-        def fake_post(url, data=None, headers=None, timeout=None):
+        def fake_post(url, data=None, headers=None, timeout=None, **kw):
             seen["url"] = url
             seen["slip"] = json.loads(data["BETSLIP"])
             r = mock.Mock(); r.json.return_value = response
@@ -333,7 +334,7 @@ class GenerateCode(unittest.TestCase):
         ev2 = dict(self.ev); ev2["slotId"] = "8"; ev2["eventId"] = "999"
         seen = {}
 
-        def fake_post(url, data=None, headers=None, timeout=None):
+        def fake_post(url, data=None, headers=None, timeout=None, **kw):
             seen["slip"] = json.loads(data["BETSLIP"])
             r = mock.Mock(); r.json.return_value = {"D": {"BOOKINGNUMBER": "X"}}
             return r
@@ -386,6 +387,76 @@ class GenerateCode(unittest.TestCase):
         with mock.patch.object(bet9ja.requests, "post",
                                side_effect=OSError("connection reset")):
             self.assertIn("error", bet9ja.generate_code(self.picks))
+
+
+class TheContainerCanActuallyRunThis(unittest.TestCase):
+    """Both halves of the outage on 1 Sep 2026, which cost 42 minutes.
+
+    bet9ja.py imported requests, requirements.txt did not list it, and the
+    module was on my machine as someone else's transitive dependency. Every
+    test passed. Every live booking worked. Gunicorn could not import
+    server.py and the whole API - live scores, odds, both bookmakers - was
+    down from the first Bet9ja deploy.
+
+    Then, with the import fixed, the routes came back reporting success and
+    returning nothing, because Bet9ja serves a datacentre IP an HTML block
+    page. Only curl_cffi's TLS fingerprint gets JSON. Neither failure is
+    reachable from a laptop, so both need asserting rather than testing.
+    """
+
+    def _imports(self, path):
+        """Top-level `import x` / `from x import` names in one module."""
+        import ast
+        with open(path, encoding="utf8") as fh:
+            tree = ast.parse(fh.read())
+        out = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                out.update(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                out.add(node.module.split(".")[0])
+        return out
+
+    def test_every_third_party_import_is_declared(self):
+        import sys, os
+        with open("requirements.txt", encoding="utf8") as fh:
+            declared = {re.split(r"[\[<>=!;\s]", ln.strip())[0].lower().replace("-", "_")
+                        for ln in fh if ln.strip() and not ln.startswith("#")}
+        # flask-cors and sentry-sdk[flask] are imported as flask_cors and
+        # sentry_sdk; stripping the extras and folding dashes to underscores
+        # above already reconciles those, so there is no allowlist here. An
+        # allowlist is how this test would quietly stop checking the very
+        # packages it names.
+        ours = {"bet9ja", "server", "generate_code"}
+        for mod in ("server.py", "bet9ja.py", "generate_code.py"):
+            for name in self._imports(mod):
+                if name in ours or name in sys.stdlib_module_names:
+                    continue
+                self.assertIn(
+                    name.lower(), declared,
+                    "%s imports %r and requirements.txt does not list it - "
+                    "the container will fail to boot even though every test "
+                    "here passes" % (mod, name))
+
+    def test_bet9ja_does_not_use_plain_requests(self):
+        with open("bet9ja.py", encoding="utf8") as fh:
+            src = fh.read()
+        self.assertIn("from curl_cffi import requests", src)
+        self.assertNotRegex(
+            src, r"(?m)^import requests\b",
+            "plain requests gets an HTML block page from a datacentre; it "
+            "works locally, which is what makes it dangerous")
+
+    def test_every_outbound_call_impersonates(self):
+        """A call added without impersonate= works on a laptop and returns an
+        empty result in production, on a route that still reports success."""
+        with open("bet9ja.py", encoding="utf8") as fh:
+            src = fh.read()
+        calls = len(re.findall(r"\brequests\.(?:get|post)\(", src))
+        marked = len(re.findall(r"\bimpersonate=IMPERSONATE\b", src))
+        self.assertEqual(calls, marked,
+                         "%d outbound calls but %d carry impersonate=" %
+                         (calls, marked))
 
 
 if __name__ == "__main__":
