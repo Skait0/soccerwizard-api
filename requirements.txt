@@ -4,3 +4,4 @@ curl_cffi
 gunicorn
 sentry-sdk[flask]
 redis
+requests
