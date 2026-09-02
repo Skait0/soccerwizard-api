@@ -100,6 +100,36 @@ MARKET_MAP = {
     "OVER_3.5":      ("S_OU@3.5_O", POPULAR),
     "HOME_OVER_0.5": ("S_HTS_Y", HOME_AWAY),
     "AWAY_OVER_0.5": ("S_AWAYSCORE_Y", HOME_AWAY),
+    # Four markets the site offers and this map did not carry, so the booking
+    # route refused them on every fixture: it rejects a leg whose code is absent
+    # from here, however well Bet9ja prices it. Both-to-score is ON BY DEFAULT
+    # in the builder, so most Bet9ja slips have been quietly losing that leg.
+    #
+    # Keys read off GetEvent?EVENTID=, which returns 771 of them for one game.
+    # The group is only meaningful to the coupon route; these are unreachable by
+    # GID either way and come from fetch_event, which is what booking uses. They
+    # are filed under groups already fetched so MARKET_GROUPS does not grow and
+    # the sweep does not get slower.
+    "GG":            ("S_GGNG_Y", POPULAR),
+    "FH_OVER_0.5":   ("S_OU1T@0.5_O", POPULAR),
+    "HOME_OVER_1.5": ("S_HAOU@1.5_OH", HOME_AWAY),
+    "AWAY_OVER_1.5": ("S_HAOU@1.5_OA", HOME_AWAY),
+    # The other side of each line. Nobody bets these here - the builders offer
+    # only the over - but server.py maps them for SportyBet and uses them to
+    # DE-VIG: over and under together give the bookmaker's own implied
+    # probability with the margin taken out, which is what blends into ours.
+    # Bet9ja was blend:false purely because these were missing, so its readers
+    # got model prices with no market check at all. Same nine SportyBet has,
+    # all verified present on a live event.
+    "UNDER_1.5":      ("S_OU@1.5_U", POPULAR),
+    "UNDER_2.5":      ("S_OU@2.5_U", POPULAR),
+    "UNDER_3.5":      ("S_OU@3.5_U", POPULAR),
+    "NG":             ("S_GGNG_N", POPULAR),
+    "FH_UNDER_0.5":   ("S_OU1T@0.5_U", POPULAR),
+    "HOME_UNDER_0.5": ("S_HTS_N", HOME_AWAY),
+    "AWAY_UNDER_0.5": ("S_AWAYSCORE_N", HOME_AWAY),
+    "HOME_UNDER_1.5": ("S_HAOU@1.5_UH", HOME_AWAY),
+    "AWAY_UNDER_1.5": ("S_HAOU@1.5_UA", HOME_AWAY),
 }
 
 # The groups we actually need to fetch, derived rather than restated so adding
