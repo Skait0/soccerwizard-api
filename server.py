@@ -776,23 +776,80 @@ def api_bet9ja_code():
     # "no market there" incident and the client already knows how to drop
     # exactly those and try again. Same shape here, so one client path serves
     # both bookmakers.
-    resolved, bad = [], []
+    # THREE DIFFERENT THINGS, which used to be one warning.
+    #
+    # They were logged under a single message, so the one that is a bug and the
+    # one that is simply how Bet9ja works arrived as the same Sentry issue,
+    # counted together, and re-opened it every hour. It got raised to High
+    # priority on 2 September for a slip that was behaving perfectly correctly.
+    #
+    #   not_mapped   MARKET_MAP has no entry for this code, so the route
+    #                refuses the leg on EVERY fixture no matter how well
+    #                Bet9ja prices it. One line fixes it for good. THIS IS THE
+    #                BUG, and it is the only one of the three worth waking up
+    #                for. It cost us both-to-score on every Bet9ja slip once.
+    #
+    #   not_priced   Mapped, and Bet9ja does not price that market on this
+    #                particular game. Verified on 823959654, Spartak Moscow v
+    #                Rodina Moscow: 394 priced keys and team-to-score is not
+    #                among them. No code change can conjure a price that the
+    #                bookmaker is not offering, so the honest answer is to name
+    #                the leg and let the punter drop it - which is what
+    #                happens. Reported at info: it keeps its count and its
+    #                graph without pretending to be a fault.
+    #
+    #   event_gone   Neither. Their API blinked, or the game left the board
+    #                between building the slip and booking it.
+    #
+    # The mapping is checked BEFORE the fetch, so an unmapped leg no longer
+    # costs a request to discover something already known locally.
+    resolved = []
+    unmapped, unpriced, event_gone = [], [], []
     try:
         for p in picks:
-            ev = bet9ja.fetch_event(p.get("eventId"))
-            if not ev or p.get("code") not in (ev.get("raw") or {}):
-                bad.append({"eventId": p.get("eventId"), "prediction": p.get("code")})
+            code = p.get("code")
+            # eventId and prediction are the contract: the site keys its retry
+            # on exactly this pair. `reason` is additive.
+            leg = {"eventId": p.get("eventId"), "prediction": code}
+            if code not in bet9ja.MARKET_MAP:
+                leg["reason"] = "not_mapped"
+                unmapped.append(leg)
                 continue
-            resolved.append({"event": ev, "code": p.get("code")})
+            ev = bet9ja.fetch_event(p.get("eventId"))
+            if not ev:
+                leg["reason"] = "event_gone"
+                event_gone.append(leg)
+                continue
+            if code not in (ev.get("raw") or {}):
+                leg["reason"] = "not_priced"
+                unpriced.append(leg)
+                continue
+            resolved.append({"event": ev, "code": code})
     except Exception as ex:                      # noqa: BLE001 - user-facing path
         report("bet9ja odds fetch failed", error=str(ex))
         return jsonify({"success": False, "error": str(ex)}), 502
 
+    def _detail(legs):
+        return dict(
+            bad_legs=len(legs), total_legs=len(picks),
+            markets=", ".join(sorted({str(b["prediction"]) for b in legs})),
+            events=", ".join(sorted({str(b["eventId"]) for b in legs})[:10]))
+
+    # Separate messages, because Sentry groups by message. One issue per cause
+    # is the whole point: a mapping gap should stand alone in the list instead
+    # of being the third of fourteen events on a mixed issue nobody reads.
+    if unmapped:
+        report("booking: Bet9ja market is not mapped", **_detail(unmapped))
+    if event_gone:
+        report("booking: Bet9ja event would not load", **_detail(event_gone))
+    if unpriced:
+        report("booking: Bet9ja does not price this market on this fixture",
+               level="info", **_detail(unpriced))
+
+    # Order matters only in that the punter sees one list. Everything Bet9ja
+    # will not take is still unbookable, whichever of the three it is.
+    bad = unmapped + event_gone + unpriced
     if bad:
-        report("booking: picks with no market at Bet9ja",
-               bad_legs=len(bad), total_legs=len(picks),
-               markets=", ".join(sorted({str(b["prediction"]) for b in bad})),
-               events=", ".join(sorted({str(b["eventId"]) for b in bad})[:10]))
         return jsonify({
             "success": False,
             "message": "Bet9ja rejected the slip",

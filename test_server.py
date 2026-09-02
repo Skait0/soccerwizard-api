@@ -618,10 +618,14 @@ class Bet9jaRejectsLikeSportyBet(unittest.TestCase):
         code, body = self._post({"1": ["1X"]})   # 2 and 3 unbookable
         self.assertEqual(code, 400)
         self.assertFalse(body["success"])
-        self.assertEqual(body["unbookable"], [
-            {"eventId": "2", "prediction": "HOME_OVER_0.5"},
-            {"eventId": "3", "prediction": "OVER_1.5"},
-        ])
+        # The PAIR is the contract - dropUnbookable keys on
+        # eventId + "|" + prediction - so that is what this pins. `reason`
+        # was added beside it, and an exact-dict assertion turned an additive
+        # field into a failure while saying nothing about whether the client
+        # still works.
+        self.assertEqual(
+            [(b["eventId"], b["prediction"]) for b in body["unbookable"]],
+            [("2", "HOME_OVER_0.5"), ("3", "OVER_1.5")])
 
     def test_the_shape_matches_the_sportybet_route(self):
         _code, body = self._post({"1": ["1X"]})
@@ -636,3 +640,131 @@ class Bet9jaRejectsLikeSportyBet(unittest.TestCase):
         code, body = self._post({"1": ["1X"], "2": ["HOME_OVER_0.5"], "3": ["OVER_1.5"]})
         self.assertEqual(code, 200)
         self.assertEqual(body["code"], "B9CODE")
+
+
+class Bet9jaTellsTheBugFromTheBookmaker(unittest.TestCase):
+    """A leg can be unbookable for three reasons, and only one is our fault.
+
+    They were logged under one message, so Sentry counted them together as a
+    single issue. On 2 September that issue was raised to High priority and
+    read as a regression, for a slip doing exactly the right thing: Bet9ja does
+    not price team-to-score on Spartak Moscow v Rodina Moscow, and no code
+    change conjures a price a bookmaker is not offering.
+
+    Meanwhile the reason that IS a bug - a market missing from MARKET_MAP,
+    which refuses that leg on every fixture forever - looks identical in the
+    log. That one hid both-to-score being dropped from every Bet9ja slip while
+    it was switched on by default.
+
+    So the split is not tidying. It is the difference between a signal you act
+    on and one you archive.
+    """
+
+    def _run(self, selections, priced, seen):
+        real_ev, real_gen = server.bet9ja.fetch_event, server.bet9ja.generate_code
+        real_report = server.report
+        server.bet9ja.fetch_event = lambda eid: (
+            {"eventId": eid, "raw": {c: "2.00" for c in priced.get(str(eid), [])}}
+            if str(eid) in priced else None)
+        server.bet9ja.generate_code = lambda sels: {"code": "B9CODE", "legs": len(sels)}
+        server.report = lambda msg, level="warning", **ctx: seen.append((msg, level, ctx))
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/bet9ja/booking-code", json={"selections": selections})
+            return r.status_code, r.get_json()
+        finally:
+            server.bet9ja.fetch_event, server.bet9ja.generate_code = real_ev, real_gen
+            server.report = real_report
+
+    # An unmapped market is the one worth waking up for.
+
+    def test_an_unmapped_market_is_reported_as_its_own_bug(self):
+        seen = []
+        _c, body = self._run([{"eventId": "1", "code": "NOT_A_REAL_MARKET"}], {}, seen)
+        msgs = [m for m, _l, _c2 in seen]
+        self.assertIn("booking: Bet9ja market is not mapped", msgs)
+        self.assertNotIn("booking: Bet9ja does not price this market on this fixture", msgs)
+        self.assertEqual(body["unbookable"][0]["reason"], "not_mapped")
+
+    def test_an_unmapped_market_costs_no_request(self):
+        """It is knowable locally. Fetching an event to be told what MARKET_MAP
+        already says is a request per bad leg, on the booking path."""
+        calls = []
+        real_ev = server.bet9ja.fetch_event
+        server.bet9ja.fetch_event = lambda eid: calls.append(eid)
+        try:
+            with server.app.test_client() as c:
+                c.post("/api/bet9ja/booking-code", json={"selections": [
+                    {"eventId": "1", "code": "NOT_A_REAL_MARKET"}]})
+        finally:
+            server.bet9ja.fetch_event = real_ev
+        self.assertEqual(calls, [], "the mapping is checked before the fetch")
+
+    def test_the_unmapped_warning_names_the_market_so_it_can_be_added(self):
+        seen = []
+        self._run([{"eventId": "1", "code": "NOT_A_REAL_MARKET"}], {}, seen)
+        ctx = [c for m, _l, c in seen if m == "booking: Bet9ja market is not mapped"][0]
+        self.assertIn("NOT_A_REAL_MARKET", ctx["markets"])
+
+    # A market Bet9ja simply does not price is not a fault.
+
+    def test_an_unpriced_market_is_info_not_warning(self):
+        seen = []
+        _c, body = self._run(
+            [{"eventId": "1", "code": "HOME_OVER_0.5"}], {"1": ["1X"]}, seen)
+        hits = [(m, l) for m, l, _c2 in seen
+                if m == "booking: Bet9ja does not price this market on this fixture"]
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0][1], "info",
+                         "a bookmaker not offering a market is not our error")
+        self.assertEqual(body["unbookable"][0]["reason"], "not_priced")
+
+    def test_an_unpriced_market_never_raises_the_mapping_alarm(self):
+        """The whole point. This is the case that was firing hourly and being
+        read as the mapping bug coming back."""
+        seen = []
+        self._run([{"eventId": "1", "code": "HOME_OVER_0.5"}], {"1": ["1X"]}, seen)
+        self.assertNotIn("booking: Bet9ja market is not mapped",
+                         [m for m, _l, _c in seen])
+
+    def test_a_missing_event_is_its_own_cause_again(self):
+        seen = []
+        _c, body = self._run([{"eventId": "9", "code": "1X"}], {}, seen)
+        self.assertIn("booking: Bet9ja event would not load", [m for m, _l, _c in seen])
+        self.assertEqual(body["unbookable"][0]["reason"], "event_gone")
+
+    # Whatever the reason, the punter and the client see one list.
+
+    def test_all_three_causes_still_come_back_as_unbookable(self):
+        seen = []
+        _c, body = self._run([
+            {"eventId": "1", "code": "NOT_A_REAL_MARKET"},   # not mapped
+            {"eventId": "2", "code": "HOME_OVER_0.5"},       # mapped, unpriced
+            {"eventId": "9", "code": "1X"},                  # event gone
+            {"eventId": "2", "code": "1X"},                  # fine
+        ], {"2": ["1X"]}, seen)
+        self.assertEqual(
+            sorted(b["reason"] for b in body["unbookable"]),
+            ["event_gone", "not_mapped", "not_priced"])
+        # Three separate Sentry issues, not one mixed bag.
+        self.assertEqual(len(set(m for m, _l, _c in seen)), 3)
+
+    def test_the_retry_contract_survives_the_split(self):
+        """dropUnbookable keys on eventId + "|" + prediction. If the split had
+        renamed or dropped either, every Bet9ja retry would resend the same
+        doomed slip and the loop would look like a bookmaker outage."""
+        seen = []
+        _c, body = self._run([
+            {"eventId": "1", "code": "NOT_A_REAL_MARKET"},
+            {"eventId": "2", "code": "HOME_OVER_0.5"},
+        ], {"2": ["1X"]}, seen)
+        for b in body["unbookable"]:
+            self.assertIn("eventId", b)
+            self.assertIn("prediction", b)
+
+    def test_a_fully_priced_slip_reports_nothing_at_all(self):
+        seen = []
+        code, body = self._run([{"eventId": "1", "code": "1X"}], {"1": ["1X"]}, seen)
+        self.assertEqual(code, 200)
+        self.assertEqual(body["code"], "B9CODE")
+        self.assertEqual(seen, [], "a clean booking must be silent")
