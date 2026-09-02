@@ -770,51 +770,70 @@ class Bet9jaTellsTheBugFromTheBookmaker(unittest.TestCase):
         self.assertEqual(seen, [], "a clean booking must be silent")
 
 
-class TheProcfileMustNotMultiplyTheSweeps(unittest.TestCase):
-    """Why the worker count is pinned, enforced rather than just commented.
+class TheServerMustNotMultiplyTheSweeps(unittest.TestCase):
+    """Why the worker count is pinned, checked in the file that is actually read.
 
-    Gunicorn imports the app once PER WORKER, and both refreshers start at
-    import. So every extra worker starts another fixtures sweep - fifty-six
-    sequential requests to SportyBet, kept sequential because doing them
-    concurrently got every one refused from a Railway IP - and another Bet9ja
-    sweep. Raising --workers to "make booking faster" would multiply the
-    traffic at the endpoints that already refuse bursts.
+    First attempt put this in the Procfile. Railway does not run the Procfile -
+    the start command is set on the service - so the container came up
+    `Using worker: sync` thirty-six seconds after the commit that supposedly
+    changed it, and the before/after timings around it were noise. Gunicorn
+    loads gunicorn.conf.py from the working directory whatever the command
+    line says, so that is where the settings live and what these assert.
 
-    Request concurrency comes from THREADS instead. Before that the default
-    single sync worker served one request at a time: five concurrent hits on
-    the trivial / endpoint came back at 2.2, 4.5, 5.6 and 9.5 seconds and a
-    sixth never did, which is what made booking feel slow when the booking
-    call itself is one round trip.
+    The rule itself: gunicorn imports the app once PER WORKER and both
+    refreshers start at import, so every extra worker starts another
+    fifty-six-request SportyBet sweep and another Bet9ja sweep - at endpoints
+    that already refuse bursts from datacentre IPs. Raising the worker count
+    to make booking feel faster is how a slowness problem becomes an outage.
+    Request concurrency comes from threads instead; the work is all I/O.
     """
 
-    def _procfile(self):
-        with open(os.path.join(os.path.dirname(__file__), "Procfile")) as f:
-            return f.read()
+    def _conf(self):
+        path = os.path.join(os.path.dirname(__file__), "gunicorn.conf.py")
+        ns = {}
+        with open(path, encoding="utf-8") as f:
+            exec(f.read(), ns)
+        return ns
 
     def test_exactly_one_worker(self):
-        self.assertIn("--workers 1", self._procfile(),
-                      "each extra worker starts another SportyBet sweep")
+        self.assertEqual(self._conf()["workers"], 1,
+                         "each extra worker starts another SportyBet sweep")
 
     def test_concurrency_comes_from_threads(self):
-        p = self._procfile()
-        self.assertIn("--worker-class gthread", p)
-        m = re.search(r"--threads (\d+)", p)
-        self.assertIsNotNone(m, "gthread without --threads is still one at a time")
-        self.assertGreater(int(m.group(1)), 1,
-                           "one thread is the single-worker behaviour again")
+        c = self._conf()
+        self.assertEqual(c["worker_class"], "gthread")
+        self.assertGreater(c["threads"], 1,
+                           "one thread is the single sync worker again")
+
+    def test_the_timeouts_are_stated_here_too(self):
+        """So they survive if the service's start command is ever simplified
+        to a bare `gunicorn server:app`."""
+        c = self._conf()
+        self.assertEqual(c["timeout"], 90)
+        self.assertEqual(c["graceful_timeout"], 30,
+                         "a restart must drain in-flight bookings, not cut them")
 
     def test_the_refreshers_really_do_start_at_import(self):
-        """The premise. If these ever move behind a guard that runs once per
-        deploy rather than once per process, the --workers 1 rule can be
-        revisited - and this test should be the thing that says so."""
+        """The premise of the one-worker rule. If these ever move behind a
+        guard that runs once per deploy rather than once per process, the rule
+        can be revisited - and this test should be what says so."""
         src = open(os.path.join(os.path.dirname(__file__), "server.py"),
                    encoding="utf-8").read()
         for call in ("_start_fixtures_thread()", "_start_bet9ja_thread()"):
             self.assertRegex(src, r"(?m)^" + re.escape(call),
                              call + " must be at module level for this rule to hold")
 
-    def test_the_timeouts_survived_the_change(self):
-        p = self._procfile()
-        self.assertIn("--timeout 90", p)
-        self.assertIn("--graceful-timeout 30", p,
-                      "a restart must drain in-flight bookings, not cut them")
+    def test_the_procfile_does_not_contradict_the_config(self):
+        """The Procfile is not read by Railway, but it is the first place a
+        person looks. It must not say something different from the truth."""
+        with open(os.path.join(os.path.dirname(__file__), "Procfile")) as f:
+            proc = f.read()
+        c = self._conf()
+        if "--workers" in proc:
+            m = re.search(r"--workers (\d+)", proc)
+            self.assertEqual(int(m.group(1)), c["workers"],
+                             "Procfile and gunicorn.conf.py disagree on workers")
+        if "--worker-class" in proc:
+            self.assertIn(c["worker_class"], proc,
+                          "Procfile and gunicorn.conf.py disagree on worker class")
+
