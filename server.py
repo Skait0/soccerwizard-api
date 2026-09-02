@@ -618,6 +618,21 @@ def _start_fixtures_thread():
     t.start()
     log.info("fixtures refresher started (every %dm)", _FIXTURES_TTL // 60)
 
+# STARTED PER PROCESS, WHICH IS WHY THE PROCFILE PINS --workers 1.
+#
+# This sweep is fifty-six sequential round trips to SportyBet, kept sequential
+# because issuing them concurrently got every one refused from a Railway IP.
+# Gunicorn imports this module once per worker, so each extra worker starts
+# another copy of this loop and another Bet9ja sweep below - N workers is N
+# times the traffic at an endpoint that already refuses bursts.
+#
+# Concurrency for REQUESTS comes from threads instead (--worker-class gthread
+# --threads 8): one process, one refresher, one cache, many handlers. The work
+# is all I/O waiting on SportyBet, Bet9ja and Redis, so threads are free here.
+# Before that, gunicorn's default single sync worker served one request at a
+# time and booking taps queued behind whatever the page was already fetching:
+# five concurrent hits on the trivial / endpoint returned at 2.2, 4.5, 5.6 and
+# 9.5 seconds, and a sixth never did.
 _start_fixtures_thread()
 
 

@@ -3,7 +3,7 @@ integrity, and the optional Redis cache layer. Zero external deps (stdlib unitte
 
 Run:  python -m unittest test_server -v
 """
-import os, json, tempfile, unittest
+import os, re, json, tempfile, unittest
 os.environ.pop("SENTRY_DSN", None)          # keep Sentry a no-op
 
 import server
@@ -768,3 +768,53 @@ class Bet9jaTellsTheBugFromTheBookmaker(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual(body["code"], "B9CODE")
         self.assertEqual(seen, [], "a clean booking must be silent")
+
+
+class TheProcfileMustNotMultiplyTheSweeps(unittest.TestCase):
+    """Why the worker count is pinned, enforced rather than just commented.
+
+    Gunicorn imports the app once PER WORKER, and both refreshers start at
+    import. So every extra worker starts another fixtures sweep - fifty-six
+    sequential requests to SportyBet, kept sequential because doing them
+    concurrently got every one refused from a Railway IP - and another Bet9ja
+    sweep. Raising --workers to "make booking faster" would multiply the
+    traffic at the endpoints that already refuse bursts.
+
+    Request concurrency comes from THREADS instead. Before that the default
+    single sync worker served one request at a time: five concurrent hits on
+    the trivial / endpoint came back at 2.2, 4.5, 5.6 and 9.5 seconds and a
+    sixth never did, which is what made booking feel slow when the booking
+    call itself is one round trip.
+    """
+
+    def _procfile(self):
+        with open(os.path.join(os.path.dirname(__file__), "Procfile")) as f:
+            return f.read()
+
+    def test_exactly_one_worker(self):
+        self.assertIn("--workers 1", self._procfile(),
+                      "each extra worker starts another SportyBet sweep")
+
+    def test_concurrency_comes_from_threads(self):
+        p = self._procfile()
+        self.assertIn("--worker-class gthread", p)
+        m = re.search(r"--threads (\d+)", p)
+        self.assertIsNotNone(m, "gthread without --threads is still one at a time")
+        self.assertGreater(int(m.group(1)), 1,
+                           "one thread is the single-worker behaviour again")
+
+    def test_the_refreshers_really_do_start_at_import(self):
+        """The premise. If these ever move behind a guard that runs once per
+        deploy rather than once per process, the --workers 1 rule can be
+        revisited - and this test should be the thing that says so."""
+        src = open(os.path.join(os.path.dirname(__file__), "server.py"),
+                   encoding="utf-8").read()
+        for call in ("_start_fixtures_thread()", "_start_bet9ja_thread()"):
+            self.assertRegex(src, r"(?m)^" + re.escape(call),
+                             call + " must be at module level for this rule to hold")
+
+    def test_the_timeouts_survived_the_change(self):
+        p = self._procfile()
+        self.assertIn("--timeout 90", p)
+        self.assertIn("--graceful-timeout 30", p,
+                      "a restart must drain in-flight bookings, not cut them")
