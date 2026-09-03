@@ -343,7 +343,7 @@ class BookingIsCheckedBeforeItIsSent(unittest.TestCase):
         server._FIXTURES_CACHE.clear()
 
     def test_a_pick_with_no_market_is_named(self):
-        bad = server._unbookable([
+        bad, _how = server._unbookable([
             {"eventId": "ev:good", "prediction": "OVER_1.5"},
             {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
         ])
@@ -354,21 +354,54 @@ class BookingIsCheckedBeforeItIsSent(unittest.TestCase):
             {"eventId": "ev:good", "prediction": "OVER_1.5"},
             {"eventId": "ev:good", "prediction": "GG"},
             {"eventId": "ev:thin", "prediction": "OVER_1.5"},
-        ]), [])
+        ])[0], [])
 
     def test_an_event_we_hold_no_prices_for_is_not_judged(self):
         # absent from the cache entirely - we cannot say, so we do not
-        self.assertEqual(server._unbookable([
+        bad, how = server._unbookable([
             {"eventId": "ev:unknown", "prediction": "HOME_OVER_0.5"},
-        ]), [])
+        ])
+        self.assertEqual(bad, [])
+        # ...and it says so, rather than the leg vanishing from the count.
+        self.assertEqual(how["unknown"], 1)
+        self.assertEqual(how["judged"], 0)
 
     def test_an_empty_cache_blocks_nothing(self):
         """A server that has just started holds no prices. Refusing every slip
         until the first refresh would be worse than the failure this prevents."""
         server._FIXTURES_CACHE.clear()
-        self.assertEqual(server._unbookable([
+        bad, how = server._unbookable([
             {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
-        ]), [])
+        ])
+        self.assertEqual(bad, [])
+        self.assertIsNone(how["cache_age_s"], "no cache means no age to report")
+
+    def test_a_refusal_says_how_old_the_odds_it_judged_on_were(self):
+        """The reason this returns a pair at all.
+
+        The cache lives 45 minutes and the browser read its own copy at page
+        load, so the two disagree about TIME rather than about markets: a
+        market thinned since our last refresh still shows a price on their
+        screen. 54 refusals in five days and nothing could say whether they
+        were real gaps or our copy being stale, because the age was never
+        recorded. Shortening the TTL is not the fix - a refresh is ~49
+        sequential requests and this server has been blocked for less - so the
+        age has to be measured before anything is built on a guess."""
+        import time as _t
+        server._FIXTURES_CACHE.update({"at": _t.time() - 1800, "data": [
+            {"eventId": "ev:thin", "homeTeam": "C", "awayTeam": "D",
+             "odds": {"OVER_1.5": 1.3}},
+        ]})
+        bad, how = server._unbookable([
+            {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
+            {"eventId": "ev:thin", "prediction": "OVER_1.5"},
+            {"eventId": "ev:gone", "prediction": "1X"},
+        ])
+        self.assertEqual(len(bad), 1, "only the unpriced market is refused")
+        self.assertGreaterEqual(how["cache_age_s"], 1700)
+        self.assertLessEqual(how["cache_age_s"], 1900)
+        self.assertEqual(how["judged"], 2, "two legs on an event we hold")
+        self.assertEqual(how["unknown"], 1, "and one we cannot judge at all")
 
     def test_the_route_refuses_early_and_says_which(self):
         called = {"n": 0}
@@ -389,6 +422,30 @@ class BookingIsCheckedBeforeItIsSent(unittest.TestCase):
             self.assertEqual(called["n"], 0, "must not spend a call on a doomed slip")
         finally:
             server.generate_sportybet_code = real
+
+    def test_the_refusal_carries_the_cache_age_to_sentry(self):
+        """_unbookable can measure the age all it likes; if the ROUTE does not
+        pass it on, Sentry still cannot tell a stale-cache refusal from a real
+        gap and the whole exercise is decorative. Mutation-tested: deleting
+        cache_age_s from the report call broke nothing until this existed."""
+        seen = {}
+        real_report, real_code = server.report, server.generate_sportybet_code
+        server.report = lambda msg, level="warning", **ctx: seen.update(ctx)
+        server.generate_sportybet_code = lambda *a, **k: {"code": "X"}
+        try:
+            with server.app.test_client() as c:
+                c.post("/api/generate-booking-code", json={"selections": [
+                    {"eventId": "ev:good", "prediction": "OVER_1.5"},
+                    {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
+                    {"eventId": "ev:gone", "prediction": "1X"},
+                ]})
+        finally:
+            server.report, server.generate_sportybet_code = real_report, real_code
+        self.assertIn("cache_age_s", seen, "the age must reach Sentry")
+        self.assertIn("legs_judged", seen)
+        self.assertIn("legs_unknown", seen)
+        self.assertEqual(seen["legs_unknown"], 1, "the leg we hold no prices for")
+        self.assertEqual(seen["bad_legs"], 1)
 
 class FailuresAreReported(unittest.TestCase):
     """A booking rejection is not an exception, so nothing raised and Sentry

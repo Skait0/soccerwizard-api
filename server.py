@@ -917,25 +917,43 @@ def _unbookable(raw_selections):
     Silent when the cache is empty: no prices is not the same as prices that
     exclude a market, and refusing a slip because this server has just started
     would be worse than the failure it prevents.
+
+    Returns (bad, how) where `how` records WHAT THE VERDICT WAS MADE ON. The
+    cache lives 45 minutes and the browser read its own copy at page load, so
+    the two disagree about time rather than about markets - a market thinned
+    since our last refresh still shows a price on their screen. A refusal from
+    a 44-minute-old cache and one from a 2-minute-old cache mean different
+    things, and until now Sentry could not tell them apart: 54 refusals in five
+    days and no way to say whether they were real gaps or our copy being stale.
+    Shortening the TTL is not the answer - a refresh is ~49 sequential requests
+    and this server has been blocked for less - so measure first.
     """
     entry = _cache_get("fixtures", _FIXTURES_CACHE)
     rows = (entry or {}).get("data") or []
     if not rows:
-        return []
+        return [], {"cache_age_s": None, "judged": 0, "unknown": 0}
     odds_by_event = {}
     for m in rows:
         if isinstance(m, dict) and m.get("eventId"):
             odds_by_event[m["eventId"]] = m.get("odds") or {}
     bad = []
+    judged = unknown = 0
     for item in raw_selections:
         ev, pred = item.get("eventId"), item.get("prediction")
         prices = odds_by_event.get(ev)
         if prices is None:          # event not in the cache - cannot judge it
+            unknown += 1
             continue
+        judged += 1
         price = prices.get(pred)
         if not price or price <= 1.01:
             bad.append({"eventId": ev, "prediction": pred})
-    return bad
+    age = entry.get("at")
+    return bad, {
+        "cache_age_s": int(time.time() - age) if age else None,
+        "judged": judged,
+        "unknown": unknown,
+    }
 
 
 @app.route('/api/generate-booking-code', methods=['POST'])
@@ -943,14 +961,19 @@ def api_generate_code():
     data = request.json or {}
     raw_selections = data.get("selections", [])
 
-    bad = _unbookable(raw_selections)
+    bad, how = _unbookable(raw_selections)
     if bad:
         # Named rather than counted, so the caller can drop exactly these and
         # retry instead of guessing which leg broke it.
         report("booking: picks with no market at SportyBet",
                bad_legs=len(bad), total_legs=len(raw_selections),
                markets=", ".join(sorted({b["prediction"] for b in bad})),
-               events=", ".join(sorted({b["eventId"] for b in bad})[:10]))
+               events=", ".join(sorted({b["eventId"] for b in bad})[:10]),
+               # What the verdict was made on. A refusal off a 44-minute-old
+               # cache is a different animal from one off a 2-minute-old cache,
+               # and only this can tell them apart.
+               cache_age_s=how["cache_age_s"],
+               legs_judged=how["judged"], legs_unknown=how["unknown"])
         return jsonify({
             "success": False,
             "message": "SportyBet rejected the slip",
