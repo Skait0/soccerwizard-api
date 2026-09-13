@@ -155,6 +155,10 @@ PASSTHROUGH_MAP = {
     "MIX_X_UN_2.5": {"marketId": 857, "outcomeId": 74, "specifier": "total=2.5"},
     "MIX_2_OV_2.5": {"marketId": 858, "outcomeId": 74, "specifier": "total=2.5"},
     "MIX_2_UN_2.5": {"marketId": 859, "outcomeId": 74, "specifier": "total=2.5"},
+    # 1X2 or GG. 860/861/862 against their S_CHANCEMIX, no line either side.
+    "MIXGG_1": {"marketId": 860, "outcomeId": 74, "specifier": ""},
+    "MIXGG_X": {"marketId": 861, "outcomeId": 74, "specifier": ""},
+    "MIXGG_2": {"marketId": 862, "outcomeId": 74, "specifier": ""},
 }
 # Deliberately NOT merged into MARKET_MAP. That table means "markets we model,
 # and therefore fetch on every sweep", and test_every_mapped_market_is_actually

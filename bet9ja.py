@@ -164,12 +164,33 @@ PASSTHROUGH_MAP = {
 # across four live events, 23 keys each at 1.5 and 3.5 and none at 2.5.
 # Their own label for XorUn reads "Under Or Under {HND} Goals", which is a typo
 # in THEIR dictionary - the key says XorUn and the bet is draw-or-under.
+_MIX_SIGNS = (("MIX_1_OV", "1orOv"), ("MIX_1_UN", "1orUn"),
+              ("MIX_X_OV", "XorOv"), ("MIX_X_UN", "XorUn"),
+              ("MIX_2_OV", "2orOv"), ("MIX_2_UN", "2orUn"))
 for _line in ("1.5", "3.5"):
-    for _code, _sign in (("MIX_1_OV", "1orOv"), ("MIX_1_UN", "1orUn"),
-                         ("MIX_X_OV", "XorOv"), ("MIX_X_UN", "XorUn"),
-                         ("MIX_2_OV", "2orOv"), ("MIX_2_UN", "2orUn")):
+    for _code, _sign in _MIX_SIGNS:
         PASSTHROUGH_MAP["%s_%s" % (_code, _line)] = (
             "S_CHANCEMIXOU@%s_%s" % (_line, _sign), 1)
+
+# THE 2.5 LINE IS A DIFFERENT MARKET ENTIRELY, and missing it is what made this
+# family look unconvertible. There are four chance-mix families here, not one:
+# S_CHANCEMIXOU ("1X2 or Over/Under") runs 1.5 and 3.5, and S_CHANCEMIXGGOU
+# ("Chance Mix") runs 2.5 - the same six selections under another key. A regex
+# anchored on CHANCEMIXOU@ could not see it, so four sampled events reported
+# "no 2.5 anywhere" and the conclusion drawn from that - that the two books
+# share no line and the family can never convert - was wrong. One real code
+# from a punter, 5RHG763, disproved it.
+# 2.5 is exactly what SportyBet sells on 854-859, so those legs cross with
+# nothing changed at all.
+for _code, _sign in _MIX_SIGNS:
+    PASSTHROUGH_MAP["%s_2.5" % _code] = ("S_CHANCEMIXGGOU@2.5_%s" % _sign, 1)
+
+# 1X2 or GG/NG - SportyBet's 860-862 against their S_CHANCEMIX. No line on
+# either side, so nothing to reconcile.
+for _code, _sign in (("MIXGG_1", "1orGG"), ("MIXGG_X", "XorGG"),
+                     ("MIXGG_2", "2orGG"), ("MIXNG_1", "1orNG"),
+                     ("MIXNG_X", "XorNG"), ("MIXNG_2", "2orNG")):
+    PASSTHROUGH_MAP[_code] = ("S_CHANCEMIX_%s" % _sign, 1)
 # Not merged into MARKET_MAP for the same reason as its SportyBet twin: that
 # table is what the sweep fetches and what the board prices. These are fetched
 # per event at book time, where the full card comes back anyway.
