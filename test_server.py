@@ -1231,15 +1231,12 @@ class PassThroughParity(unittest.TestCase):
         "MIX_1_OV_1.5", "MIX_1_OV_3.5", "MIX_1_UN_1.5", "MIX_1_UN_3.5",
         "MIX_2_OV_1.5", "MIX_2_OV_3.5", "MIX_2_UN_1.5", "MIX_2_UN_3.5",
         "MIX_X_OV_1.5", "MIX_X_OV_3.5", "MIX_X_UN_1.5", "MIX_X_UN_3.5",
-        # 1X2 OR NO-GOAL, AND THIS ONE IS A GAP RATHER THAN A DIFFERENCE.
-        # The GG half of the family is mapped on both books (MIXGG_*, their
-        # 860-862 against S_CHANCEMIX). The NG half is mapped only here, so a
-        # Bet9ja "home or no goal" leg cannot cross. Whether SportyBet sells
-        # it, and under which ids, has not been read off their catalogue - and
-        # guessing the id books a different bet, which is the one mistake this
-        # table cannot afford. Left named rather than invented.
-        "MIXNG_1", "MIXNG_X", "MIXNG_2",
     }
+    # MIXNG_1/X/2 WAS IN THIS LIST AND IS NOT ANY MORE. It looked like a gap
+    # because SportyBet does not use the word: their name for no-goal is "Any
+    # Clean Sheet", markets 863/864/865, read off their catalogue on 14 Sep
+    # 2026. At least one clean sheet is exactly "not both teams scored", so it
+    # is the same bet under another name and the family now crosses whole.
 
     def test_the_asymmetry_is_the_recorded_one(self):
         s, b = set(server.PASSTHROUGH_MAP), set(server.bet9ja.PASSTHROUGH_MAP)

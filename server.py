@@ -159,6 +159,22 @@ PASSTHROUGH_MAP = {
     "MIXGG_1": {"marketId": 860, "outcomeId": 74, "specifier": ""},
     "MIXGG_X": {"marketId": 861, "outcomeId": 74, "specifier": ""},
     "MIXGG_2": {"marketId": 862, "outcomeId": 74, "specifier": ""},
+    # 1X2 OR NO-GOAL, WHICH THEY DO NOT CALL NO-GOAL. This was recorded as a
+    # real gap - mapped on Bet9ja, absent here - because a search for "NG"
+    # found nothing. Their name for it is "Any Clean Sheet": 863/864/865,
+    # "Home Team or Any Clean Sheet" and its two siblings, read off their own
+    # catalogue on 14 Sep 2026 (sr:match:67015370).
+    #
+    # At least one clean sheet IS no-goal: one side failing to score is exactly
+    # "not both teams scored". Same bet, different word, and the difference is
+    # why it looked missing for a week.
+    #
+    # Outcome 74 is Yes and 76 is No on all three, the same pair the GG markets
+    # above use. 76 is NOT the other half of the family - "not home and not
+    # clean sheet" is its own bet - so only Yes is mapped.
+    "MIXNG_1": {"marketId": 863, "outcomeId": 74, "specifier": ""},
+    "MIXNG_X": {"marketId": 864, "outcomeId": 74, "specifier": ""},
+    "MIXNG_2": {"marketId": 865, "outcomeId": 74, "specifier": ""},
 }
 
 # TEAM CARDS. Market 800060, and the outcome id carries both the team and
