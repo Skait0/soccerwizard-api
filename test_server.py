@@ -1141,3 +1141,42 @@ class ThePreflightOnlyJudgesWhatItCanSee(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class Bet9jaPassThroughBooks(unittest.TestCase):
+    """A pass-through market is mapped, and the booking route has to agree.
+
+    The route gated every leg on MARKET_MAP, which names the 24 markets we
+    model and nothing else, so a handicap, a corner line, a team card or a 2UP
+    came back "not_mapped" however well Bet9ja prices it. Nothing converted
+    from SportyBet carrying one could ever be booked here. Found on the live
+    site the same afternoon the mirror-image bug was fixed on the other book.
+    """
+
+    def _post(self, selections, raw):
+        real_ev, real_gen = server.bet9ja.fetch_event, server.bet9ja.generate_code
+        server.bet9ja.fetch_event = lambda eid: {"eventId": eid, "raw": raw}
+        server.bet9ja.generate_code = lambda sels: {"code": "B9CODE", "legs": len(sels)}
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/bet9ja/booking-code",
+                           json={"selections": selections})
+            return r.status_code, r.get_json()
+        finally:
+            server.bet9ja.fetch_event, server.bet9ja.generate_code = real_ev, real_gen
+
+    def test_a_pass_through_leg_is_not_refused_before_it_is_sent(self):
+        code, body = self._post([{"eventId": "1", "code": "AH_1_-0.5"}],
+                                {"AH_1_-0.5": "1.85"})
+        self.assertEqual(code, 200, body)
+        self.assertTrue(body.get("success"))
+
+    def test_a_market_in_neither_table_is_still_not_mapped(self):
+        _c, body = self._post([{"eventId": "1", "code": "NOT_A_REAL_MARKET"}],
+                              {"AH_1_-0.5": "1.85"})
+        self.assertEqual(body["unbookable"][0]["reason"], "not_mapped")
+
+    def test_a_pass_through_market_the_fixture_lacks_is_still_named(self):
+        _c, body = self._post([{"eventId": "1", "code": "CORNERS_OV_9.5"}],
+                              {"AH_1_-0.5": "1.85"})
+        self.assertEqual(body["unbookable"][0]["reason"], "not_priced")

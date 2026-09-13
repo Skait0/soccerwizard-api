@@ -951,7 +951,15 @@ def api_bet9ja_code():
             # eventId and prediction are the contract: the site keys its retry
             # on exactly this pair. `reason` is additive.
             leg = {"eventId": p.get("eventId"), "prediction": code}
-            if code not in bet9ja.MARKET_MAP:
+            # market_for, not MARKET_MAP: the pass-through table is a mapping
+            # too. Keyed on MARKET_MAP alone, every handicap, corner, card and
+            # 2UP leg came back "not_mapped" however well Bet9ja prices it -
+            # so no converted slip carrying one could ever be booked here.
+            # The same shape of mistake as the SportyBet pre-flight, on the
+            # other book: the fetch below reads the full card, whose keys come
+            # from BOTH tables, and build_selection resolves through
+            # market_for as well.
+            if bet9ja.market_for(code) is None:
                 leg["reason"] = "not_mapped"
                 unmapped.append(leg)
                 continue
