@@ -158,6 +158,18 @@ PASSTHROUGH_MAP = {
     "UP1_1": ("S_1X21_11", 1), "UP1_X": ("S_1X21_X1", 1), "UP1_2": ("S_1X21_21", 1),
     "UP2_1": ("S_1X22_12", 1), "UP2_X": ("S_1X22_X2", 1), "UP2_2": ("S_1X22_22", 1),
 }
+# 1X2-or-Over/Under. One market with six outcomes here, where SportyBet has six
+# markets with a Yes/No - and the lines are the problem, not the outcomes: this
+# book sells 1.5 and 3.5, that one sells 2.5, and nothing overlaps. Checked
+# across four live events, 23 keys each at 1.5 and 3.5 and none at 2.5.
+# Their own label for XorUn reads "Under Or Under {HND} Goals", which is a typo
+# in THEIR dictionary - the key says XorUn and the bet is draw-or-under.
+for _line in ("1.5", "3.5"):
+    for _code, _sign in (("MIX_1_OV", "1orOv"), ("MIX_1_UN", "1orUn"),
+                         ("MIX_X_OV", "XorOv"), ("MIX_X_UN", "XorUn"),
+                         ("MIX_2_OV", "2orOv"), ("MIX_2_UN", "2orUn")):
+        PASSTHROUGH_MAP["%s_%s" % (_code, _line)] = (
+            "S_CHANCEMIXOU@%s_%s" % (_line, _sign), 1)
 # Not merged into MARKET_MAP for the same reason as its SportyBet twin: that
 # table is what the sweep fetches and what the board prices. These are fetched
 # per event at book time, where the full card comes back anyway.

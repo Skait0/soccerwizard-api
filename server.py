@@ -143,6 +143,18 @@ PASSTHROUGH_MAP = {
     "OVER_3": {"marketId": 18, "outcomeId": 12, "specifier": "total=3"},
     "UNDER_2": {"marketId": 18, "outcomeId": 13, "specifier": "total=2"},
     "UNDER_3": {"marketId": 18, "outcomeId": 13, "specifier": "total=3"},
+    # 1X2-or-Over/Under, the family a real punter's codes leaned on hardest -
+    # 45 legs of 180. SportyBet sells the six combinations as six markets with
+    # a Yes/No outcome, 854 through 859 in a block, and ONLY on the 2.5 line.
+    # Bet9ja sells the same six as outcomes of one market and only at 1.5 and
+    # 3.5. The lines do not overlap, so these read and split here and cross to
+    # the other book only when somebody has asked for the line to be changed.
+    "MIX_1_OV_2.5": {"marketId": 854, "outcomeId": 74, "specifier": "total=2.5"},
+    "MIX_1_UN_2.5": {"marketId": 855, "outcomeId": 74, "specifier": "total=2.5"},
+    "MIX_X_OV_2.5": {"marketId": 856, "outcomeId": 74, "specifier": "total=2.5"},
+    "MIX_X_UN_2.5": {"marketId": 857, "outcomeId": 74, "specifier": "total=2.5"},
+    "MIX_2_OV_2.5": {"marketId": 858, "outcomeId": 74, "specifier": "total=2.5"},
+    "MIX_2_UN_2.5": {"marketId": 859, "outcomeId": 74, "specifier": "total=2.5"},
 }
 # Deliberately NOT merged into MARKET_MAP. That table means "markets we model,
 # and therefore fetch on every sweep", and test_every_mapped_market_is_actually
