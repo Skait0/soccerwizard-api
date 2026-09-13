@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 import logging
@@ -6,6 +7,7 @@ import threading
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from curl_cffi import requests
+from urllib.parse import quote
 import bet9ja
 from curl_cffi.requests import RequestsError
 
@@ -902,6 +904,93 @@ def api_bet9ja_code():
         return jsonify({"success": True, **out})
     report("bet9ja booking refused", legs=len(resolved), detail=str(out.get("error"))[:300])
     return jsonify({"success": False, **out}), 502
+
+
+# --- reading a booking code back -------------------------------------------
+# BOTH BOOKS WILL HAND A CODE BACK, which is the fact the converter and the
+# splitter both rest on, and neither was reachable by guessing: SportyBet
+# answers on the same /orders/share path it books on, and Bet9ja on a third
+# hostname (see bet9ja.read_coupon).
+#
+# It is read-only and costs the bookmaker one request, so it is not rationed
+# the way booking is. It is still a request made in somebody else's name, so
+# the code is checked for shape before it is sent anywhere.
+_CODE_RE = re.compile(r"^[A-Za-z0-9]{4,16}$")
+
+
+def read_sporty_share(code, region="ng", timeout=12):
+    """The legs behind a SportyBet booking code, in our own market codes.
+
+    Their read returns `sr:match:` ids and nothing else - no team names, no
+    league - so the names come from the fixtures cache this server already
+    keeps. A leg whose event is not in that cache is still returned, named or
+    not: a slip with a game we do not carry is a fact the caller has to see,
+    not one to hide by dropping the leg.
+    """
+    url = "https://www.sportybet.com/api/%s/orders/share/%s" % (region, quote(str(code)))
+    try:
+        r = requests.get(url, headers=_headers(region), impersonate="chrome120",
+                         timeout=timeout)
+        body = r.json()
+    except Exception as ex:                      # noqa: BLE001 - user-facing
+        log.warning("sportybet share read failed: %s", ex)
+        return {"error": "request failed: %s" % ex}
+
+    if (body or {}).get("bizCode") != 10000:
+        return {"error": "not found", "notFound": True}
+
+    entry = _cache_get("fixtures", _FIXTURES_CACHE)
+    by_event = {m.get("eventId"): m for m in ((entry or {}).get("data") or [])
+                if isinstance(m, dict)}
+
+    out = []
+    ticket = ((body.get("data") or {}).get("ticket") or {})
+    for sel in (ticket.get("selections") or []):
+        key = (str(sel.get("marketId")), str(sel.get("outcomeId")),
+               sel.get("specifier") or "")
+        eid = sel.get("eventId")
+        fx = by_event.get(eid) or {}
+        pred = _ODDS_LOOKUP.get(key)
+        out.append({
+            "eventId": eid,
+            "prediction": pred,
+            "raw": "/".join(key),
+            "home": fx.get("homeTeam") or "",
+            "away": fx.get("awayTeam") or "",
+            "league": fx.get("league") or "",
+            "kickoff": fx.get("startTime") or "",
+            "odds": (fx.get("odds") or {}).get(pred) if pred else None,
+        })
+    return {"legs": out}
+
+
+@app.route('/api/slip', methods=['GET'])
+def api_read_slip():
+    """GET /api/slip?book=sporty|bet9ja&code=XXXX -> the legs behind a code."""
+    book = (request.args.get("book") or "sporty").strip().lower()
+    code = (request.args.get("code") or "").strip()
+    if not _CODE_RE.match(code):
+        return jsonify({"success": False, "error": "that is not a booking code"}), 400
+    if book not in ("sporty", "bet9ja"):
+        return jsonify({"success": False, "error": "unknown bookmaker"}), 400
+
+    out = (bet9ja.read_coupon(code) if book == "bet9ja"
+           else read_sporty_share(code))
+    if out.get("notFound"):
+        return jsonify({"success": False, "notFound": True,
+                        "error": "no slip behind that code"}), 404
+    if out.get("error"):
+        report("slip read failed", book=book, detail=str(out["error"])[:200])
+        return jsonify({"success": False, "error": out["error"]}), 502
+
+    legs = out.get("legs") or []
+    if not legs:
+        return jsonify({"success": False, "error": "that code has no games in it"}), 404
+    # A reprint is not a transcript - see bet9ja.read_coupon. The count is what
+    # we READ, said plainly, so nothing downstream can imply it is the slip as
+    # it was booked.
+    return jsonify({"success": True, "book": book, "code": code,
+                    "read": len(legs), "legs": legs})
 
 
 @app.route('/api/livescores', methods=['GET'])

@@ -226,9 +226,6 @@ class FixtureLeagueLabel(unittest.TestCase):
         self.assertEqual(m[0]["league"], "Club Friendlies")
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
 class LiveScoreIsNotTheFirstHalf(unittest.TestCase):
     """The live board published half-time scores for four months.
 
@@ -932,3 +929,107 @@ class TheServerMustNotMultiplyTheSweeps(unittest.TestCase):
             self.assertIn(c["worker_class"], proc,
                           "Procfile and gunicorn.conf.py disagree on worker class")
 
+
+class ReadASlipBack(unittest.TestCase):
+    """Both books hand a code back, which is what the splitter and the
+    converter rest on. The shapes are theirs; the normalisation is ours, and it
+    is the part that can quietly lie - a leg dropped here is a game the punter
+    had on their slip and will not see on ours."""
+
+    SPORTY_OK = {"bizCode": 10000, "data": {"ticket": {"selections": [
+        {"eventId": "sr:match:1", "marketId": "18", "outcomeId": "12",
+         "specifier": "total=1.5"},
+        {"eventId": "sr:match:9", "marketId": "18", "outcomeId": "12",
+         "specifier": "total=1.5"},
+    ]}}}
+
+    def _sporty(self, payload, cached=None):
+        real_get = server.requests.get
+        real_cache = server._FIXTURES_CACHE.copy()
+        class R:
+            def json(self_inner): return payload
+        server.requests.get = lambda *a, **k: R()
+        if cached is not None:
+            server._FIXTURES_CACHE.update({"at": server.time.time(), "data": cached})
+        try:
+            with server.app.test_client() as c:
+                r = c.get("/api/slip?book=sporty&code=ABC123")
+            return r.status_code, r.get_json()
+        finally:
+            server.requests.get = real_get
+            server._FIXTURES_CACHE.clear()
+            server._FIXTURES_CACHE.update(real_cache)
+
+    def test_a_slip_comes_back_in_our_own_market_codes(self):
+        """Their (marketId, outcomeId, specifier) triple is meaningless to the
+        rest of this project. _ODDS_LOOKUP already maps it and is exercised on
+        every odds refresh, so the read borrows the mapping rather than
+        growing a second one that can drift from it."""
+        _c, body = self._sporty(self.SPORTY_OK)
+        self.assertTrue(body["success"])
+        self.assertEqual([l["prediction"] for l in body["legs"]],
+                         ["OVER_1.5", "OVER_1.5"])
+
+    def test_a_leg_we_cannot_name_is_still_returned(self):
+        """Their read carries no team names, so names come from the fixtures
+        cache. A game we do not carry is a fact the caller has to see - dropping
+        it would hand back a shorter slip than the punter booked and say
+        nothing about it."""
+        _c, body = self._sporty(self.SPORTY_OK, cached=[
+            {"eventId": "sr:match:1", "homeTeam": "Arsenal", "awayTeam": "Spurs",
+             "league": "England Premier League", "odds": {"OVER_1.5": 1.2}}])
+        self.assertEqual(body["read"], 2)
+        self.assertEqual(body["legs"][0]["home"], "Arsenal")
+        self.assertEqual(body["legs"][1]["home"], "",
+                         "an unknown event keeps its place in the slip")
+
+    def test_the_count_is_what_was_read_not_what_was_booked(self):
+        """A reprint is not a transcript: Bet9ja drops events from a coupon on
+        its own schedule and says nothing about how many there were. `read` is
+        named for what it is so nothing downstream can imply otherwise."""
+        _c, body = self._sporty(self.SPORTY_OK)
+        self.assertEqual(body["read"], len(body["legs"]))
+
+    def test_a_code_with_nothing_behind_it_is_a_404(self):
+        code, body = self._sporty({"bizCode": 19000, "message": "Invalid"})
+        self.assertEqual(code, 404)
+        self.assertTrue(body["notFound"])
+
+    def test_a_code_that_is_not_a_code_never_reaches_the_bookmaker(self):
+        """It is a request made in somebody else's name against a third party,
+        so the shape is checked here rather than by them."""
+        sent = []
+        real_get = server.requests.get
+        server.requests.get = lambda *a, **k: sent.append(a) or (_ for _ in ()).throw(AssertionError("sent"))
+        try:
+            with server.app.test_client() as c:
+                for bad in ("", "!!", "a" * 40, "../../etc/passwd"):
+                    r = c.get("/api/slip?book=sporty&code=" + bad)
+                    self.assertEqual(r.status_code, 400, bad)
+        finally:
+            server.requests.get = real_get
+        self.assertEqual(sent, [])
+
+    def test_an_unknown_bookmaker_is_refused(self):
+        with server.app.test_client() as c:
+            r = c.get("/api/slip?book=acme&code=ABC123")
+        self.assertEqual(r.status_code, 400)
+
+    def test_bet9ja_legs_carry_their_own_names(self):
+        """Their read names the teams, so unlike SportyBet's it needs no cache
+        to be useful."""
+        real = server.bet9ja.read_coupon
+        server.bet9ja.read_coupon = lambda code, **k: {"legs": [
+            {"eventId": 1, "prediction": "OVER_1.5", "raw": "S_OU@1.5_O",
+             "home": "PSV", "away": "Sparta Rotterdam", "league": "Eredivisie",
+             "kickoff": "2026-09-13T18:00:00Z", "odds": 1.04}]}
+        try:
+            with server.app.test_client() as c:
+                body = c.get("/api/slip?book=bet9ja&code=ABC123").get_json()
+        finally:
+            server.bet9ja.read_coupon = real
+        self.assertEqual(body["legs"][0]["home"], "PSV")
+        self.assertEqual(body["book"], "bet9ja")
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

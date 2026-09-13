@@ -36,6 +36,7 @@ import time
 # IMPERSONATE goes on every call. Sending it only on the ones that seemed to
 # need it is how you end up debugging this twice.
 from curl_cffi import requests
+from urllib.parse import quote
 
 log = logging.getLogger(__name__)
 
@@ -574,3 +575,63 @@ def _find_code(body):
         if isinstance(ris, (str, int)) and str(ris).strip():
             return str(ris).strip()
     return None
+
+
+# --- reading a booking code back ------------------------------------------
+# THE HOST IS NOT THE ONE THAT ISSUES THE CODE. Booking posts to
+# apigw.bet9ja.com; reading a code back is served by coupon.bet9ja.com, which
+# is a third hostname their site talks to and neither of the two this module
+# already knew about. Found by loading sports.bet9ja.com/?bookABetCode=<code>
+# and reading the network log rather than by guessing paths, after
+# GetBookABet and LoadBookABet came back 404 on both known hosts.
+COUPON_URL = ("https://coupon.bet9ja.com/desktop/feapi/CouponAjax/"
+              "GetBookABetCouponV2?couponCode=%s&type=TYPE_DESKTOP_REPRINT")
+
+# ours <- theirs, for turning a leg we did not build back into a market we know
+_ODDS_KEY_TO_CODE = {v[0]: k for k, v in MARKET_MAP.items()}
+
+
+def read_coupon(code, timeout=15):
+    """Return the legs behind a Bet9ja booking code.
+
+    [{eventId, prediction, home, away, league, kickoff, odds}], where
+    `prediction` is OUR market code, or None for a market we do not model.
+
+    A reprint is not a transcript. Bet9ja drops events from a coupon on its own
+    schedule, so a code read days later can come back shorter than it was
+    booked - measured on 5R9ZZNB, minted with five legs and reading back with
+    three - and nothing in the response says how many there were. Anything
+    built on this has to show the punter what was read rather than claim it is
+    the whole slip.
+    """
+    try:
+        r = requests.get(COUPON_URL % quote(str(code)), headers=_headers(),
+                         timeout=timeout, impersonate=IMPERSONATE)
+        body = r.json()
+    except Exception as ex:                      # noqa: BLE001 - user-facing
+        log.warning("bet9ja coupon read failed: %s", ex)
+        return {"error": "request failed: %s" % ex}
+
+    if (body or {}).get("R") != "OK":
+        # Their answer for a code that does not exist is a 200 with R=ERROR.
+        return {"error": "not found", "notFound": True}
+
+    out = []
+    for key, leg in ((body.get("D") or {}).get("O") or {}).items():
+        eid, _, sid = str(key).partition("$")
+        names = str(leg.get("E_NAME") or "").split(" - ")
+        try:
+            odd = float(leg.get("V"))
+        except (TypeError, ValueError):
+            odd = None
+        out.append({
+            "eventId": int(eid) if eid.isdigit() else eid,
+            "prediction": _ODDS_KEY_TO_CODE.get(sid),
+            "raw": sid,
+            "home": names[0].strip() if names else "",
+            "away": names[1].strip() if len(names) > 1 else "",
+            "league": leg.get("GN") or "",
+            "kickoff": leg.get("STARTDATEUTC") or "",
+            "odds": odd,
+        })
+    return {"legs": out}
