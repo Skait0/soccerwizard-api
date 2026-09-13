@@ -189,6 +189,39 @@ for _line in ("6.5", "7.5", "8.5", "9.5", "10.5", "11.5", "12.5"):
         "marketId": 166, "outcomeId": 12, "specifier": "total=%s" % _line}
     PASSTHROUGH_MAP["CORNERS_UN_%s" % _line] = {
         "marketId": 166, "outcomeId": 13, "specifier": "total=%s" % _line}
+
+# WIN EITHER HALF. 50 is the home side and 51 the away side, 74 Yes and 76 No.
+PASSTHROUGH_MAP.update({
+    "WINHALF_H_Y": {"marketId": 50, "outcomeId": 74, "specifier": ""},
+    "WINHALF_H_N": {"marketId": 50, "outcomeId": 76, "specifier": ""},
+    "WINHALF_A_Y": {"marketId": 51, "outcomeId": 74, "specifier": ""},
+    "WINHALF_A_N": {"marketId": 51, "outcomeId": 76, "specifier": ""},
+    # DRAW NO BET. 11/4 home, 11/5 away - the stake back if it finishes level.
+    "DNB_1": {"marketId": 11, "outcomeId": 4, "specifier": ""},
+    "DNB_2": {"marketId": 11, "outcomeId": 5, "specifier": ""},
+    # SECOND-HALF DOUBLE CHANCE. Their outcome ids are not in the order the
+    # signs are usually written: 9 is Home or Draw, 10 is Home or AWAY, and 11
+    # is Draw or Away. Taking 10 for the middle sign would book 12 as 1X.
+    "DC2_1X": {"marketId": 85, "outcomeId": 9,  "specifier": ""},
+    "DC2_12": {"marketId": 85, "outcomeId": 10, "specifier": ""},
+    "DC2_X2": {"marketId": 85, "outcomeId": 11, "specifier": ""},
+})
+
+# ASIAN HANDICAP. Market 16, outcome 1714 the home side and 1715 the away side,
+# with the line in the specifier. The line is always quoted from the HOME
+# team's point of view on both books, so hcp=-1 is the home side giving a goal
+# and the away outcome on that same line is receiving it.
+# Generated across the lines both books quote, quarters included. A line a book
+# does not price on a given fixture is refused by the existing not_priced path,
+# which is a named answer rather than a silent one.
+_AH_LINES = ["-3", "-2.75", "-2.5", "-2.25", "-2", "-1.75", "-1.5", "-1.25",
+             "-1", "-0.75", "-0.5", "-0.25", "0", "0.25", "0.5", "0.75",
+             "1", "1.25", "1.5", "1.75", "2", "2.25", "2.5", "2.75", "3"]
+for _l in _AH_LINES:
+    PASSTHROUGH_MAP["AH_1_%s" % _l] = {
+        "marketId": 16, "outcomeId": 1714, "specifier": "hcp=%s" % _l}
+    PASSTHROUGH_MAP["AH_2_%s" % _l] = {
+        "marketId": 16, "outcomeId": 1715, "specifier": "hcp=%s" % _l}
 # Deliberately NOT merged into MARKET_MAP. That table means "markets we model,
 # and therefore fetch on every sweep", and test_every_mapped_market_is_actually
 # _fetched enforces exactly that. Merging these made six promotion markets look

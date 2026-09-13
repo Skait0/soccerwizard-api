@@ -207,6 +207,27 @@ for _n, _line in ((1, "0.5"), (2, "1.5"), (3, "2.5")):
 for _line in ("7.5", "8.5", "9.5", "10.5", "11.5", "12.5", "13.5", "14.5"):
     PASSTHROUGH_MAP["CORNERS_OV_%s" % _line] = ("S_OUCORNERS@%s_O" % _line, 1)
     PASSTHROUGH_MAP["CORNERS_UN_%s" % _line] = ("S_OUCORNERS@%s_U" % _line, 1)
+
+# The four families SportyBet already had and this side did not, found by
+# reading their card rather than guessing at names: win either half is spelled
+# per side rather than as one market with a team outcome, draw no bet is plain,
+# and the second-half double chance keeps the usual sign order.
+PASSTHROUGH_MAP.update({
+    "WINHALF_H_Y": ("S_HOMEWINHALF_Y", 1), "WINHALF_H_N": ("S_HOMEWINHALF_N", 1),
+    "WINHALF_A_Y": ("S_AWAYWINHALF_Y", 1), "WINHALF_A_N": ("S_AWAYWINHALF_N", 1),
+    "DNB_1": ("S_DNB_1", 1), "DNB_2": ("S_DNB_2", 1),
+    "DC2_1X": ("S_DC2T_1X", 1), "DC2_12": ("S_DC2T_12", 1),
+    "DC2_X2": ("S_DC2T_X2", 1),
+})
+
+# Asian handicap. Same line, same point of view - theirs is S_AH@<line>_1 for
+# the home side and _2 for the away side, quoted from the home team exactly as
+# SportyBet's specifier is.
+for _l in ("-3", "-2.75", "-2.5", "-2.25", "-2", "-1.75", "-1.5", "-1.25",
+           "-1", "-0.75", "-0.5", "-0.25", "0", "0.25", "0.5", "0.75",
+           "1", "1.25", "1.5", "1.75", "2", "2.25", "2.5", "2.75", "3"):
+    PASSTHROUGH_MAP["AH_1_%s" % _l] = ("S_AH@%s_1" % _l, 1)
+    PASSTHROUGH_MAP["AH_2_%s" % _l] = ("S_AH@%s_2" % _l, 1)
 # Not merged into MARKET_MAP for the same reason as its SportyBet twin: that
 # table is what the sweep fetches and what the board prices. These are fetched
 # per event at book time, where the full card comes back anyway.
