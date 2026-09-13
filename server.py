@@ -214,9 +214,12 @@ PASSTHROUGH_MAP.update({
 # Generated across the lines both books quote, quarters included. A line a book
 # does not price on a given fixture is refused by the existing not_priced path,
 # which is a named answer rather than a silent one.
-_AH_LINES = ["-3", "-2.75", "-2.5", "-2.25", "-2", "-1.75", "-1.5", "-1.25",
-             "-1", "-0.75", "-0.5", "-0.25", "0", "0.25", "0.5", "0.75",
-             "1", "1.25", "1.5", "1.75", "2", "2.25", "2.5", "2.75", "3"]
+# Halves and wholes only. Their card quotes -4.5 to 5 in half steps and no
+# quarter lines at all, measured across 355 events, so the quarters this
+# generated were codes that could never be booked here. Bet9ja does quote
+# them, and those legs read and split there rather than crossing.
+_AH_LINES = ["-4.5", "-4", "-3.5", "-3", "-2.5", "-2", "-1.5", "-1", "-0.5",
+             "0", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5"]
 for _l in _AH_LINES:
     PASSTHROUGH_MAP["AH_1_%s" % _l] = {
         "marketId": 16, "outcomeId": 1714, "specifier": "hcp=%s" % _l}
@@ -1170,6 +1173,17 @@ def _unbookable(raw_selections):
     judged = unknown = 0
     for item in raw_selections:
         ev, pred = item.get("eventId"), item.get("prediction")
+        # A MARKET WE DO NOT MODEL CANNOT BE JUDGED FROM THIS CACHE.
+        # The fixtures sweep fetches the 24 markets MARKET_MAP names and
+        # nothing else, so a pass-through pick - corners, a handicap, 2UP -
+        # has no price here whether SportyBet sells it or not. Judged anyway,
+        # every converted leg came back "no market there" and the slip was
+        # refused before it ever reached the bookmaker. Found by converting a
+        # real code on the live site: Le Mans +0.5, which SportyBet prices
+        # perfectly well.
+        if pred not in MARKET_MAP:
+            unknown += 1
+            continue
         prices = odds_by_event.get(ev)
         if prices is None:          # event not in the cache - cannot judge it
             unknown += 1

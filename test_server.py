@@ -1088,5 +1088,56 @@ class MarketsWeMoveButDoNotModel(unittest.TestCase):
             self.assertEqual(server.market_for(code).get("specifier"), "")
 
 
+
+class ThePreflightOnlyJudgesWhatItCanSee(unittest.TestCase):
+    """The fixtures sweep fetches the 24 markets MARKET_MAP names and nothing
+    else, so a pass-through pick has no price in that cache whether SportyBet
+    sells it or not. Judging one anyway refused every converted leg as "no
+    market there" before the slip ever reached the bookmaker.
+
+    Found by converting a real Bet9ja code on the live site - Le Mans +0.5,
+    a line SportyBet prices perfectly well - not by reading this function."""
+
+    def _judge(self, picks, cached):
+        real = server._FIXTURES_CACHE.copy()
+        server._FIXTURES_CACHE.update({"at": server.time.time(), "data": cached})
+        try:
+            return server._unbookable(picks)
+        finally:
+            server._FIXTURES_CACHE.clear()
+            server._FIXTURES_CACHE.update(real)
+
+    CACHE = [{"eventId": "e1", "odds": {"OVER_1.5": 1.3}}]
+
+    def test_a_pass_through_market_is_never_refused_here(self):
+        for code in ("AH_1_0.5", "CORNERS_OV_8.5", "UP2_1", "CARD_H_3", "MIXGG_1"):
+            bad, meta = self._judge(
+                [{"eventId": "e1", "prediction": code}], self.CACHE)
+            self.assertEqual(bad, [], code + " was refused before being sent")
+            self.assertEqual(meta["unknown"], 1, code + " should count as unknown")
+
+    def test_a_modelled_market_is_still_judged(self):
+        """The guard must not blind the check it was built for: half the card
+        carries no team-totals market, and one unplaceable leg among forty
+        loses all forty."""
+        bad, _m = self._judge(
+            [{"eventId": "e1", "prediction": "HOME_OVER_1.5"}], self.CACHE)
+        self.assertEqual(len(bad), 1, "a market the cache says is absent must still be caught")
+
+    def test_a_priced_modelled_market_passes(self):
+        bad, _m = self._judge(
+            [{"eventId": "e1", "prediction": "OVER_1.5"}], self.CACHE)
+        self.assertEqual(bad, [])
+
+    def test_sportybet_quotes_no_quarter_handicaps(self):
+        """Measured across 355 events: halves and wholes from -4.5 to 5, and
+        no quarter lines at all. Generating them made codes that could never
+        be booked here."""
+        self.assertIsNone(server.market_for("AH_1_-0.25"))
+        self.assertIsNotNone(server.market_for("AH_1_-0.5"))
+        self.assertIsNotNone(server.bet9ja.market_for("AH_1_-0.25"),
+                             "Bet9ja does quote quarters - those split there")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
