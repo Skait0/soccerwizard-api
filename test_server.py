@@ -1259,3 +1259,56 @@ class PassThroughParity(unittest.TestCase):
         for mod, table in ((server, server.PASSTHROUGH_MAP),
                            (server.bet9ja, server.bet9ja.PASSTHROUGH_MAP)):
             self.assertEqual(set(mod.MARKET_MAP) & set(table), set())
+
+
+class SportyBetNeverSubstitutesAMarket(unittest.TestCase):
+    """A market this server cannot map is refused, never swapped for another.
+
+    The selection used to be built as `market_for(pred) or MARKET_MAP["1"]`, so
+    an unknown code became HOME WIN - marketId 1, outcomeId 1, no specifier.
+    SportyBet accepted it and returned a booking code, so nothing looked wrong
+    at any point: the punter asked for one bet, got a code, and held a
+    different one. Found by sending a Bet9ja-only market to this route on
+    purpose and reading the code back.
+    """
+
+    def _post(self, selections):
+        real_gen, real_report = server.generate_sportybet_code, server.report
+        sent = []
+        server.generate_sportybet_code = lambda sels, region="ng": (
+            sent.append(sels) or {"code": "SBCODE"})
+        server.report = lambda msg, level="warning", **ctx: None
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/generate-booking-code",
+                           json={"selections": selections})
+            return r.status_code, r.get_json(), sent
+        finally:
+            server.generate_sportybet_code, server.report = real_gen, real_report
+
+    def test_an_unknown_market_is_refused_rather_than_booked_as_a_home_win(self):
+        code, body, sent = self._post(
+            [{"eventId": "sr:match:1", "prediction": "TOTAL_NONSENSE_MARKET"}])
+        self.assertEqual(code, 400, body)
+        self.assertEqual(body["unbookable"][0]["reason"], "not_mapped")
+        self.assertEqual(sent, [], "nothing may be sent to the bookmaker")
+
+    def test_a_market_only_the_other_book_sells_is_refused_here(self):
+        """Bet9ja carries the 1.5 rung of 1X2-or-Over/Under; this book does
+        not, and the difference must not be papered over."""
+        code, body, sent = self._post(
+            [{"eventId": "sr:match:1", "prediction": "MIX_1_OV_1.5"}])
+        self.assertEqual(code, 400)
+        self.assertEqual(body["unbookable"][0]["prediction"], "MIX_1_OV_1.5")
+        self.assertEqual(sent, [])
+
+    def test_a_pass_through_market_this_book_does_sell_still_books(self):
+        real_unb = server._unbookable
+        server._unbookable = lambda sel: ([], {"cache_age_s": 1, "judged": 0, "unknown": 1})
+        try:
+            code, body, sent = self._post(
+                [{"eventId": "sr:match:1", "prediction": "AH_1_-0.5"}])
+        finally:
+            server._unbookable = real_unb
+        self.assertEqual(code, 200, body)
+        self.assertEqual(sent[0][0]["marketId"], 16, "the handicap, not a home win")

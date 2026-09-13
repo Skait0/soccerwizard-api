@@ -1213,6 +1213,33 @@ def api_generate_code():
     data = request.json or {}
     raw_selections = data.get("selections", [])
 
+    # A MARKET IN NEITHER TABLE IS REFUSED, NEVER SUBSTITUTED.
+    #
+    # Below, the selection was built as `market_for(pred) or MARKET_MAP["1"]`,
+    # so a code this server does not know silently became HOME WIN: marketId 1,
+    # outcomeId 1, no specifier. SportyBet accepted it and returned a booking
+    # code, so nothing looked wrong anywhere - the punter asked for "Leeds or
+    # over 1.5", got a code, loaded it, and held a straight Leeds win instead.
+    # Found by sending a Bet9ja-only market to this route on purpose and
+    # reading the code back: one leg, `raw: "1/1/"`.
+    #
+    # Checked here, before the pre-flight, because it is knowable locally and
+    # costs nothing - the same order bet9ja's route uses. The shape is the one
+    # the client already retries on.
+    unmapped = [{"eventId": i.get("eventId"), "prediction": i.get("prediction"),
+                 "reason": "not_mapped"}
+                for i in raw_selections if market_for(i.get("prediction")) is None]
+    if unmapped:
+        report("booking: SportyBet market is not mapped",
+               bad_legs=len(unmapped), total_legs=len(raw_selections),
+               markets=", ".join(sorted({str(b["prediction"]) for b in unmapped})))
+        return jsonify({
+            "success": False,
+            "message": "SportyBet rejected the slip",
+            "detail": "no market there for %d of %d picks" % (len(unmapped), len(raw_selections)),
+            "unbookable": unmapped,
+        }), 400
+
     bad, how = _unbookable(raw_selections)
     if bad:
         # Named rather than counted, so the caller can drop exactly these and
@@ -1235,7 +1262,11 @@ def api_generate_code():
 
     formatted_selections = []
     for item in raw_selections:
-        mapping = market_for(item.get("prediction")) or MARKET_MAP["1"]
+        # Never `or MARKET_MAP["1"]`: see the unmapped check above. Anything
+        # that reaches here has a mapping, and if that ever stops being true
+        # the KeyError is the right failure - loud, and not somebody else's
+        # bet.
+        mapping = market_for(item.get("prediction"))
         formatted_selections.append({
             "eventId": item.get("eventId"),
             "marketId": mapping["marketId"],
