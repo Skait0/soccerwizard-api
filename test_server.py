@@ -1180,3 +1180,82 @@ class Bet9jaPassThroughBooks(unittest.TestCase):
         _c, body = self._post([{"eventId": "1", "code": "CORNERS_OV_9.5"}],
                               {"AH_1_-0.5": "1.85"})
         self.assertEqual(body["unbookable"][0]["reason"], "not_priced")
+
+
+class PassThroughParity(unittest.TestCase):
+    """The two pass-through tables, pinned against each other.
+
+    A code in one book's table and not the other's is a leg that reads and
+    splits on that book and can never cross to the other. Every one of those
+    below is deliberate and has a reason written beside the table it belongs
+    to - but nothing recorded WHICH they were, so a line quietly added to one
+    side looked exactly like a line deliberately left off the other. This test
+    is that record: it fails when the asymmetry changes, and the fix is either
+    to map the missing side or to move the code into the list here with the
+    reason.
+    """
+
+    # SportyBet quotes it, Bet9ja does not.
+    SPORTY_ONLY = {
+        # Whole Over/Under lines. Their card carries 0.5 to 5.5 in halves and
+        # nothing whole; converting one changes the bet, which the site offers
+        # out loud rather than doing quietly.
+        "OVER_2", "OVER_3", "UNDER_2", "UNDER_3",
+        # Handicap lines past +-3. SportyBet runs -4.5 to 5, Bet9ja -3 to 3.
+        "AH_1_-4.5", "AH_1_-4", "AH_1_-3.5", "AH_1_3.5", "AH_1_4", "AH_1_4.5",
+        "AH_1_5",
+        "AH_2_-4.5", "AH_2_-4", "AH_2_-3.5", "AH_2_3.5", "AH_2_4", "AH_2_4.5",
+        "AH_2_5",
+        # Team cards above what Bet9ja's card reaches: their home side stops at
+        # 3.5 (4+) and their away side at 2.5 (3+).
+        "CARD_H_5", "CARD_H_6", "CARD_A_4", "CARD_A_5", "CARD_A_6",
+        # Corners: SportyBet 6.5 to 12.5, Bet9ja 7.5 to 14.5.
+        "CORNERS_OV_6.5", "CORNERS_UN_6.5",
+    }
+
+    # Bet9ja quotes it, SportyBet does not.
+    BET9JA_ONLY = {
+        # Quarter handicaps. Measured across 355 SportyBet events: halves and
+        # wholes only, no quarter line anywhere on their card.
+        "AH_1_-2.75", "AH_1_-2.25", "AH_1_-1.75", "AH_1_-1.25", "AH_1_-0.75",
+        "AH_1_-0.25", "AH_1_0.25", "AH_1_0.75", "AH_1_1.25", "AH_1_1.75",
+        "AH_1_2.25", "AH_1_2.75",
+        "AH_2_-2.75", "AH_2_-2.25", "AH_2_-1.75", "AH_2_-1.25", "AH_2_-0.75",
+        "AH_2_-0.25", "AH_2_0.25", "AH_2_0.75", "AH_2_1.25", "AH_2_1.75",
+        "AH_2_2.25", "AH_2_2.75",
+        # The top of their corner card.
+        "CORNERS_OV_13.5", "CORNERS_OV_14.5", "CORNERS_UN_13.5",
+        "CORNERS_UN_14.5",
+        # 1X2-or-Over/Under at the lines they sell. SportyBet sells only 2.5,
+        # which both tables carry, so only 1.5 and 3.5 are stuck here.
+        "MIX_1_OV_1.5", "MIX_1_OV_3.5", "MIX_1_UN_1.5", "MIX_1_UN_3.5",
+        "MIX_2_OV_1.5", "MIX_2_OV_3.5", "MIX_2_UN_1.5", "MIX_2_UN_3.5",
+        "MIX_X_OV_1.5", "MIX_X_OV_3.5", "MIX_X_UN_1.5", "MIX_X_UN_3.5",
+        # 1X2 OR NO-GOAL, AND THIS ONE IS A GAP RATHER THAN A DIFFERENCE.
+        # The GG half of the family is mapped on both books (MIXGG_*, their
+        # 860-862 against S_CHANCEMIX). The NG half is mapped only here, so a
+        # Bet9ja "home or no goal" leg cannot cross. Whether SportyBet sells
+        # it, and under which ids, has not been read off their catalogue - and
+        # guessing the id books a different bet, which is the one mistake this
+        # table cannot afford. Left named rather than invented.
+        "MIXNG_1", "MIXNG_X", "MIXNG_2",
+    }
+
+    def test_the_asymmetry_is_the_recorded_one(self):
+        s, b = set(server.PASSTHROUGH_MAP), set(server.bet9ja.PASSTHROUGH_MAP)
+        self.assertEqual(s - b, self.SPORTY_ONLY)
+        self.assertEqual(b - s, self.BET9JA_ONLY)
+
+    def test_every_shared_code_resolves_on_both_books(self):
+        """A code in both tables has to be bookable on both, not merely
+        present: market_for is what the booking routes ask."""
+        for code in set(server.PASSTHROUGH_MAP) & set(server.bet9ja.PASSTHROUGH_MAP):
+            self.assertIsNotNone(server.market_for(code), code)
+            self.assertIsNotNone(server.bet9ja.market_for(code), code)
+
+    def test_no_pass_through_code_collides_with_a_modelled_one(self):
+        """market_for reads MARKET_MAP first, so a duplicated key would be
+        silently shadowed on one book and not the other."""
+        for mod, table in ((server, server.PASSTHROUGH_MAP),
+                           (server.bet9ja, server.bet9ja.PASSTHROUGH_MAP)):
+            self.assertEqual(set(mod.MARKET_MAP) & set(table), set())
