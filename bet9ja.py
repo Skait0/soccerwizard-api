@@ -135,9 +135,41 @@ MARKET_MAP = {
 
 # The groups we actually need to fetch, derived rather than restated so adding
 # a market cannot leave its group unfetched.
+
+# --- markets we move but do not model ------------------------------------
+# A CONVERTER NEEDS IDENTITY, NOT A PREDICTION. Everything above is a market
+# the model has an opinion about, which is why it is priced, graded and in the
+# published record. These are not: they exist so a slip somebody else built can
+# be read, re-cut and moved to the other book without us pretending to rate it.
+# Nothing here is ever produced by tipCode, so no board, no record and no
+# calibration changes by their being here.
+#
+# 1UP and 2UP are SportyBet's early-payout promotion and Bet9ja's alike: the
+# bet pays as soon as the side goes one (or two) goals ahead, whatever the
+# final score. Both books run it, which is how it can be converted at all - it
+# was the family I guessed would NOT port, and seven real codes said otherwise.
+# Verified against a live event before being written down: S_1X21_11 = 1.62,
+# S_1X22_12 = 2.31 on Leeds v Newcastle, 13 Sep 2026.
+#
+# Their sign is not their outcome. S_1X21 spells home/draw/away as 11/X1/21 and
+# S_1X22 as 12/X2/22 - the trailing digit is which promotion it is, not which
+# side - and reading that pair the obvious way books the wrong team.
+PASSTHROUGH_MAP = {
+    "UP1_1": ("S_1X21_11", 1), "UP1_X": ("S_1X21_X1", 1), "UP1_2": ("S_1X21_21", 1),
+    "UP2_1": ("S_1X22_12", 1), "UP2_X": ("S_1X22_X2", 1), "UP2_2": ("S_1X22_22", 1),
+}
+# Not merged into MARKET_MAP for the same reason as its SportyBet twin: that
+# table is what the sweep fetches and what the board prices. These are fetched
+# per event at book time, where the full card comes back anyway.
+def market_for(code):
+    """The odds key and group for a market code, modelled or pass-through."""
+    return MARKET_MAP.get(code) or PASSTHROUGH_MAP.get(code)
+
+
 MARKET_GROUPS = sorted({g for _k, g in MARKET_MAP.values()})
 
-_BY_KEY = {key: code for code, (key, _g) in MARKET_MAP.items()}
+_BY_KEY = {key: code for code, (key, _g) in
+           list(MARKET_MAP.items()) + list(PASSTHROUGH_MAP.items())}
 
 
 def parse_odds_key(key):
@@ -459,7 +491,7 @@ def build_selection(event, code):
       eventCode   the event's C field, not EXTID
       sportName   empty - their own client sends ""
     """
-    key, _group = MARKET_MAP[code]
+    key, _group = market_for(code)
     _sid_unused, sign, aux = parse_odds_key(key)
     raw = (event.get("raw") or {}).get(code)
     if raw is None:
@@ -588,7 +620,8 @@ COUPON_URL = ("https://coupon.bet9ja.com/desktop/feapi/CouponAjax/"
               "GetBookABetCouponV2?couponCode=%s&type=TYPE_DESKTOP_REPRINT")
 
 # ours <- theirs, for turning a leg we did not build back into a market we know
-_ODDS_KEY_TO_CODE = {v[0]: k for k, v in MARKET_MAP.items()}
+_ODDS_KEY_TO_CODE = {v[0]: k for k, v in
+                     list(MARKET_MAP.items()) + list(PASSTHROUGH_MAP.items())}
 
 
 def read_coupon(code, timeout=15):

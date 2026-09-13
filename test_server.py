@@ -1031,5 +1031,62 @@ class ReadASlipBack(unittest.TestCase):
         self.assertEqual(body["legs"][0]["home"], "PSV")
         self.assertEqual(body["book"], "bet9ja")
 
+
+class MarketsWeMoveButDoNotModel(unittest.TestCase):
+    """1UP and 2UP are both books' early-payout promotion: the bet pays as soon
+    as the side goes one (or two) ahead, whatever the final score. We have no
+    opinion about them and never will - they exist so a slip somebody else
+    built can be read, re-cut and moved without us pretending to rate it.
+
+    Both were verified against live events before being written down, and both
+    booked: Bet9ja 5RH8VCV and SportyBet ZVD0MB, 13 Sep 2026."""
+
+    def test_the_promotion_markets_reach_both_books(self):
+        for code in ("UP1_1", "UP1_X", "UP1_2", "UP2_1", "UP2_X", "UP2_2"):
+            self.assertIsNotNone(server.market_for(code), code + " has no SportyBet id")
+            self.assertIsNotNone(server.bet9ja.market_for(code), code + " has no Bet9ja key")
+
+    def test_a_promotion_leg_decodes_back_to_its_own_code(self):
+        """The read has to round-trip, or a converted slip loses the leg it
+        came in on."""
+        for code in ("UP1_1", "UP1_X", "UP1_2", "UP2_1", "UP2_X", "UP2_2"):
+            m = server.market_for(code)
+            key = (str(m["marketId"]), str(m["outcomeId"]), m.get("specifier") or "")
+            self.assertEqual(server._ODDS_LOOKUP.get(key), code,
+                             code + " does not decode back from " + str(key))
+
+    def test_1UP_and_2UP_are_not_the_same_market(self):
+        """1UP is 60200 and 2UP is 60100 - the LOWER id is the later
+        promotion. Reading that pair the obvious way books a different bet."""
+        self.assertEqual(server.market_for("UP1_1")["marketId"], 60200)
+        self.assertEqual(server.market_for("UP2_1")["marketId"], 60100)
+
+    def test_the_sign_is_not_the_side_on_bet9ja(self):
+        """S_1X21 spells home/draw/away as 11/X1/21 and S_1X22 as 12/X2/22:
+        the trailing digit is WHICH PROMOTION, not which side. Reading it the
+        obvious way books the wrong team."""
+        self.assertEqual(server.bet9ja.market_for("UP1_1")[0], "S_1X21_11")
+        self.assertEqual(server.bet9ja.market_for("UP1_2")[0], "S_1X21_21")
+        self.assertEqual(server.bet9ja.market_for("UP2_1")[0], "S_1X22_12")
+        self.assertEqual(server.bet9ja.market_for("UP2_2")[0], "S_1X22_22")
+
+    def test_nothing_we_predict_was_disturbed(self):
+        """The 24 modelled markets keep their ids. This table sits beside them
+        and a collision would silently repoint a market the record is built
+        on."""
+        for code, m in (("1", ("1", "1")), ("OVER_1.5", ("18", "12")),
+                        ("GG", ("29", "74"))):
+            got = server.MARKET_MAP[code]
+            self.assertEqual((str(got["marketId"]), str(got["outcomeId"])), m)
+        self.assertNotIn("UP2_1", server.MARKET_MAP,
+                         "a pass-through market must never join the swept table")
+        self.assertNotIn("UP2_1", server.bet9ja.MARKET_MAP)
+
+    def test_the_promotions_carry_no_specifier(self):
+        """A stray specifier would be sent as a line and refused."""
+        for code in ("UP1_1", "UP2_2"):
+            self.assertEqual(server.market_for(code).get("specifier"), "")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

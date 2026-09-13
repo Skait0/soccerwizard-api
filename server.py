@@ -116,8 +116,46 @@ MARKET_MAP = {
 }
 
 # Reverse lookup: (marketId, outcomeId, specifier) -> code, for reading odds.
+# --- markets we move but do not model --------------------------------------
+# The SportyBet half of bet9ja.PASSTHROUGH_MAP. Same reasoning: a converter
+# needs the selection's identity, not a probability, so these sit beside
+# MARKET_MAP rather than in it and nothing that predicts, prices or grades ever
+# sees them.
+#
+# 1UP is market 60200 and 2UP is 60100 - the lower id is the LATER promotion,
+# which is the sort of thing worth writing down once rather than rediscovering.
+# Outcome 1/2/3 is home/draw/away on both. Read off their own catalogue:
+# "1X2 - 1UP" and "1X2 - 2UP", 13 Sep 2026.
+PASSTHROUGH_MAP = {
+    "UP1_1": {"marketId": 60200, "outcomeId": 1, "specifier": ""},
+    "UP1_X": {"marketId": 60200, "outcomeId": 2, "specifier": ""},
+    "UP1_2": {"marketId": 60200, "outcomeId": 3, "specifier": ""},
+    "UP2_1": {"marketId": 60100, "outcomeId": 1, "specifier": ""},
+    "UP2_X": {"marketId": 60100, "outcomeId": 2, "specifier": ""},
+    "UP2_2": {"marketId": 60100, "outcomeId": 3, "specifier": ""},
+    # WHOLE Over/Under lines. SportyBet prices them, Bet9ja does not - their
+    # card carries 0.5/1.5/2.5/3.5/4.5/5.5 and nothing else, checked on a live
+    # event. So these read and split on SportyBet and can only CONVERT by
+    # changing the bet, which lib/convert says out loud rather than doing
+    # quietly. A whole line pushes: exactly two goals on "Over 2" returns the
+    # stake, which is why this can never become a market the model predicts.
+    "OVER_2": {"marketId": 18, "outcomeId": 12, "specifier": "total=2"},
+    "OVER_3": {"marketId": 18, "outcomeId": 12, "specifier": "total=3"},
+    "UNDER_2": {"marketId": 18, "outcomeId": 13, "specifier": "total=2"},
+    "UNDER_3": {"marketId": 18, "outcomeId": 13, "specifier": "total=3"},
+}
+# Deliberately NOT merged into MARKET_MAP. That table means "markets we model,
+# and therefore fetch on every sweep", and test_every_mapped_market_is_actually
+# _fetched enforces exactly that. Merging these made six promotion markets look
+# like markets the board prices, which would have widened a 49-request sweep
+# this server has been blocked for less than. The test caught it.
+def market_for(code):
+    """Ids for a market code, modelled or pass-through."""
+    return MARKET_MAP.get(code) or PASSTHROUGH_MAP.get(code)
+
+
 _ODDS_LOOKUP = {}
-for _code, _m in MARKET_MAP.items():
+for _code, _m in list(MARKET_MAP.items()) + list(PASSTHROUGH_MAP.items()):
     _ODDS_LOOKUP[(str(_m["marketId"]), str(_m["outcomeId"]), _m.get("specifier", "") or "")] = _code
 
 _FIXTURES_CACHE = {"at": 0, "data": None}
@@ -1097,7 +1135,7 @@ def api_generate_code():
 
     formatted_selections = []
     for item in raw_selections:
-        mapping = MARKET_MAP.get(item.get("prediction"), MARKET_MAP["1"])
+        mapping = market_for(item.get("prediction")) or MARKET_MAP["1"]
         formatted_selections.append({
             "eventId": item.get("eventId"),
             "marketId": mapping["marketId"],
