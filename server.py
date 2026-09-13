@@ -176,6 +176,19 @@ for _n in range(1, 7):
         "marketId": 800060, "outcomeId": "800060:%08d" % _n, "specifier": ""}
     PASSTHROUGH_MAP["CARD_A_%d" % _n] = {
         "marketId": 800060, "outcomeId": "800060:%08d" % (100 + _n), "specifier": ""}
+
+# CORNERS, total for the match. Market 166, outcome 12 over and 13 under - the
+# same shape as goals on market 18, which is why it needed no thought once it
+# was looked at. Both books quote half lines, so there is nothing to reconcile
+# and no push to worry about.
+# They do not carry the same ones. SportyBet runs 6.5 to 12.5 and Bet9ja 7.5 to
+# 14.5, so 7.5 through 12.5 cross and the ends do not: a 6.5 leg reads and
+# splits here with nowhere to land there, and the same for their 13.5 and 14.5.
+for _line in ("6.5", "7.5", "8.5", "9.5", "10.5", "11.5", "12.5"):
+    PASSTHROUGH_MAP["CORNERS_OV_%s" % _line] = {
+        "marketId": 166, "outcomeId": 12, "specifier": "total=%s" % _line}
+    PASSTHROUGH_MAP["CORNERS_UN_%s" % _line] = {
+        "marketId": 166, "outcomeId": 13, "specifier": "total=%s" % _line}
 # Deliberately NOT merged into MARKET_MAP. That table means "markets we model,
 # and therefore fetch on every sweep", and test_every_mapped_market_is_actually
 # _fetched enforces exactly that. Merging these made six promotion markets look

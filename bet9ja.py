@@ -200,6 +200,13 @@ for _n, _line in ((1, "0.5"), (2, "1.5"), (3, "2.5"), (4, "3.5")):
     PASSTHROUGH_MAP["CARD_H_%d" % _n] = ("S_OUBOOKHOME@%s_O" % _line, 1)
 for _n, _line in ((1, "0.5"), (2, "1.5"), (3, "2.5")):
     PASSTHROUGH_MAP["CARD_A_%d" % _n] = ("S_OUBOOKAWAY@%s_O" % _line, 1)
+
+# Corners for the match, against SportyBet's 166. Their card runs 7.5 to 14.5
+# and SportyBet's 6.5 to 12.5, so the shared middle is mapped and the ends are
+# left alone - a line one book does not sell is not a line to invent.
+for _line in ("7.5", "8.5", "9.5", "10.5", "11.5", "12.5", "13.5", "14.5"):
+    PASSTHROUGH_MAP["CORNERS_OV_%s" % _line] = ("S_OUCORNERS@%s_O" % _line, 1)
+    PASSTHROUGH_MAP["CORNERS_UN_%s" % _line] = ("S_OUCORNERS@%s_U" % _line, 1)
 # Not merged into MARKET_MAP for the same reason as its SportyBet twin: that
 # table is what the sweep fetches and what the board prices. These are fetched
 # per event at book time, where the full card comes back anyway.
