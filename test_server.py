@@ -717,11 +717,15 @@ class Bet9jaTellsTheBugFromTheBookmaker(unittest.TestCase):
     on and one you archive.
     """
 
-    def _run(self, selections, priced, seen):
+    def _run(self, selections, priced, seen, prices=None):
         real_ev, real_gen = server.bet9ja.fetch_event, server.bet9ja.generate_code
         real_report = server.report
+        # `prices` overrides the price of one "eventId|code" pair. Everything
+        # else is 2.00, which is a market that is open and worth booking.
         server.bet9ja.fetch_event = lambda eid: (
-            {"eventId": eid, "raw": {c: "2.00" for c in priced.get(str(eid), [])}}
+            {"eventId": eid,
+             "raw": {c: (prices or {}).get("%s|%s" % (eid, c), "2.00")
+                     for c in priced.get(str(eid), [])}}
             if str(eid) in priced else None)
         server.bet9ja.generate_code = lambda sels: {"code": "B9CODE", "legs": len(sels)}
         server.report = lambda msg, level="warning", **ctx: seen.append((msg, level, ctx))
@@ -789,6 +793,40 @@ class Bet9jaTellsTheBugFromTheBookmaker(unittest.TestCase):
         _c, body = self._run([{"eventId": "9", "code": "1X"}], {}, seen)
         self.assertIn("booking: Bet9ja event would not load", [m for m, _l, _c in seen])
         self.assertEqual(body["unbookable"][0]["reason"], "event_gone")
+
+    # A market priced at 1 is a market that is closed.
+
+    def test_a_market_priced_at_one_is_refused_before_it_is_booked(self):
+        """Bet9ja leaves a suspended market on the board with its price
+        collapsed to 1 instead of removing it, so `code in raw` is true and the
+        leg looks bookable. Sending it 502s their booking origin and takes the
+        whole slip with it - no unbookable list, nothing to retry. Measured
+        13 Sep 2026 on Elversberg v Bayern Munich, an hour after kick-off: that
+        leg 502'd alone while its four companions booked."""
+        seen = []
+        _c, body = self._run([{"eventId": "1", "code": "OVER_1.5"}],
+                             {"1": ["OVER_1.5"]}, seen,
+                             prices={"1|OVER_1.5": "1"})
+        self.assertEqual(body["unbookable"][0]["reason"], "suspended")
+        hits = [(m, l) for m, l, _c2 in seen
+                if m == "booking: Bet9ja has suspended this market"]
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0][1], "info",
+                         "a closed market is how betting works, not a fault")
+
+    def test_an_open_market_is_still_booked(self):
+        """The guard must not eat the ordinary case."""
+        _c, body = self._run([{"eventId": "1", "code": "OVER_1.5"}],
+                             {"1": ["OVER_1.5"]}, [],
+                             prices={"1|OVER_1.5": "1.11"})
+        self.assertTrue(body.get("success"), body)
+
+    def test_a_price_that_is_not_a_number_is_refused_rather_than_sent(self):
+        """An unparseable price is not evidence that the market is open."""
+        _c, body = self._run([{"eventId": "1", "code": "OVER_1.5"}],
+                             {"1": ["OVER_1.5"]}, [],
+                             prices={"1|OVER_1.5": "SUSP"})
+        self.assertEqual(body["unbookable"][0]["reason"], "suspended")
 
     # Whatever the reason, the punter and the client see one list.
 

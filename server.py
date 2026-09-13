@@ -816,10 +816,14 @@ def api_bet9ja_code():
     #   event_gone   Neither. Their API blinked, or the game left the board
     #                between building the slip and booking it.
     #
+    #   suspended    Mapped, priced, and the price is 1 - which is how Bet9ja
+    #                spells "this market is closed". Booking it 502s the whole
+    #                slip, and it would pay nothing anyway.
+    #
     # The mapping is checked BEFORE the fetch, so an unmapped leg no longer
     # costs a request to discover something already known locally.
     resolved = []
-    unmapped, unpriced, event_gone = [], [], []
+    unmapped, unpriced, event_gone, suspended = [], [], [], []
     try:
         for p in picks:
             code = p.get("code")
@@ -838,6 +842,24 @@ def api_bet9ja_code():
             if code not in (ev.get("raw") or {}):
                 leg["reason"] = "not_priced"
                 unpriced.append(leg)
+                continue
+            # PRICED, AND PRICED AT 1. Bet9ja leaves a suspended market on the
+            # board with its odds collapsed to 1 rather than removing it, so
+            # `code in raw` is true and the leg looks perfectly bookable. Send
+            # it and their booking origin 500s, which arrives here as a
+            # Cloudflare 502 with no `unbookable` list and nothing to retry -
+            # the whole slip dies for one dead market. Observed 13 Sep 2026 on
+            # 828935992, Elversberg v Bayern Munich, an hour after kick-off:
+            # that one leg 502'd on its own while the other four booked.
+            # A price of 1 also pays nothing, so there is no version of this
+            # leg worth keeping even if they did take it.
+            try:
+                price = float(ev["raw"][code])
+            except (TypeError, ValueError):
+                price = 0.0
+            if price <= 1.01:
+                leg["reason"] = "suspended"
+                suspended.append(leg)
                 continue
             resolved.append({"event": ev, "code": code})
     except Exception as ex:                      # noqa: BLE001 - user-facing path
@@ -860,10 +882,13 @@ def api_bet9ja_code():
     if unpriced:
         report("booking: Bet9ja does not price this market on this fixture",
                level="info", **_detail(unpriced))
+    if suspended:
+        report("booking: Bet9ja has suspended this market",
+               level="info", **_detail(suspended))
 
     # Order matters only in that the punter sees one list. Everything Bet9ja
     # will not take is still unbookable, whichever of the three it is.
-    bad = unmapped + event_gone + unpriced
+    bad = unmapped + event_gone + unpriced + suspended
     if bad:
         return jsonify({
             "success": False,
