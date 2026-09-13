@@ -160,6 +160,22 @@ PASSTHROUGH_MAP = {
     "MIXGG_X": {"marketId": 861, "outcomeId": 74, "specifier": ""},
     "MIXGG_2": {"marketId": 862, "outcomeId": 74, "specifier": ""},
 }
+
+# TEAM CARDS. Market 800060, and the outcome id carries both the team and
+# the threshold: 800060:000000N is the HOME side with N or more, 800060:
+# 000001N the away side. A composite id rather than the small integers every
+# other market here uses, which is worth knowing before someone tries to
+# parse it as a number.
+# "N or more cards" and "over N-0.5 cards" are the same bet, which is what
+# makes this pair with Bet9ja's S_OUBOOKHOME / S_OUBOOKAWAY at all. Their
+# home side runs to 3.5 and their away side stops at 2.5, so home 1+ to 4+
+# and away 1+ to 3+ are what can cross; anything above that reads and splits
+# here and has nowhere to land there.
+for _n in range(1, 7):
+    PASSTHROUGH_MAP["CARD_H_%d" % _n] = {
+        "marketId": 800060, "outcomeId": "800060:%08d" % _n, "specifier": ""}
+    PASSTHROUGH_MAP["CARD_A_%d" % _n] = {
+        "marketId": 800060, "outcomeId": "800060:%08d" % (100 + _n), "specifier": ""}
 # Deliberately NOT merged into MARKET_MAP. That table means "markets we model,
 # and therefore fetch on every sweep", and test_every_mapped_market_is_actually
 # _fetched enforces exactly that. Merging these made six promotion markets look

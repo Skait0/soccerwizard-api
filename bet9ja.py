@@ -191,6 +191,15 @@ for _code, _sign in (("MIXGG_1", "1orGG"), ("MIXGG_X", "XorGG"),
                      ("MIXGG_2", "2orGG"), ("MIXNG_1", "1orNG"),
                      ("MIXNG_X", "XorNG"), ("MIXNG_2", "2orNG")):
     PASSTHROUGH_MAP[_code] = ("S_CHANCEMIX_%s" % _sign, 1)
+
+# Team cards, against SportyBet's 800060. "N or more" there is "over N-0.5"
+# here, which is the same bet said two ways. Their home side runs to 3.5 and
+# the away side stops at 2.5, so anything above that has no pair and is left
+# named rather than guessed at.
+for _n, _line in ((1, "0.5"), (2, "1.5"), (3, "2.5"), (4, "3.5")):
+    PASSTHROUGH_MAP["CARD_H_%d" % _n] = ("S_OUBOOKHOME@%s_O" % _line, 1)
+for _n, _line in ((1, "0.5"), (2, "1.5"), (3, "2.5")):
+    PASSTHROUGH_MAP["CARD_A_%d" % _n] = ("S_OUBOOKAWAY@%s_O" % _line, 1)
 # Not merged into MARKET_MAP for the same reason as its SportyBet twin: that
 # table is what the sweep fetches and what the board prices. These are fetched
 # per event at book time, where the full card comes back anyway.
