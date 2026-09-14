@@ -481,6 +481,64 @@ def read_code(code, timeout=20):
     return int(body.get("AvailableEventCount") or 0), (coupon.get("Odds") or [])
 
 
+def read_coupon(code, timeout=20):
+    """Return the legs behind a BetKing booking code, in OUR vocabulary.
+
+    [{eventId, prediction, home, away, league, kickoff, odds}], where
+    `prediction` is our market code, or None for a market we carry no mapping
+    for. The same contract bet9ja.read_coupon answers on, so /api/slip and
+    everything above it needs no third dialect.
+
+    Their coupon rows carry the market as the same triple the feed does -
+    MarketTypeId, Spread, IDSelectionType - so the decode is _BY_TRIPLE, which
+    is derived from the forward table rather than a second map that could
+    drift from it. Verified on a real booking, FR2D84: (160, 2.5, 12) came
+    back as OVER_2.5 with the line intact in Spread.
+
+    `AvailableEventCount` is NOT the leg count and must not be used as one: a
+    coupon of four legs reads back with available=0 while its Odds array holds
+    all four. It appears to be about what can still be loaded into a betslip,
+    which is a different question from what the code contains.
+    """
+    try:
+        available, rows = read_code(code, timeout)
+    except Exception as ex:                      # noqa: BLE001 - user-facing
+        log.warning("betking coupon read failed: %s", ex)
+        return {"error": "request failed: %s" % ex}
+
+    if not rows:
+        # A code they do not know answers 200 with BookedCoupon: null. So does
+        # a code we minted against a selection id they did not recognise -
+        # there is no way to tell those apart from here, and "not found" is the
+        # honest answer to the reader either way.
+        return {"error": "not found", "notFound": True}
+
+    out = []
+    for leg in rows:
+        names = str(leg.get("MatchName") or "").split(" - ")
+        try:
+            odd = float(leg.get("OddValue"))
+        except (TypeError, ValueError):
+            odd = None
+        triple = (leg.get("MarketTypeId"), _sbv(leg.get("Spread")),
+                  leg.get("IDSelectionType"))
+        out.append({
+            "eventId": leg.get("MatchId"),
+            "prediction": _BY_TRIPLE.get(triple),
+            # What they called it, kept whether or not we mapped it: an
+            # unmapped leg still has to be nameable on screen, and their own
+            # words are better than a triple nobody can read.
+            "raw": "%s/%s" % (leg.get("MarketName") or "",
+                              leg.get("SelectionName") or ""),
+            "home": names[0].strip() if names else "",
+            "away": names[1].strip() if len(names) > 1 else "",
+            "league": leg.get("TournamentName") or "",
+            "kickoff": leg.get("EventDate") or "",
+            "odds": odd,
+        })
+    return {"legs": out, "available": available}
+
+
 def generate_code(selections, timeout=30, verify=True):
     """Turn a list of {event, code} into a BetKing booking code.
 

@@ -1656,16 +1656,22 @@ def read_sporty_share(code, region="ng", timeout=12):
 
 @app.route('/api/slip', methods=['GET'])
 def api_read_slip():
-    """GET /api/slip?book=sporty|bet9ja&code=XXXX -> the legs behind a code."""
+    """GET /api/slip?book=sporty|bet9ja|betking&code=XXXX -> the legs behind a code."""
     book = (request.args.get("book") or "sporty").strip().lower()
     code = (request.args.get("code") or "").strip()
     if not _CODE_RE.match(code):
         return jsonify({"success": False, "error": "that is not a booking code"}), 400
-    if book not in ("sporty", "bet9ja"):
+    if book not in ("sporty", "bet9ja", "betking"):
         return jsonify({"success": False, "error": "unknown bookmaker"}), 400
 
-    out = (bet9ja.read_coupon(code) if book == "bet9ja"
-           else read_sporty_share(code))
+    # Named rather than defaulted, so a typo in `book` can never be read
+    # against the wrong bookmaker and answered as though it were that one's.
+    if book == "bet9ja":
+        out = bet9ja.read_coupon(code)
+    elif book == "betking":
+        out = betking.read_coupon(code)
+    else:
+        out = read_sporty_share(code)
     if out.get("notFound"):
         return jsonify({"success": False, "notFound": True,
                         "error": "no slip behind that code"}), 404

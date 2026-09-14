@@ -302,6 +302,67 @@ class BookingGuards(unittest.TestCase):
         post.assert_not_called()
 
 
+class ReadingACodeBack(unittest.TestCase):
+    """The converter's half. Their coupon rows carry the market as the SAME
+    triple the feed does, so the decode is the derived reverse table rather
+    than a second map that could drift from the forward one."""
+
+    ROWS = [{
+        "MatchId": 1005309147, "MatchName": "Leeds - Newcastle",
+        "MarketTypeId": 160, "Spread": 2.5, "IDSelectionType": 12,
+        "MarketName": "Total Goals 2.5", "SelectionName": "Over (2.50)",
+        "OddValue": 1.71, "TournamentName": "Premier League",
+        "EventDate": "2026-09-14T21:00:00+02:00",
+    }]
+
+    def _read(self, rows, available=0):
+        with mock.patch.object(betking, "read_code",
+                               return_value=(available, rows)):
+            return betking.read_coupon("FR2D84")
+
+    def test_a_leg_comes_back_in_our_own_market_code(self):
+        out = self._read(self.ROWS)
+        leg = out["legs"][0]
+        self.assertEqual(leg["prediction"], "OVER_2.5")
+        self.assertEqual(leg["home"], "Leeds")
+        self.assertEqual(leg["away"], "Newcastle")
+        self.assertEqual(leg["odds"], 1.71)
+        self.assertEqual(leg["eventId"], 1005309147)
+
+    def test_the_line_is_read_from_Spread_not_assumed(self):
+        # 160 alone is "Total Goals" and says nothing about which rung. Their
+        # coupon carries it in Spread; dropping it decodes every total as the
+        # same bet.
+        rows = [dict(self.ROWS[0], Spread=3.5)]
+        self.assertEqual(self._read(rows)["legs"][0]["prediction"], "OVER_3.5")
+
+    def test_a_market_we_do_not_map_is_named_not_guessed(self):
+        # None is the contract bet9ja.read_coupon answers with, and the
+        # converter shows it as "a market we don't carry". Their own words are
+        # kept so the leg is still nameable on screen.
+        rows = [dict(self.ROWS[0], MarketTypeId=99999,
+                     MarketName="Corner Handicap", SelectionName="Home -2")]
+        leg = self._read(rows)["legs"][0]
+        self.assertIsNone(leg["prediction"])
+        self.assertIn("Corner Handicap", leg["raw"])
+
+    def test_a_code_with_nothing_in_it_is_not_found(self):
+        self.assertEqual(self._read([]).get("notFound"), True)
+
+    def test_available_is_not_the_leg_count(self):
+        # A four-leg coupon reads back with available=0 while its Odds array
+        # holds all four. Using it as a count would report every code empty.
+        out = self._read(self.ROWS, available=0)
+        self.assertEqual(len(out["legs"]), 1)
+        self.assertEqual(out["available"], 0)
+
+    def test_the_decode_is_the_derived_table(self):
+        # Not a second literal. A hand-typed reverse map is a thing to keep in
+        # step, and the pair drifts silently.
+        for code, triple in betking.MARKET_MAP.items():
+            self.assertEqual(betking._BY_TRIPLE[triple], code)
+
+
 class TheSweep(unittest.TestCase):
 
     def test_a_day_reports_what_they_say_they_hold(self):

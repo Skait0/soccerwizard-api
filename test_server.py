@@ -1725,6 +1725,60 @@ class BetKingAnswersInTheSameShape(unittest.TestCase):
         self.assertFalse(body["success"])
 
 
+class ReadingABetKingCodeThroughTheRoute(unittest.TestCase):
+    """The converter reads every book through /api/slip, so the route has to
+    name BetKing rather than let it fall through.
+
+    Added because a mutation deleting the branch broke nothing: read_coupon was
+    tested directly and the ROUTE was not, so an unnamed book would have been
+    read against SportyBet and answered as though it were SportyBet's.
+    """
+
+    LEGS = [{"eventId": 1005309147, "prediction": "OVER_2.5",
+             "home": "Leeds", "away": "Newcastle", "league": "Premier League",
+             "kickoff": "2026-09-14T21:00:00+02:00", "odds": 1.71}]
+
+    def _get(self, book, betking_out=None, sporty_out=None):
+        real_bk = server.betking.read_coupon
+        real_sb = server.read_sporty_share
+        server.betking.read_coupon = lambda c, **k: (
+            betking_out if betking_out is not None else {"legs": self.LEGS})
+        server.read_sporty_share = lambda c, **k: (
+            sporty_out if sporty_out is not None else {"legs": []})
+        try:
+            with server.app.test_client() as c:
+                r = c.get("/api/slip?book=%s&code=FR2D84" % book)
+                return r.status_code, r.get_json()
+        finally:
+            server.betking.read_coupon = real_bk
+            server.read_sporty_share = real_sb
+
+    def test_a_betking_code_is_read_by_betking(self):
+        code, body = self._get("betking")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["book"], "betking")
+        self.assertEqual(body["legs"][0]["prediction"], "OVER_2.5")
+
+    def test_it_is_not_read_against_sportybet(self):
+        # The failure this guards: the branch is gone, betking falls through to
+        # the else, and SportyBet's answer is returned labelled "betking".
+        _code, body = self._get("betking", sporty_out={"legs": [
+            {"eventId": "x", "prediction": "1", "home": "Wrong", "away": "Book",
+             "league": "", "kickoff": "", "odds": 2.0}]})
+        self.assertEqual(body["legs"][0]["home"], "Leeds")
+
+    def test_a_code_they_do_not_know_is_a_404(self):
+        code, body = self._get("betking",
+                               betking_out={"error": "not found", "notFound": True})
+        self.assertEqual(code, 404)
+        self.assertTrue(body["notFound"])
+
+    def test_an_unknown_book_is_still_refused(self):
+        code, body = self._get("bogus")
+        self.assertEqual(code, 400)
+        self.assertIn("unknown bookmaker", body["error"])
+
+
 class TheRouteFeedsBetKingWhatBetKingReads(unittest.TestCase):
     """A call-site assertion, added because three bugs have now shipped past a
     green suite that built its own inputs.
