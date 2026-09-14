@@ -223,6 +223,18 @@ PASSTHROUGH_MAP.update({
     "DC2_X2": {"marketId": 85, "outcomeId": 11, "specifier": ""},
 })
 
+# HIGHEST SCORING HALF. 52 is the match, 53 the home team's own goals and 54
+# the away team's, and all three share one outcome triple: 436 is the 1st half,
+# 438 the 2nd and 440 Equal. The ids are NOT 1/2/3 and not consecutive, which
+# is why they were read rather than assumed - taken off their catalogue on
+# 14 Sep 2026 and checked identical on three events (sr:match:72221274,
+# sr:match:72221290, sr:match:67015370), two of them ordinary fixtures rather
+# than featured ones, so this is not a big-league-only family.
+for _hh, _mkt in (("", 52), ("H_", 53), ("A_", 54)):
+    for _sfx, _out in (("1", 436), ("2", 438), ("E", 440)):
+        PASSTHROUGH_MAP["HIGHHALF_%s%s" % (_hh, _sfx)] = {
+            "marketId": _mkt, "outcomeId": _out, "specifier": ""}
+
 # ASIAN HANDICAP. Market 16, outcome 1714 the home side and 1715 the away side,
 # with the line in the specifier. The line is always quoted from the HOME
 # team's point of view on both books, so hcp=-1 is the home side giving a goal

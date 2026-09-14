@@ -220,6 +220,42 @@ PASSTHROUGH_MAP.update({
     "DC2_X2": ("S_DC2T_X2", 1),
 })
 
+# Highest scoring half, against SportyBet's 52/53/54. Both books spell it the
+# same way - one market per scope with 1st / 2nd / tie - so the family crosses
+# whole. Their names come out of the event's own TRANS dictionary, which is
+# where every unnamed key on this book should be looked up first: it carries
+# 4,244 entries, a NAME and a DESC per market, and it answered in one call what
+# a week of guessing had not.
+for _code, _key in (("HIGHHALF_", "S_HIGHHALF_"),
+                    ("HIGHHALF_H_", "S_HOMEHIGHHALF_"),
+                    ("HIGHHALF_A_", "S_AWAYHIGHHALF_")):
+    for _sfx in ("1", "2", "E"):
+        PASSTHROUGH_MAP[_code + _sfx] = (_key + _sfx, 1)
+
+# THREE FAMILIES THIS BOOK SELLS AND SPORTYBET DOES NOT. Mapped anyway: a
+# pasted code carrying one of them then READS and SPLITS here instead of
+# failing the whole ticket, which is the whole point of naming a leg we cannot
+# move. They are in PassThroughParity.BET9JA_ONLY with the same reasons.
+#
+#   S_PEN     "Penalty" - was a penalty AWARDED. SportyBet's nearest is 800123
+#             "Match Penalty Scored", and a saved penalty settles those two
+#             opposite ways, so it is a different bet and not a translation.
+#             They also quote only the Yes side of theirs.
+#   S_HMC     "Half Most Card" - which half carries the most bookings. Their
+#             Bookings group runs to 81 markets on a featured event and has no
+#             most-bookings-half anywhere in it.
+#   S_HALFCORNER  the same question about corners, and likewise absent there.
+#
+# The tie outcome is spelled E on the two card/goal markets and X on the corner
+# one, which is theirs to be inconsistent about, not ours to normalise.
+PASSTHROUGH_MAP.update({
+    "PEN_Y": ("S_PEN_Y", 1), "PEN_N": ("S_PEN_N", 1),
+    "HMC_1": ("S_HMC_1", 1), "HMC_2": ("S_HMC_2", 1), "HMC_E": ("S_HMC_E", 1),
+    "HALFCORNER_1": ("S_HALFCORNER_1", 1),
+    "HALFCORNER_2": ("S_HALFCORNER_2", 1),
+    "HALFCORNER_E": ("S_HALFCORNER_X", 1),
+})
+
 # Asian handicap. Same line, same point of view - theirs is S_AH@<line>_1 for
 # the home side and _2 for the away side, quoted from the home team exactly as
 # SportyBet's specifier is.

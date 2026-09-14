@@ -1231,12 +1231,37 @@ class PassThroughParity(unittest.TestCase):
         "MIX_1_OV_1.5", "MIX_1_OV_3.5", "MIX_1_UN_1.5", "MIX_1_UN_3.5",
         "MIX_2_OV_1.5", "MIX_2_OV_3.5", "MIX_2_UN_1.5", "MIX_2_UN_3.5",
         "MIX_X_OV_1.5", "MIX_X_OV_3.5", "MIX_X_UN_1.5", "MIX_X_UN_3.5",
+        # Penalty AWARDED. SportyBet sells penalty SCORED (800123) and only the
+        # Yes side of it; a saved penalty settles the two opposite ways, so
+        # there is nothing here to translate into.
+        "PEN_Y", "PEN_N",
+        # Which half carries the most bookings, and the same question about
+        # corners. Read off SportyBet's catalogue on 14 Sep 2026: their
+        # Bookings group is 81 markets on a featured event and their Corners
+        # group 48, and neither carries a most-in-a-half market.
+        "HMC_1", "HMC_2", "HMC_E",
+        "HALFCORNER_1", "HALFCORNER_2", "HALFCORNER_E",
     }
     # MIXNG_1/X/2 WAS IN THIS LIST AND IS NOT ANY MORE. It looked like a gap
     # because SportyBet does not use the word: their name for no-goal is "Any
     # Clean Sheet", markets 863/864/865, read off their catalogue on 14 Sep
     # 2026. At least one clean sheet is exactly "not both teams scored", so it
     # is the same bet under another name and the family now crosses whole.
+
+    def test_highest_scoring_half_keeps_the_ids_read_off_the_catalogue(self):
+        """52/53/54 and 436/438/440, not 1/2/3.
+
+        Every other three-way market on this book uses small consecutive
+        outcome ids, so these look like a mistake and are not: they were read
+        off SportyBet's own catalogue on 14 Sep 2026 and were identical on
+        three events. Rounding them to 1/2/3 would book a different half.
+        """
+        for code, mkt in (("HIGHHALF_", 52), ("HIGHHALF_H_", 53),
+                          ("HIGHHALF_A_", 54)):
+            for sfx, out in (("1", 436), ("2", 438), ("E", 440)):
+                got = server.PASSTHROUGH_MAP[code + sfx]
+                self.assertEqual(got["marketId"], mkt, code + sfx)
+                self.assertEqual(got["outcomeId"], out, code + sfx)
 
     def test_the_asymmetry_is_the_recorded_one(self):
         s, b = set(server.PASSTHROUGH_MAP), set(server.bet9ja.PASSTHROUGH_MAP)
