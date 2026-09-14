@@ -303,7 +303,23 @@ for _l in ("0.5", "1.5", "2.5"):
 # one.
 PASSTHROUGH_MAP["BOTHHALVES_OV_Y"] = ("S_UO121_O15O15", 1)
 PASSTHROUGH_MAP["BOTHHALVES_UN_Y"] = ("S_UO121_U15U15", 1)
+# FIRST-HALF 1X2 & OVER/UNDER. The one sibling family of 14 Sep's second
+# tranche that this book actually prices. Note it is S_1X2HTOU and NOT
+# S_1H1X2OU, which is also in their dictionary, also named "1st Half - 1X2 or
+# Over/Under", and priced on none of five events - two names for one bet, only
+# one of them real.
+for _sign, _out in (("1_OV", "1O1T"), ("1_UN", "1U1T"), ("X_OV", "XO1T"),
+                    ("X_UN", "XU1T"), ("2_OV", "2O1T"), ("2_UN", "2U1T")):
+    _s, _d = _sign.split("_")
+    PASSTHROUGH_MAP["FH_MIX_%s_%s_1.5" % (_s, _d)] = (
+        "S_1X2HTOU@1.5_%s" % _out, 1)
+
 # LEFT UNMAPPED ON PURPOSE, having been looked for and not found priced:
+#   The rest of the sibling tranche. Their dictionary names a European
+#   handicap per half, an Asian handicap per half, corner ranges for the match
+#   and each side, and first-half bookings per team - every one of them an
+#   exact counterpart to a code we now carry, and every one priced on NONE of
+#   five Premier League events. Listed, never sold.
 #   FH_/SH_ HOME/AWAY totals - S_OUHOME1T and its three siblings are in their
 #     dictionary and were priced on none of four Premier League events carrying
 #     1,100-1,500 keys each. A key format that cannot be read off a real event

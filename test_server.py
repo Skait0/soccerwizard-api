@@ -1315,6 +1315,47 @@ class PassThroughParity(unittest.TestCase):
         "SH_HOME_UNDER_0.5", "SH_HOME_UNDER_1.5", "SH_HOME_UNDER_2.5",
     }
 
+    # The sibling tranche, 14 Sep: half-versions and per-team versions of
+    # markets already carried. Bet9ja's dictionary names a counterpart for
+    # EVERY family here and prices not one of them on five Premier League
+    # events, so all of it reads and splits rather than converting. The one
+    # sibling that DOES cross - first-half 1X2 & over/under - is absent from
+    # this list for exactly that reason.
+    SPORTY_ONLY_SIBLINGS = {
+        # European handicap, the match and each half. Bet9ja names one
+        # (S_1X2HND1T/2T) and prices it on none of five events.
+        "EH_0_1_1", "EH_0_1_2", "EH_0_1_X", "EH_0_2_1", "EH_0_2_2",
+        "EH_0_2_X", "EH_0_3_1", "EH_0_3_2", "EH_0_3_X", "EH_0_4_1",
+        "EH_0_4_2", "EH_0_4_X", "EH_0_5_1", "EH_0_5_2", "EH_0_5_X",
+        "EH_1_0_1", "EH_1_0_2", "EH_1_0_X", "EH_2_0_1", "EH_2_0_2",
+        "EH_2_0_X", "EH_3_0_1", "EH_3_0_2", "EH_3_0_X", "FH_EH_0_1_1",
+        "FH_EH_0_1_2", "FH_EH_0_1_X", "FH_EH_0_2_1", "FH_EH_0_2_2",
+        "FH_EH_0_2_X", "FH_EH_1_0_1", "FH_EH_1_0_2", "FH_EH_1_0_X",
+        "SH_EH_0_1_1", "SH_EH_0_1_2", "SH_EH_0_1_X", "SH_EH_0_2_1",
+        "SH_EH_0_2_2", "SH_EH_0_2_X", "SH_EH_1_0_1", "SH_EH_1_0_2",
+        "SH_EH_1_0_X",
+        # Asian handicap inside one half. S_12HND1T, S_12HND2T and S_AHH are all
+        # listed over there and none of them are ever priced.
+        "FH_AH_1_-0.5", "FH_AH_1_-1", "FH_AH_1_-1.5", "FH_AH_1_-2",
+        "FH_AH_1_0", "FH_AH_1_0.5", "FH_AH_2_-0.5", "FH_AH_2_-1",
+        "FH_AH_2_-1.5", "FH_AH_2_-2", "FH_AH_2_0", "FH_AH_2_0.5",
+        "SH_AH_1_-0.5", "SH_AH_1_-1", "SH_AH_1_-1.5", "SH_AH_1_-2",
+        "SH_AH_1_0", "SH_AH_1_0.5", "SH_AH_2_-0.5", "SH_AH_2_-1",
+        "SH_AH_2_-1.5", "SH_AH_2_-2", "SH_AH_2_0", "SH_AH_2_0.5",
+        # Corner range, the match and each side. S_MULTIC, S_MULTICH and S_MULTICA
+        # carry our exact bands - 0-8/9-11/12+ and 0-2/3-4/5-6/7+ - and are
+        # priced on none of five events.
+        "CORNRANGE_0_8", "CORNRANGE_12", "CORNRANGE_9_11", "CORNRANGE_A_0_2",
+        "CORNRANGE_A_3_4", "CORNRANGE_A_5_6", "CORNRANGE_A_7",
+        "CORNRANGE_H_0_2", "CORNRANGE_H_3_4", "CORNRANGE_H_5_6",
+        "CORNRANGE_H_7",
+        # One side's bookings in the first half. S_CARDSHOME1T and S_CARDSAWAY1T,
+        # listed and never sold.
+        "FH_CARDUN_A_1", "FH_CARDUN_A_2", "FH_CARDUN_A_3", "FH_CARDUN_H_1",
+        "FH_CARDUN_H_2", "FH_CARDUN_H_3", "FH_CARD_A_1", "FH_CARD_A_2",
+        "FH_CARD_A_3", "FH_CARD_H_1", "FH_CARD_H_2", "FH_CARD_H_3",
+    }
+
     # MIXNG_1/X/2 WAS IN THIS LIST AND IS NOT ANY MORE. It looked like a gap
     # because SportyBet does not use the word: their name for no-goal is "Any
     # Clean Sheet", markets 863/864/865, read off their catalogue on 14 Sep
@@ -1393,7 +1434,7 @@ class PassThroughParity(unittest.TestCase):
     def test_the_asymmetry_is_the_recorded_one(self):
         s, b = set(server.PASSTHROUGH_MAP), set(server.bet9ja.PASSTHROUGH_MAP)
         self.assertEqual(s - b, self.SPORTY_ONLY | self.SPORTY_ONLY_14SEP
-                         | self.SPORTY_ONLY_CATALOGUE)
+                         | self.SPORTY_ONLY_CATALOGUE | self.SPORTY_ONLY_SIBLINGS)
         self.assertEqual(b - s, self.BET9JA_ONLY)
 
     def test_every_shared_code_resolves_on_both_books(self):

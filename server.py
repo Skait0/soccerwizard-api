@@ -216,6 +216,76 @@ for _line in ("6.5", "7.5", "8.5", "9.5", "10.5", "11.5", "12.5"):
     PASSTHROUGH_MAP["CORNERS_UN_%s" % _line] = {
         "marketId": 166, "outcomeId": 13, "specifier": "total=%s" % _line}
 
+# ---------------------------------------------------------------------------
+# THE SIBLING FAMILIES. Half-versions and per-team versions of markets already
+# carried, taken off the same catalogue read. Nothing exotic here on purpose:
+# each one has a full-match or whole-team twin above, so the shape was already
+# known and only the ids needed reading.
+#
+# EUROPEAN HANDICAP, which is NOT the handicap on market 16. That one is Asian
+# - two outcomes, the draw eliminated. This is three outcomes with a scoreline
+# head start, so it keeps its own name rather than another AH line, and a leg
+# that reads as "Home (2:0)" means the away side starts two goals up.
+# The halves carry a shorter card than the match does - 0:1, 0:2 and 1:0 only,
+# on all eight events checked - so they get their own line list. Generating the
+# full-match lines for them produced 24 codes that matched nothing on any card,
+# which is a mapping nobody could ever book.
+for _mid, _pre, _lines in (
+        (14, "", ((0, 1), (0, 2), (0, 3), (0, 4), (0, 5), (1, 0), (2, 0), (3, 0))),
+        (65, "FH_", ((0, 1), (0, 2), (1, 0))),
+        (87, "SH_", ((0, 1), (0, 2), (1, 0)))):
+    for _h, _a in _lines:
+        for _sfx, _out in (("1", 1711), ("X", 1712), ("2", 1713)):
+            PASSTHROUGH_MAP["%sEH_%d_%d_%s" % (_pre, _h, _a, _sfx)] = {
+                "marketId": _mid, "outcomeId": _out,
+                "specifier": "hcp=%d:%d" % (_h, _a)}
+
+# ASIAN HANDICAP WITHIN ONE HALF. 66 and 88 against 16 for the match, and the
+# same two outcomes - 1714 home, 1715 away.
+for _pre, _mid in (("FH_", 66), ("SH_", 88)):
+    for _l in ("-2", "-1.5", "-1", "-0.5", "0", "0.5"):
+        PASSTHROUGH_MAP["%sAH_1_%s" % (_pre, _l)] = {
+            "marketId": _mid, "outcomeId": 1714, "specifier": "hcp=%s" % _l}
+        PASSTHROUGH_MAP["%sAH_2_%s" % (_pre, _l)] = {
+            "marketId": _mid, "outcomeId": 1715, "specifier": "hcp=%s" % _l}
+
+# FIRST-HALF 1X2 & TOTAL. The full-match twin is six separate Yes/No markets
+# (854-859); this is ONE market with six outcomes, so the ids are read off it
+# directly rather than derived from the sign. 1.5 is the only line they quote.
+for _sfx, _out in (("1_UN", 794), ("1_OV", 796), ("X_UN", 798),
+                   ("X_OV", 800), ("2_UN", 802), ("2_OV", 804)):
+    _sign, _dir = _sfx.split("_")
+    PASSTHROUGH_MAP["FH_MIX_%s_%s_1.5" % (_sign, _dir)] = {
+        "marketId": 79, "outcomeId": _out, "specifier": "total=1.5"}
+
+# CORNER RANGE, the match and each side. Same composite-id shape as goal range
+# on market 25: the variant is named in the specifier AND carried inside the
+# outcome id, and the two must agree.
+_VAR_PR12 = "variant=sr:point_range:12+"
+_VAR_PR7 = "variant=sr:point_range:7+"
+for _band, _out in (("0_8", 1141), ("9_11", 1142), ("12", 1143)):
+    PASSTHROUGH_MAP["CORNRANGE_%s" % _band] = {
+        "marketId": 169, "outcomeId": "sr:point_range:12+:%d" % _out,
+        "specifier": _VAR_PR12}
+for _side, _mid in (("H", 170), ("A", 171)):
+    for _band, _out in (("0_2", 1144), ("3_4", 1145), ("5_6", 1146), ("7", 1147)):
+        PASSTHROUGH_MAP["CORNRANGE_%s_%s" % (_side, _band)] = {
+            "marketId": _mid, "outcomeId": "sr:point_range:7+:%d" % _out,
+            "specifier": _VAR_PR7}
+
+# ONE SIDE'S BOOKINGS IN THE FIRST HALF. 900306 home, 900307 away, outcome 30
+# over and 31 under - the same shape as team corners below, not the composite
+# ids the full-match team-cards market uses. "N or more bookings" is "over
+# N-0.5", which is how the full-match CARD_ family is already named, so these
+# follow it.
+for _pre, _mid in (("H", 900306), ("A", 900307)):
+    for _n, _line in ((1, "0.5"), (2, "1.5"), (3, "2.5")):
+        PASSTHROUGH_MAP["FH_CARD_%s_%d" % (_pre, _n)] = {
+            "marketId": _mid, "outcomeId": 30, "specifier": "total=%s" % _line}
+        PASSTHROUGH_MAP["FH_CARDUN_%s_%d" % (_pre, _n)] = {
+            "marketId": _mid, "outcomeId": 31, "specifier": "total=%s" % _line}
+# ---------------------------------------------------------------------------
+
 # ONE SIDE'S CORNERS. 900300 is the HOME team's total and 900301 the away
 # team's, outcome 30 over and 31 under, the line in the specifier. Read off
 # their catalogue on 14 Sep: 3.5 through 7.5 on the home side, and a real
