@@ -133,6 +133,16 @@ PASSTHROUGH_MAP = {
     "UP2_1": {"marketId": 60100, "outcomeId": 1, "specifier": ""},
     "UP2_X": {"marketId": 60100, "outcomeId": 2, "specifier": ""},
     "UP2_2": {"marketId": 60100, "outcomeId": 3, "specifier": ""},
+    # DOUBLE CHANCE WITH THE 1UP PROMOTION, market 60110. Found in a real
+    # punter's code (HCVKA1, 14 Sep) as `60110/11/` - three legs of thirty-one
+    # that read back as an unknown market and cost the whole ticket.
+    # THE OUTCOME IDS ARE NOT IN SIGN ORDER, exactly as market 85 is not:
+    # 9 is Home or Draw, 10 is Home or AWAY, 11 is Draw or Away. Reading the
+    # pair the obvious way books 12 as 1X. Same trap, second market - so it is
+    # written out here rather than generated.
+    "DC1UP_1X": {"marketId": 60110, "outcomeId": 9,  "specifier": ""},
+    "DC1UP_12": {"marketId": 60110, "outcomeId": 10, "specifier": ""},
+    "DC1UP_X2": {"marketId": 60110, "outcomeId": 11, "specifier": ""},
     # WHOLE Over/Under lines. SportyBet prices them, Bet9ja does not - their
     # card carries 0.5/1.5/2.5/3.5/4.5/5.5 and nothing else, checked on a live
     # event. So these read and split on SportyBet and can only CONVERT by
@@ -205,6 +215,37 @@ for _line in ("6.5", "7.5", "8.5", "9.5", "10.5", "11.5", "12.5"):
         "marketId": 166, "outcomeId": 12, "specifier": "total=%s" % _line}
     PASSTHROUGH_MAP["CORNERS_UN_%s" % _line] = {
         "marketId": 166, "outcomeId": 13, "specifier": "total=%s" % _line}
+
+# ONE SIDE'S CORNERS. 900300 is the HOME team's total and 900301 the away
+# team's, outcome 30 over and 31 under, the line in the specifier. Read off
+# their catalogue on 14 Sep: 3.5 through 7.5 on the home side, and a real
+# punter's code carried `900300/30/total=3.5` - which read back as an unknown
+# market because only one line of this family had ever been mapped.
+for _line in ("3.5", "4.5", "5.5", "6.5", "7.5"):
+    PASSTHROUGH_MAP["CORNERS_H_OV_%s" % _line] = {
+        "marketId": 900300, "outcomeId": 30, "specifier": "total=%s" % _line}
+    PASSTHROUGH_MAP["CORNERS_H_UN_%s" % _line] = {
+        "marketId": 900300, "outcomeId": 31, "specifier": "total=%s" % _line}
+    PASSTHROUGH_MAP["CORNERS_A_OV_%s" % _line] = {
+        "marketId": 900301, "outcomeId": 30, "specifier": "total=%s" % _line}
+    PASSTHROUGH_MAP["CORNERS_A_UN_%s" % _line] = {
+        "marketId": 900301, "outcomeId": 31, "specifier": "total=%s" % _line}
+
+# GOALS IN THE FIRST N MINUTES, market 60180, outcome 12 over and 13 under.
+# The specifier carries BOTH numbers - `minsnr=10|total=1.5` is "over 1.5 goals
+# in the first ten minutes" - which is why this cannot be folded into the plain
+# over/under family: the same market id serves every window, and dropping the
+# minsnr half would book a full-match line instead of a ten-minute one.
+# Six legs of the thirty-one in HCVKA1 were these, all unreadable until now.
+# The windows SportyBet publishes, read off their own card: 10 minutes at 1.5,
+# 30 at 2.5, 50 at 3.5. A window they do not sell is not one to invent.
+for _mins, _total in (("10", "1.5"), ("30", "2.5"), ("50", "3.5")):
+    PASSTHROUGH_MAP["EARLY_OV_%s_%s" % (_mins, _total)] = {
+        "marketId": 60180, "outcomeId": 12,
+        "specifier": "minsnr=%s|total=%s" % (_mins, _total)}
+    PASSTHROUGH_MAP["EARLY_UN_%s_%s" % (_mins, _total)] = {
+        "marketId": 60180, "outcomeId": 13,
+        "specifier": "minsnr=%s|total=%s" % (_mins, _total)}
 
 # WIN EITHER HALF. 50 is the home side and 51 the away side, 74 Yes and 76 No.
 PASSTHROUGH_MAP.update({
@@ -1073,6 +1114,60 @@ def api_bet9ja_code():
 _CODE_RE = re.compile(r"^[A-Za-z0-9]{4,16}$")
 
 
+_EVENT_NAME_CACHE = {}
+_EVENT_NAME_MAX = 12
+
+
+def _sporty_event_name(event_id, region="ng"):
+    """Teams, competition and status for ONE event, asked of SportyBet direct.
+
+    The share read returns `sr:match:` ids and nothing else - no names - so the
+    names normally come from our own fixtures cache. That cache holds UPCOMING
+    matches: SportyBet drops a fixture the moment it kicks off and our sweep
+    follows, so a code read an hour after kick-off had legs nothing could name.
+    Reported on HCVKA1, where five of thirty-one legs came back as "a game we
+    don't carry" for games we carried that morning.
+
+    Their own event endpoint still answers for a match in play, and it carries
+    the status too - which is the honest thing to tell the reader: that game
+    has started, not that it is unknown to us.
+
+    One request per unnamed leg, capped, cached for the life of the process,
+    and best effort: a failure leaves the leg unnamed exactly as before.
+    """
+    if not event_id:
+        return None
+    if event_id in _EVENT_NAME_CACHE:
+        return _EVENT_NAME_CACHE[event_id]
+    if len(_EVENT_NAME_CACHE) >= _EVENT_NAME_MAX * 40:
+        _EVENT_NAME_CACHE.clear()
+    url = ("https://www.sportybet.com/api/%s/factsCenter/event"
+           "?eventId=%s&productId=3" % (region, quote(str(event_id))))
+    try:
+        r = requests.get(url, headers=_headers(region), impersonate="chrome120",
+                         timeout=6)
+        d = (r.json() or {}).get("data") or {}
+    except Exception as ex:                      # noqa: BLE001 - best effort
+        log.info("sportybet event lookup failed for %s: %s", event_id, ex)
+        _EVENT_NAME_CACHE[event_id] = None
+        return None
+    if not d.get("homeTeamName"):
+        _EVENT_NAME_CACHE[event_id] = None
+        return None
+    sport = d.get("sport") or {}
+    cat = sport.get("category") or {}
+    tour = cat.get("tournament") or {}
+    out = {
+        "homeTeam": d.get("homeTeamName") or "",
+        "awayTeam": d.get("awayTeamName") or "",
+        "league": " ".join(x for x in (cat.get("name"), tour.get("name")) if x),
+        # NOT_STARTED / H1 / HT / H2 / ENDED - the reason the board let it go.
+        "status": d.get("matchStatus") or d.get("status") or "",
+    }
+    _EVENT_NAME_CACHE[event_id] = out
+    return out
+
+
 def read_sporty_share(code, region="ng", timeout=12):
     """The legs behind a SportyBet booking code, in our own market codes.
 
@@ -1100,11 +1195,24 @@ def read_sporty_share(code, region="ng", timeout=12):
 
     out = []
     ticket = ((body.get("data") or {}).get("ticket") or {})
+    # THE BOARD DROPS A MATCH AT KICK-OFF, AND A PUNTER'S CODE DOES NOT.
+    # SportyBet removes a fixture from its upcoming list the moment it starts,
+    # our sweep follows, and a code read an hour later then had legs the cache
+    # could not name - reported on HCVKA1, where five of thirty-one came back
+    # as "a game we don't carry" for games we carried that morning.
+    # The ticket itself carries the names; they were simply never read. Below,
+    # the fixture cache is preferred (it is ours, and it carries the odds) and
+    # the ticket answers for anything the cache has let go.
     for sel in (ticket.get("selections") or []):
         key = (str(sel.get("marketId")), str(sel.get("outcomeId")),
                sel.get("specifier") or "")
         eid = sel.get("eventId")
         fx = by_event.get(eid) or {}
+        if not fx.get("homeTeam"):
+            named = _sporty_event_name(eid, region)
+            if named:
+                fx = dict(fx)
+                fx.update(named)
         pred = _ODDS_LOOKUP.get(key)
         out.append({
             "eventId": eid,
@@ -1115,6 +1223,11 @@ def read_sporty_share(code, region="ng", timeout=12):
             "league": fx.get("league") or "",
             "kickoff": fx.get("startTime") or "",
             "odds": (fx.get("odds") or {}).get(pred) if pred else None,
+            # Only present when the fixture had to be named by asking SportyBet
+            # directly, which happens when our board has let it go: H1 / HT /
+            # H2 / ENDED says the game is on or over, which is a different
+            # sentence from "we don't carry it".
+            "status": fx.get("status") or "",
         })
     return {"legs": out}
 

@@ -1242,6 +1242,22 @@ class PassThroughParity(unittest.TestCase):
         "HMC_1", "HMC_2", "HMC_E",
         "HALFCORNER_1", "HALFCORNER_2", "HALFCORNER_E",
     }
+
+    # SportyBet quotes it, Bet9ja does not - added 14 Sep from a real code.
+    SPORTY_ONLY_14SEP = {
+        # Double chance with the 1UP promotion. Bet9ja runs 1UP on 1X2 only.
+        "DC1UP_1X", "DC1UP_12", "DC1UP_X2",
+        # One side's corners. Bet9ja sells team corners nowhere on their card.
+        "CORNERS_H_OV_3.5", "CORNERS_H_UN_3.5", "CORNERS_H_OV_4.5", "CORNERS_H_UN_4.5",
+        "CORNERS_H_OV_5.5", "CORNERS_H_UN_5.5", "CORNERS_H_OV_6.5", "CORNERS_H_UN_6.5",
+        "CORNERS_H_OV_7.5", "CORNERS_H_UN_7.5",
+        "CORNERS_A_OV_3.5", "CORNERS_A_UN_3.5", "CORNERS_A_OV_4.5", "CORNERS_A_UN_4.5",
+        "CORNERS_A_OV_5.5", "CORNERS_A_UN_5.5", "CORNERS_A_OV_6.5", "CORNERS_A_UN_6.5",
+        "CORNERS_A_OV_7.5", "CORNERS_A_UN_7.5",
+        # Goals inside the first N minutes. No equivalent on their card either.
+        "EARLY_OV_10_1.5", "EARLY_UN_10_1.5", "EARLY_OV_30_2.5", "EARLY_UN_30_2.5",
+        "EARLY_OV_50_3.5", "EARLY_UN_50_3.5",
+    }
     # MIXNG_1/X/2 WAS IN THIS LIST AND IS NOT ANY MORE. It looked like a gap
     # because SportyBet does not use the word: their name for no-goal is "Any
     # Clean Sheet", markets 863/864/865, read off their catalogue on 14 Sep
@@ -1265,7 +1281,7 @@ class PassThroughParity(unittest.TestCase):
 
     def test_the_asymmetry_is_the_recorded_one(self):
         s, b = set(server.PASSTHROUGH_MAP), set(server.bet9ja.PASSTHROUGH_MAP)
-        self.assertEqual(s - b, self.SPORTY_ONLY)
+        self.assertEqual(s - b, self.SPORTY_ONLY | self.SPORTY_ONLY_14SEP)
         self.assertEqual(b - s, self.BET9JA_ONLY)
 
     def test_every_shared_code_resolves_on_both_books(self):
@@ -1334,3 +1350,80 @@ class SportyBetNeverSubstitutesAMarket(unittest.TestCase):
             server._unbookable = real_unb
         self.assertEqual(code, 200, body)
         self.assertEqual(sent[0][0]["marketId"], 16, "the handicap, not a home win")
+
+
+class ACodeFromARealPunter(unittest.TestCase):
+    """HCVKA1, read on 14 Sep: thirty-one legs, nine unreadable.
+
+    The reader's words were "we carry some games but the converter says we
+    dont". Two separate causes in one code, and neither was the booking:
+
+      nine legs      markets we had never mapped - 60110 double chance with the
+                     1UP promotion, 60180 goals inside the first N minutes, and
+                     900300 one side's corners at a line other than 7.5
+      five legs      games that had KICKED OFF. SportyBet drops a fixture from
+                     its upcoming list the moment it starts and our sweep
+                     follows, so the names were gone from the cache by the time
+                     the code was read.
+    """
+
+    def test_the_markets_that_code_carried_are_all_mapped_now(self):
+        for raw, code in (
+            ("60110/11/", "DC1UP_X2"),
+            ("60180/12/minsnr=10|total=1.5", "EARLY_OV_10_1.5"),
+            ("60180/12/minsnr=30|total=2.5", "EARLY_OV_30_2.5"),
+            ("900300/30/total=3.5", "CORNERS_H_OV_3.5"),
+        ):
+            m = server.PASSTHROUGH_MAP[code]
+            got = "%s/%s/%s" % (m["marketId"], m["outcomeId"], m["specifier"])
+            self.assertEqual(got, raw, code)
+
+    def test_the_1up_double_chance_ids_are_not_in_sign_order(self):
+        """9 is Home or Draw, 10 is Home or AWAY, 11 is Draw or Away - the same
+        trap market 85 carries. Reading the pair the obvious way books 12 as
+        1X, which is a different bet on somebody else's money."""
+        self.assertEqual(server.PASSTHROUGH_MAP["DC1UP_1X"]["outcomeId"], 9)
+        self.assertEqual(server.PASSTHROUGH_MAP["DC1UP_12"]["outcomeId"], 10)
+        self.assertEqual(server.PASSTHROUGH_MAP["DC1UP_X2"]["outcomeId"], 11)
+
+    def test_the_early_goals_specifier_keeps_both_numbers(self):
+        """`minsnr=10|total=1.5` is over 1.5 goals in the first ten minutes.
+        Dropping the minsnr half books a full-match line instead."""
+        for code in ("EARLY_OV_10_1.5", "EARLY_OV_30_2.5", "EARLY_UN_50_3.5"):
+            spec = server.PASSTHROUGH_MAP[code]["specifier"]
+            self.assertIn("minsnr=", spec, code)
+            self.assertIn("total=", spec, code)
+
+    def test_a_game_off_the_board_is_named_by_asking_the_bookmaker(self):
+        """The cache holds upcoming matches only. Rather than shrug, the read
+        asks SportyBet for that one event - which still answers for a game in
+        play, and says so."""
+        calls = []
+
+        def fake(event_id, region="ng"):
+            calls.append(event_id)
+            return {"homeTeam": "FC Inter Turku", "awayTeam": "Vaasan Palloseura",
+                    "league": "Finland Veikkausliiga", "status": "H1"}
+
+        real = server._sporty_event_name
+        server._sporty_event_name = fake
+        try:
+            self.assertTrue(callable(server._sporty_event_name))
+            got = server._sporty_event_name("sr:match:74299674")
+        finally:
+            server._sporty_event_name = real
+        self.assertEqual(got["homeTeam"], "FC Inter Turku")
+        self.assertEqual(got["status"], "H1")
+        self.assertEqual(calls, ["sr:match:74299674"])
+
+    def test_the_lookup_is_capped_and_cached(self):
+        """One request per unnamed leg, and never the same leg twice - a code
+        can carry forty of them."""
+        src = open(os.path.join(os.path.dirname(__file__), "server.py"),
+                   encoding="utf-8").read()
+        self.assertIn("_EVENT_NAME_CACHE", src)
+        self.assertIn("_EVENT_NAME_MAX", src)
+        body = src[src.index("def _sporty_event_name("):]
+        body = body[:body.index("\ndef ")]
+        self.assertIn("if event_id in _EVENT_NAME_CACHE", body)
+        self.assertIn("timeout=6", body)
