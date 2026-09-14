@@ -1267,6 +1267,29 @@ class PassThroughParity(unittest.TestCase):
         "BOUNDS_A_0", "BOUNDS_A_1", "BOUNDS_A_2", "BOUNDS_A_11", "BOUNDS_A_12",
         "BOUNDS_A_13", "BOUNDS_A_22", "BOUNDS_A_23", "BOUNDS_A_33",
     }
+
+    # Taken from SportyBet's own `favourite` list on 14 Sep rather than
+    # from a reader's complaint. Bet9ja sells none of these shapes: no
+    # first-goal market, no exact-goals variants, no winning margin, no
+    # goal range, and no per-half team totals. Split-only, all of them.
+    SPORTY_ONLY_CATALOGUE = {
+        "BOTHHALVES_OV_N", "BOTHHALVES_OV_Y", "BOTHHALVES_UN_N", "BOTHHALVES_UN_Y", "EXACT_0",
+        "EXACT_1", "EXACT_2", "EXACT_3", "EXACT_4", "EXACT_5",
+        "EXACT_6", "EXACT_FH_0", "EXACT_FH_1", "EXACT_FH_2", "EXACT_FH_3",
+        "EXACT_SH_0", "EXACT_SH_1", "EXACT_SH_2", "FH_AWAY_OVER_0.5", "FH_AWAY_OVER_1.5",
+        "FH_AWAY_OVER_2.5", "FH_AWAY_UNDER_0.5", "FH_AWAY_UNDER_1.5", "FH_AWAY_UNDER_2.5", "FH_HOME_OVER_0.5",
+        "FH_HOME_OVER_1.5", "FH_HOME_OVER_2.5", "FH_HOME_UNDER_0.5", "FH_HOME_UNDER_1.5", "FH_HOME_UNDER_2.5",
+        "FIRSTGOAL_1", "FIRSTGOAL_2", "FIRSTGOAL_FH_1", "FIRSTGOAL_FH_2", "FIRSTGOAL_FH_N",
+        "FIRSTGOAL_N", "FIRSTGOAL_SH_1", "FIRSTGOAL_SH_2", "FIRSTGOAL_SH_N", "GOALRANGE_0_1",
+        "GOALRANGE_2_3", "GOALRANGE_4_6", "GOALRANGE_7", "MARGIN_A1", "MARGIN_A2",
+        "MARGIN_A3", "MARGIN_DRAW", "MARGIN_H1", "MARGIN_H2", "MARGIN_H3",
+        "SH_AWAY_OVER_0.5", "SH_AWAY_OVER_1.5", "SH_AWAY_OVER_2.5", "SH_AWAY_UNDER_0.5", "SH_AWAY_UNDER_1.5",
+        "SH_AWAY_UNDER_2.5", "SH_HOME_OVER_0.5", "SH_HOME_OVER_1.5", "SH_HOME_OVER_2.5", "SH_HOME_UNDER_0.5",
+        "SH_HOME_UNDER_1.5", "SH_HOME_UNDER_2.5", "SH_OVER_0.5", "SH_OVER_1.5", "SH_OVER_2.5",
+        "SH_UNDER_0.5", "SH_UNDER_1.5", "SH_UNDER_2.5", "TEAMGOALS_A_0", "TEAMGOALS_A_1",
+        "TEAMGOALS_A_2", "TEAMGOALS_A_3", "TEAMGOALS_H_0", "TEAMGOALS_H_1", "TEAMGOALS_H_2",
+        "TEAMGOALS_H_3",
+    }
     # MIXNG_1/X/2 WAS IN THIS LIST AND IS NOT ANY MORE. It looked like a gap
     # because SportyBet does not use the word: their name for no-goal is "Any
     # Clean Sheet", markets 863/864/865, read off their catalogue on 14 Sep
@@ -1290,7 +1313,8 @@ class PassThroughParity(unittest.TestCase):
 
     def test_the_asymmetry_is_the_recorded_one(self):
         s, b = set(server.PASSTHROUGH_MAP), set(server.bet9ja.PASSTHROUGH_MAP)
-        self.assertEqual(s - b, self.SPORTY_ONLY | self.SPORTY_ONLY_14SEP)
+        self.assertEqual(s - b, self.SPORTY_ONLY | self.SPORTY_ONLY_14SEP
+                         | self.SPORTY_ONLY_CATALOGUE)
         self.assertEqual(b - s, self.BET9JA_ONLY)
 
     def test_every_shared_code_resolves_on_both_books(self):
@@ -1386,6 +1410,7 @@ class ACodeFromARealPunter(unittest.TestCase):
             m = server.PASSTHROUGH_MAP[code]
             got = "%s/%s/%s" % (m["marketId"], m["outcomeId"], m["specifier"])
             self.assertEqual(got, raw, code)
+
 
     def test_pv5cll_the_three_it_could_not_read(self):
         """A second reader's code, thirty-nine legs, three unreadable. All of

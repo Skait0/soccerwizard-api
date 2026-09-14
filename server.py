@@ -256,6 +256,99 @@ for _b in _GOAL_BOUNDS:
     PASSTHROUGH_MAP["BOUNDS_A_%s" % _b] = {
         "marketId": 450003, "outcomeId": int(_b), "specifier": ""}
 
+# ------------------------------------------------------------------------
+# THE MARKETS SPORTYBET SURFACES BY DEFAULT, mapped in one pass rather than
+# one reader complaint at a time.
+#
+# Every entry above this line was added because a punter's code carried it and
+# could not be read. That is a poor way to find out: two codes on 14 Sep turned
+# up six families between them. So this tranche was taken from their own
+# catalogue instead - the markets they flag as `favourite`, which is their own
+# statement about what people play - filtered to the ones with a fixed set of
+# outcomes. Player props are deliberately absent: their outcomes are one per
+# player, named per fixture, and cannot be enumerated in a table.
+#
+# TWO SHAPES APPEAR HERE THAT NOTHING ABOVE USES:
+#   a `variant=` specifier, where the market id alone does not identify the
+#   bet - Exact Goals at 6+ is a different market from Exact Goals at 3+;
+#   and composite outcome ids like `sr:exact_goals:6+:68`, which carry the
+#   variant inside the id. Both must be sent back exactly as read.
+_VAR_EXACT6 = "variant=sr:exact_goals:6+"
+_VAR_EXACT3 = "variant=sr:exact_goals:3+"
+_VAR_EXACT2 = "variant=sr:exact_goals:2+"
+_VAR_RANGE7 = "variant=sr:goal_range:7+"
+_VAR_MARGIN = "variant=sr:winning_margin:3+"
+
+# FIRST GOAL - who scores it, or nobody. Outcome 6 home, 7 none, 8 away, and
+# the `goalnr=1` specifier is what makes it the FIRST one.
+for _code, _mkt in (("FIRSTGOAL", 8), ("FIRSTGOAL_FH", 62), ("FIRSTGOAL_SH", 84)):
+    for _sfx, _out in (("1", 6), ("N", 7), ("2", 8)):
+        PASSTHROUGH_MAP["%s_%s" % (_code, _sfx)] = {
+            "marketId": _mkt, "outcomeId": _out, "specifier": "goalnr=1"}
+
+# EXACT GOALS, match and each half. The ceiling differs per scope - 6+ on the
+# match, 3+ in the first half, 2+ in the second - and it is part of both the
+# specifier and every outcome id.
+for _n, _out in zip(range(7), range(68, 75)):
+    PASSTHROUGH_MAP["EXACT_%d" % _n] = {
+        "marketId": 21, "outcomeId": "sr:exact_goals:6+:%d" % _out,
+        "specifier": _VAR_EXACT6}
+for _n, _out in zip(range(4), range(88, 92)):
+    PASSTHROUGH_MAP["EXACT_FH_%d" % _n] = {
+        "marketId": 71, "outcomeId": "sr:exact_goals:3+:%d" % _out,
+        "specifier": _VAR_EXACT3}
+for _n, _out in zip(range(3), range(85, 88)):
+    PASSTHROUGH_MAP["EXACT_SH_%d" % _n] = {
+        "marketId": 93, "outcomeId": "sr:exact_goals:2+:%d" % _out,
+        "specifier": _VAR_EXACT2}
+
+# ONE SIDE'S EXACT GOALS. Same variant as the first half above, and the same
+# outcome ids - 23 is the home team and 24 the away team.
+for _side, _mkt in (("H", 23), ("A", 24)):
+    for _n, _out in zip(range(4), range(88, 92)):
+        PASSTHROUGH_MAP["TEAMGOALS_%s_%d" % (_side, _n)] = {
+            "marketId": _mkt, "outcomeId": "sr:exact_goals:3+:%d" % _out,
+            "specifier": _VAR_EXACT3}
+
+# GOAL RANGE - the whole match's goals as a band.
+for _name, _out in (("0_1", 1342), ("2_3", 1343), ("4_6", 1344), ("7", 1345)):
+    PASSTHROUGH_MAP["GOALRANGE_%s" % _name] = {
+        "marketId": 25, "outcomeId": "sr:goal_range:7+:%d" % _out,
+        "specifier": _VAR_RANGE7}
+
+# WINNING MARGIN, including the draw - which is a seventh outcome here rather
+# than a market of its own.
+for _name, _out in (("H1", 113), ("H2", 114), ("H3", 115),
+                    ("A1", 116), ("A2", 117), ("A3", 118), ("DRAW", 119)):
+    PASSTHROUGH_MAP["MARGIN_%s" % _name] = {
+        "marketId": 15, "outcomeId": "sr:winning_margin:3+:%d" % _out,
+        "specifier": _VAR_MARGIN}
+
+# BOTH HALVES OVER / UNDER 1.5. Two markets, each a plain Yes/No - 74 and 76,
+# the pair the combination markets use.
+for _code, _mkt in (("BOTHHALVES_OV", 58), ("BOTHHALVES_UN", 59)):
+    for _sfx, _out in (("Y", 74), ("N", 76)):
+        PASSTHROUGH_MAP["%s_%s" % (_code, _sfx)] = {
+            "marketId": _mkt, "outcomeId": _out, "specifier": "total=1.5"}
+
+# SECOND-HALF GOALS, whole match and per side, and the first half per side.
+# Outcome 12 over and 13 under throughout, the line in the specifier - the
+# same shape as market 18, which is why these need no thought beyond the ids.
+for _line in ("0.5", "1.5", "2.5"):
+    PASSTHROUGH_MAP["SH_OVER_%s" % _line] = {
+        "marketId": 90, "outcomeId": 12, "specifier": "total=%s" % _line}
+    PASSTHROUGH_MAP["SH_UNDER_%s" % _line] = {
+        "marketId": 90, "outcomeId": 13, "specifier": "total=%s" % _line}
+    for _half, _h_mkt, _a_mkt in (("FH", 69, 70), ("SH", 91, 92)):
+        PASSTHROUGH_MAP["%s_HOME_OVER_%s" % (_half, _line)] = {
+            "marketId": _h_mkt, "outcomeId": 12, "specifier": "total=%s" % _line}
+        PASSTHROUGH_MAP["%s_HOME_UNDER_%s" % (_half, _line)] = {
+            "marketId": _h_mkt, "outcomeId": 13, "specifier": "total=%s" % _line}
+        PASSTHROUGH_MAP["%s_AWAY_OVER_%s" % (_half, _line)] = {
+            "marketId": _a_mkt, "outcomeId": 12, "specifier": "total=%s" % _line}
+        PASSTHROUGH_MAP["%s_AWAY_UNDER_%s" % (_half, _line)] = {
+            "marketId": _a_mkt, "outcomeId": 13, "specifier": "total=%s" % _line}
+
 # GOALS IN THE FIRST N MINUTES, market 60180, outcome 12 over and 13 under.
 # The specifier carries BOTH numbers - `minsnr=10|total=1.5` is "over 1.5 goals
 # in the first ten minutes" - which is why this cannot be folded into the plain
