@@ -133,9 +133,187 @@ MARKET_MAP = {
     "AWAY_UNDER_1.5": (10284, 1.5, 13),
 }
 
+# --- markets we carry but never model --------------------------------------
+# A CONVERTER NEEDS IDENTITY, NOT A PREDICTION. Everything above is a market the
+# model has an opinion about. These are not: they exist so a slip somebody else
+# built can be read, re-cut and moved between books without us pretending to
+# rate it. Nothing here is ever produced by tipCode, so no board, no record and
+# no calibration changes by their being here.
+#
+# EVERY TRIPLE BELOW WAS SEEN ON A LIVE CARD. They were proposed from the
+# meaning of our own code and then kept only if BetKing actually priced them on
+# one of eight deep fixtures, 19-20 Sep 2026 - generated, never typed, because
+# the last hand-built tranche on another book invented 24 codes that matched
+# nothing anywhere.
+#
+# THE LINE COMES FROM THE OUTCOME, NOT THE COLLECTION. Total Goals sets
+# SpecialBetValue and the outcome's SpecialValue to the same number, which is
+# why a collection-keyed map worked for every modelled market. Corners (190) and
+# both handicaps (305, 342) leave SpecialBetValue at 0 and carry the line only
+# on the outcome - so the second element of every triple here is
+# OddAttribute.SpecialValue. See _absorb.
+#
+# THE HANDICAP SIGN IS THEIR HOME SIDE'S, AND IT WAS CHECKED RATHER THAN READ.
+# Their SpecialValue is one number for a two-sided bet, so the obvious reading
+# is a coin toss that books the wrong team. Verified against the prices instead:
+# across eight cards the home outcome shortens as the line rises and the away
+# outcome lengthens, 23 comparisons to 0 against. That is why our AWAY codes
+# carry the NEGATED line - AH_2_-0.5 is the away team giving half a goal, which
+# is their "0.5 : 0".
+PASSTHROUGH_MAP = {
+    # --- 1st half handicap (4) ---
+    "FH_AH_1_-0.5": (344, -0.5, 1714),
+    "FH_AH_1_0.5": (344, 0.5, 1714),
+    "FH_AH_2_-0.5": (344, 0.5, 1715),
+    "FH_AH_2_0.5": (344, -0.5, 1715),
+    # --- 1st half team goals (12) ---
+    "FH_AWAY_OVER_0.5": (10291, 0.5, 12),
+    "FH_AWAY_OVER_1.5": (10291, 1.5, 12),
+    "FH_AWAY_OVER_2.5": (10291, 2.5, 12),
+    "FH_AWAY_UNDER_0.5": (10291, 0.5, 13),
+    "FH_AWAY_UNDER_1.5": (10291, 1.5, 13),
+    "FH_AWAY_UNDER_2.5": (10291, 2.5, 13),
+    "FH_HOME_OVER_0.5": (10290, 0.5, 12),
+    "FH_HOME_OVER_1.5": (10290, 1.5, 12),
+    "FH_HOME_OVER_2.5": (10290, 2.5, 12),
+    "FH_HOME_UNDER_0.5": (10290, 0.5, 13),
+    "FH_HOME_UNDER_1.5": (10290, 1.5, 13),
+    "FH_HOME_UNDER_2.5": (10290, 2.5, 13),
+    # --- 2nd half handicap (6) ---
+    "SH_AH_1_-0.5": (9335, -0.5, 1714),
+    "SH_AH_1_-1.5": (9335, -1.5, 1714),
+    "SH_AH_1_0.5": (9335, 0.5, 1714),
+    "SH_AH_2_-0.5": (9335, 0.5, 1715),
+    "SH_AH_2_-1.5": (9335, 1.5, 1715),
+    "SH_AH_2_0.5": (9335, -0.5, 1715),
+    # --- 2nd half team goals (12) ---
+    "SH_AWAY_OVER_0.5": (10303, 0.5, 12),
+    "SH_AWAY_OVER_1.5": (10303, 1.5, 12),
+    "SH_AWAY_OVER_2.5": (10303, 2.5, 12),
+    "SH_AWAY_UNDER_0.5": (10303, 0.5, 13),
+    "SH_AWAY_UNDER_1.5": (10303, 1.5, 13),
+    "SH_AWAY_UNDER_2.5": (10303, 2.5, 13),
+    "SH_HOME_OVER_0.5": (10302, 0.5, 12),
+    "SH_HOME_OVER_1.5": (10302, 1.5, 12),
+    "SH_HOME_OVER_2.5": (10302, 2.5, 12),
+    "SH_HOME_UNDER_0.5": (10302, 0.5, 13),
+    "SH_HOME_UNDER_1.5": (10302, 1.5, 13),
+    "SH_HOME_UNDER_2.5": (10302, 2.5, 13),
+    # --- 2nd half total (6) ---
+    "SH_OVER_0.5": (9280, 0.5, 12),
+    "SH_OVER_1.5": (9280, 1.5, 12),
+    "SH_OVER_2.5": (9280, 2.5, 12),
+    "SH_UNDER_0.5": (9280, 0.5, 13),
+    "SH_UNDER_1.5": (9280, 1.5, 13),
+    "SH_UNDER_2.5": (9280, 2.5, 13),
+    # --- asian handicap (16) ---
+    "AH_1_-0.5": (305, -0.5, 1714),
+    "AH_1_-1.5": (305, -1.5, 1714),
+    "AH_1_-2.5": (305, -2.5, 1714),
+    "AH_1_-3.5": (305, -3.5, 1714),
+    "AH_1_0.5": (305, 0.5, 1714),
+    "AH_1_1.5": (305, 1.5, 1714),
+    "AH_1_2.5": (305, 2.5, 1714),
+    "AH_1_3.5": (305, 3.5, 1714),
+    "AH_2_-0.5": (305, 0.5, 1715),
+    "AH_2_-1.5": (305, 1.5, 1715),
+    "AH_2_-2.5": (305, 2.5, 1715),
+    "AH_2_-3.5": (305, 3.5, 1715),
+    "AH_2_0.5": (305, -0.5, 1715),
+    "AH_2_1.5": (305, -1.5, 1715),
+    "AH_2_2.5": (305, -2.5, 1715),
+    "AH_2_3.5": (305, -3.5, 1715),
+    # --- draw no bet (2) ---
+    "DNB_1": (147, 0, 4),
+    "DNB_2": (147, 0, 5),
+    # --- european handicap (18) ---
+    "EH_0_1_1": (342, -1, 1714),
+    "EH_0_1_2": (342, -1, 1715),
+    "EH_0_1_X": (342, -1, 1712),
+    "EH_0_2_1": (342, -2, 1714),
+    "EH_0_2_2": (342, -2, 1715),
+    "EH_0_2_X": (342, -2, 1712),
+    "EH_0_3_1": (342, -3, 1714),
+    "EH_0_3_2": (342, -3, 1715),
+    "EH_0_3_X": (342, -3, 1712),
+    "EH_1_0_1": (342, 1, 1714),
+    "EH_1_0_2": (342, 1, 1715),
+    "EH_1_0_X": (342, 1, 1712),
+    "EH_2_0_1": (342, 2, 1714),
+    "EH_2_0_2": (342, 2, 1715),
+    "EH_2_0_X": (342, 2, 1712),
+    "EH_3_0_1": (342, 3, 1714),
+    "EH_3_0_2": (342, 3, 1715),
+    "EH_3_0_X": (342, 3, 1712),
+    # --- team corners (14) ---
+    "CORNERS_A_OV_3.5": (10333, 3.5, 12),
+    "CORNERS_A_OV_4.5": (10333, 4.5, 12),
+    "CORNERS_A_OV_5.5": (10333, 5.5, 12),
+    "CORNERS_A_OV_6.5": (10333, 6.5, 12),
+    "CORNERS_A_UN_3.5": (10333, 3.5, 13),
+    "CORNERS_A_UN_4.5": (10333, 4.5, 13),
+    "CORNERS_A_UN_5.5": (10333, 5.5, 13),
+    "CORNERS_A_UN_6.5": (10333, 6.5, 13),
+    "CORNERS_H_OV_3.5": (10332, 3.5, 12),
+    "CORNERS_H_OV_4.5": (10332, 4.5, 12),
+    "CORNERS_H_OV_5.5": (10332, 5.5, 12),
+    "CORNERS_H_UN_3.5": (10332, 3.5, 13),
+    "CORNERS_H_UN_4.5": (10332, 4.5, 13),
+    "CORNERS_H_UN_5.5": (10332, 5.5, 13),
+    # --- total corners (14) ---
+    "CORNERS_OV_10.5": (190, 10.5, 12),
+    "CORNERS_OV_11.5": (190, 11.5, 12),
+    "CORNERS_OV_12.5": (190, 12.5, 12),
+    "CORNERS_OV_6.5": (190, 6.5, 12),
+    "CORNERS_OV_7.5": (190, 7.5, 12),
+    "CORNERS_OV_8.5": (190, 8.5, 12),
+    "CORNERS_OV_9.5": (190, 9.5, 12),
+    "CORNERS_UN_10.5": (190, 10.5, 13),
+    "CORNERS_UN_11.5": (190, 11.5, 13),
+    "CORNERS_UN_12.5": (190, 12.5, 13),
+    "CORNERS_UN_6.5": (190, 6.5, 13),
+    "CORNERS_UN_7.5": (190, 7.5, 13),
+    "CORNERS_UN_8.5": (190, 8.5, 13),
+    "CORNERS_UN_9.5": (190, 9.5, 13),
+}
+
+# --- what BetKing does NOT sell, and why it is absent -----------------------
+# An entry here is a market our other two books carry that BetKing does not, so
+# a pasted code holding one can be read and split but never converted INTO
+# BetKing. Written down with a reason apiece, because "verified absent across
+# eight cards" and "nobody has looked" must not look the same in a year.
+#
+#   asian handicap, 48 of 64   Their 305 sells HALF-BALL lines only: -3.5 -2.5
+#                              -1.5 -0.5 0.5 1.5 2.5 3.5 on every card checked.
+#                              No quarter ball (-0.25, -0.75) and no whole ball.
+#                              The whole-ball lines exist at 342, and that is a
+#                              DIFFERENT BET - three-way, the draw its own
+#                              outcome, no push - so mapping AH_1_-1 onto it
+#                              would hand somebody a narrower bet than they
+#                              placed. Left unmapped on purpose.
+#   european handicap, 6       342 stops at three goals: -3 -2 -1 1 2 3. Our
+#                              EH_0_4 and EH_0_5 have nowhere to go.
+#   1st half handicap, 8       344 offers only -0.5 and 0.5.
+#   2nd half handicap, 6       9335 offers -1.5 -0.5 0.5 1.5, so the whole-ball
+#                              and zero lines are absent.
+#   total corners, 4           190 runs 5.5 to 12.5; 13.5 and 14.5 are not sold.
+#   team corners, 6            10332 runs 3.5-5.5 and 10333 2.5-6.5, and they
+#                              are thin - the deepest line appeared on one card
+#                              of eight.
+#
+# The 200 codes with no rule at all are a different thing again: correct score,
+# exact goals, cards, margins, first goalscorer, the minute markets. BetKing
+# prices most of those families - they are on the card - but each needs its own
+# outcome-by-outcome reading, and a family guessed from its name is how the
+# exact-goals top rung means "N or more" on one book and "exactly N" on the
+# other. They stay unmapped until somebody reads them.
+
 # Reverse lookup, DERIVED rather than typed twice - a second literal is a
-# second thing to keep in step, and the pair would drift silently.
-_BY_TRIPLE = {triple: code for code, triple in MARKET_MAP.items()}
+# second thing to keep in step, and the pair would drift silently. Both tables,
+# because a pasted code is resolved through exactly the same index.
+_BY_TRIPLE = {triple: code
+              for code, triple in list(MARKET_MAP.items()) +
+              list(PASSTHROUGH_MAP.items())}
 
 
 def market_for(code):
@@ -145,8 +323,14 @@ def market_for(code):
     an unmapped code as something else returns a valid code for a bet the
     punter did not ask for, which is the one failure in this whole system that
     nothing downstream can see.
+
+    BOTH TABLES, and every caller asks this rather than a table directly. The
+    pass-through map is a mapping too: keyed on MARKET_MAP alone, every
+    handicap and corner leg came back "not_mapped" however well BetKing prices
+    it, so no converted slip carrying one could ever be booked here. That is
+    the mistake bet9ja.py made on the other book and it is worth not repeating.
     """
-    return MARKET_MAP.get(code)
+    return MARKET_MAP.get(code) or PASSTHROUGH_MAP.get(code)
 
 
 def _sbv(value):
@@ -247,9 +431,19 @@ def _absorb(row, item):
     for coll in item.get("OddsCollection") or []:
         otype = coll.get("OddsType") or {}
         mid = otype.get("OddsTypeID")
-        sbv = _sbv(coll.get("SpecialBetValue"))
+        coll_sbv = _sbv(coll.get("SpecialBetValue"))
         for mo in coll.get("MatchOdds") or []:
             attr = mo.get("OddAttribute") or {}
+            # THE LINE LIVES ON THE OUTCOME, NOT ALWAYS ON THE COLLECTION.
+            # Total Goals (160) sets both and they agree, which is why keying
+            # on the collection worked for every modelled market. Total Corners
+            # (190) and both handicaps (305, 342) set SpecialBetValue to 0 and
+            # carry the line ONLY here - so a collection-keyed map folds every
+            # corner line and every handicap line onto one entry and books
+            # whichever it happened to see last. Read 19 Sep off five deep
+            # cards. The collection is the fallback, not the source.
+            sbv = _sbv(attr.get("SpecialValue")) if attr.get(
+                "SpecialValue") is not None else coll_sbv
             code = _BY_TRIPLE.get((mid, sbv, attr.get("OddTypeID")))
             if not code:
                 continue

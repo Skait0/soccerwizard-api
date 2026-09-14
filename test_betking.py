@@ -59,9 +59,42 @@ class MarketTable(unittest.TestCase):
     """Every triple was read off a live card. These guard the reading."""
 
     def test_no_two_codes_share_a_triple(self):
-        # The reverse lookup is derived from the forward table, so a duplicate
-        # triple would silently drop a code rather than fail.
-        self.assertEqual(len(betking._BY_TRIPLE), len(betking.MARKET_MAP))
+        # The reverse lookup is derived from BOTH forward tables, so a duplicate
+        # triple would silently drop a code rather than fail. Counted against
+        # the sum rather than the modelled table alone - the invariant is that
+        # nothing collides, not that the map is small.
+        self.assertEqual(len(betking._BY_TRIPLE),
+                         len(betking.MARKET_MAP) + len(betking.PASSTHROUGH_MAP))
+
+    def test_a_code_is_in_one_table_or_the_other_never_both(self):
+        # A code in both is two answers to one question, and which one wins
+        # depends on statement order in market_for.
+        self.assertEqual(set(betking.MARKET_MAP) & set(betking.PASSTHROUGH_MAP),
+                         set())
+
+    def test_a_carried_market_resolves_through_market_for(self):
+        # Keyed on MARKET_MAP alone, every handicap and corner leg came back
+        # "not_mapped" however well BetKing prices it, so no converted slip
+        # carrying one could be booked. bet9ja.py made exactly this mistake.
+        for code in ("AH_1_-0.5", "CORNERS_OV_9.5", "EH_0_1_X", "DNB_1"):
+            self.assertIsNotNone(betking.market_for(code), code)
+
+    def test_the_away_handicap_carries_the_negated_line(self):
+        # Their SpecialValue is the HOME side's handicap, one number for a
+        # two-sided bet. AH_2_-0.5 is the AWAY team giving half a goal, which
+        # is their "0.5 : 0" - so the sign flips. Reading it the obvious way
+        # books the other team.
+        self.assertEqual(betking.market_for("AH_1_-0.5"), (305, -0.5, 1714))
+        self.assertEqual(betking.market_for("AH_2_-0.5"), (305, 0.5, 1715))
+
+    def test_the_whole_ball_asian_lines_stay_unmapped(self):
+        # 305 sells half-ball lines only. The whole-ball lines exist at 342 and
+        # that is a DIFFERENT BET - three-way, draw its own outcome, no push -
+        # so mapping AH_1_-1 onto it hands somebody a narrower bet than they
+        # placed. The same shape as an exact-goals top rung meaning "N or more"
+        # on one book and "exactly N" on the other.
+        for code in ("AH_1_-1", "AH_1_-2", "AH_1_-0.25", "AH_1_0.75"):
+            self.assertIsNone(betking.market_for(code), code)
 
     def test_double_chance_ids_are_the_ones_read_not_the_ones_assumed(self):
         # 9/10/11 happen to run in name order here. SportyBet's double chance
