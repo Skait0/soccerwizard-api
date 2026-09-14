@@ -1603,3 +1603,172 @@ class ACodeFromARealPunter(unittest.TestCase):
         body = body[:body.index("\ndef ")]
         self.assertIn("if event_id in _EVENT_NAME_CACHE", body)
         self.assertIn("timeout=6", body)
+
+
+class BetKingAnswersInTheSameShape(unittest.TestCase):
+    """The third book has to speak the client's existing language.
+
+    `dropUnbookable` keys on eventId + "|" + prediction and knows nothing about
+    which bookmaker refused. If this route answers in a different shape, the
+    retry path works for two books out of three - which is the kind of thing
+    that looks fine until somebody's slip dies.
+    """
+
+    def _post(self, priced, picks=None, gen=None):
+        """priced: {eventId: [codes BetKing prices on that fixture]}"""
+        real_ev = server.betking.fetch_event
+        real_gen = server.betking.generate_code
+        calls = []
+
+        def fake_event(eid):
+            calls.append(str(eid))
+            if str(eid) not in priced:
+                return None
+            codes = priced[str(eid)]
+            return {"eventId": str(eid),
+                    "odds": {c: 2.0 for c in codes},
+                    "raw": {c: "2.0" for c in codes},
+                    "sel": {c: {"SelectionId": 1} for c in codes},
+                    "event": {"MatchId": int(eid)}}
+
+        server.betking.fetch_event = fake_event
+        server.betking.generate_code = gen or (
+            lambda sels: {"code": "BKCODE", "legs": len(sels), "verified": True})
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/betking/booking-code", json={"selections":
+                    picks or [
+                        {"eventId": "1", "code": "1X"},
+                        {"eventId": "2", "code": "HOME_OVER_0.5"},
+                        {"eventId": "3", "code": "OVER_1.5"},
+                    ]})
+            return r.status_code, r.get_json(), calls
+        finally:
+            server.betking.fetch_event = real_ev
+            server.betking.generate_code = real_gen
+
+    def test_every_unbookable_leg_is_named_with_the_same_keys(self):
+        code, body, _ = self._post({"1": ["1X"]})
+        self.assertEqual(code, 400)
+        self.assertEqual(
+            [(b["eventId"], b["prediction"]) for b in body["unbookable"]],
+            [("2", "HOME_OVER_0.5"), ("3", "OVER_1.5")])
+        for k in ("success", "message", "detail", "unbookable"):
+            self.assertIn(k, body, k + " is missing, so dropUnbookable cannot read it")
+
+    def test_a_fully_priced_slip_books(self):
+        code, body, _ = self._post(
+            {"1": ["1X"], "2": ["HOME_OVER_0.5"], "3": ["OVER_1.5"]})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["code"], "BKCODE")
+
+    def test_an_unmapped_market_costs_no_request_at_all(self):
+        """It is already known locally, and it is refused - never substituted."""
+        _code, body, calls = self._post(
+            {"9": ["1"]}, picks=[{"eventId": "9", "code": "CORNERS_OVER_9.5"}])
+        self.assertEqual(body["unbookable"][0]["reason"], "not_mapped")
+        self.assertEqual(calls, [])
+
+    def test_two_legs_on_one_game_cost_one_fetch(self):
+        """Their deep card is a megabyte; fetching it twice for a double is
+        a request nobody needed."""
+        _code, _body, calls = self._post(
+            {"7": ["1", "OVER_1.5"]},
+            picks=[{"eventId": "7", "code": "1"},
+                   {"eventId": "7", "code": "OVER_1.5"}])
+        self.assertEqual(calls, ["7"])
+
+    def test_the_cap_is_forty_and_nothing_is_fetched_past_it(self):
+        picks = [{"eventId": str(i), "code": "1"} for i in range(41)]
+        _code, body, calls = self._post({}, picks=picks)
+        self.assertIn("40", body["error"])
+        self.assertEqual(calls, [])
+
+    def test_a_second_leg_on_one_game_is_named_and_the_rest_still_book(self):
+        """BetKing takes one selection per match on a multiple, and a coupon
+        carrying two comes back as a code with nothing in it. So the extra leg
+        is named like any other unbookable one and the client drops exactly
+        that leg rather than losing the slip."""
+        code, body, _ = self._post(
+            {"1": ["1", "OVER_1.5"], "2": ["1"]},
+            picks=[{"eventId": "1", "code": "1"},
+                   {"eventId": "2", "code": "1"},
+                   {"eventId": "1", "code": "OVER_1.5"}])
+        self.assertEqual(code, 400)
+        self.assertEqual([(b["eventId"], b["prediction"], b["reason"])
+                          for b in body["unbookable"]],
+                         [("1", "OVER_1.5", "same_game")])
+        # And the sentence says what actually happened. "No market there" is a
+        # plain untruth here - the market is priced, it is the second leg that
+        # is refused.
+        self.assertIn("one selection per game", body["detail"])
+
+    def test_the_first_leg_on_a_game_is_the_one_kept(self):
+        _code, body, _ = self._post(
+            {"7": ["1", "X", "2"]},
+            picks=[{"eventId": "7", "code": "1"},
+                   {"eventId": "7", "code": "X"},
+                   {"eventId": "7", "code": "2"}])
+        self.assertEqual([b["prediction"] for b in body["unbookable"]],
+                         ["X", "2"])
+
+    def test_an_empty_code_is_reported_as_our_bug_not_their_refusal(self):
+        """BetKing accepts a selection id it does not know and answers with an
+        ordinary code. generate_code catches that; the route must not then
+        hand the empty code back as a success."""
+        code, body, _ = self._post(
+            {"1": ["1X"]}, picks=[{"eventId": "1", "code": "1X"}],
+            gen=lambda sels: {"error": "betking accepted the slip and returned "
+                                       "an empty code (0 of 1 legs resolved)",
+                              "code": "QP1GZZ", "sent": 1})
+        self.assertEqual(code, 502)
+        self.assertFalse(body["success"])
+
+
+class TheRouteFeedsBetKingWhatBetKingReads(unittest.TestCase):
+    """A call-site assertion, added because three bugs have now shipped past a
+    green suite that built its own inputs.
+
+    Every test above hands `generate_code` a hand-made event. This one drives
+    the REAL module: the route's dict is passed to the real build_selection, so
+    if the route ever checks one field and the module reads another, this
+    fails and the mocked tests do not.
+    """
+
+    def test_a_route_shaped_event_builds_a_real_leg(self):
+        import test_betking
+        payload = test_betking._payload([test_betking.ONE_X_TWO])
+        real_get = server.betking._get_json
+        server.betking._get_json = lambda *a, **k: payload
+        try:
+            event = server.betking.fetch_event(1005309147)
+        finally:
+            server.betking._get_json = real_get
+
+        sent = []
+        real_gen = server.betking.generate_code
+        real_ev = server.betking.fetch_event
+        server.betking.fetch_event = lambda eid: event
+
+        def capture(sels):
+            # The route promises {event, code}; the module reads event["sel"]
+            # and event["event"]. Build the leg for real rather than asserting
+            # on the dict's shape.
+            sent.extend(server.betking.build_selection(s["event"], s["code"])
+                        for s in sels)
+            return {"code": "BKCODE", "legs": len(sels)}
+
+        server.betking.generate_code = capture
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/betking/booking-code",
+                           json={"selections": [{"eventId": "1005309147",
+                                                 "code": "1"}]})
+        finally:
+            server.betking.generate_code = real_gen
+            server.betking.fetch_event = real_ev
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]["SelectionId"], 2339553331)
+        self.assertEqual(sent[0]["MatchId"], 1005309147)

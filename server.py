@@ -9,6 +9,7 @@ from flask_cors import CORS
 from curl_cffi import requests
 from urllib.parse import quote
 import bet9ja
+import betking
 from curl_cffi.requests import RequestsError
 
 app = Flask(__name__)
@@ -508,6 +509,11 @@ _LIVE_TTL = 30
 # ask. Their fixtures move no faster than SportyBet's.
 _BET9JA_CACHE = {"at": 0, "data": None}
 _BET9JA_TTL = 45 * 60
+# BetKing needs three requests for the same window, one per day, because their
+# day feed is a bulk endpoint. Same TTL anyway: their prices move no faster
+# than the other two, and the point of the interval is how rarely we ask.
+_BETKING_CACHE = {"at": 0, "data": None}
+_BETKING_TTL = 45 * 60
 
 # --- Shared cache (opt-in) -------------------------------------------------
 # With one process the in-memory dicts above are fine. Set REDIS_URL (add a
@@ -1079,6 +1085,63 @@ def _start_bet9ja_thread():
 _start_bet9ja_thread()
 
 
+# --- BetKing fixtures ------------------------------------------------------
+# The third book. Three requests rather than SportyBet's fifty or Bet9ja's
+# hundred and seventy, because their day feed is bulk - but the same guard
+# applies and for the same reason: their feed answers with a count of what it
+# holds for the date, so a sweep that comes back well under what they say they
+# have is a throttled sweep, not a quiet Tuesday.
+_BETKING_LOCK = threading.Lock()
+
+def _refresh_betking_once():
+    try:
+        fixtures, stats = betking.all_fixtures()
+    except Exception as ex:                          # noqa: BLE001 - background
+        log.warning("betking refresh failed, keeping previous copy: %s", ex)
+        return False
+
+    got, listed = len(fixtures), stats.get("listed") or 0
+    if not fixtures:
+        log.warning("betking refresh returned nothing; keeping previous copy")
+        return False
+    if listed and got < listed * 0.9:
+        log.warning("betking refresh collected %d of %d they list; keeping "
+                    "previous copy (failed days: %s)", got, listed,
+                    ", ".join(stats.get("failed") or []) or "none")
+        return False
+    prev = _cache_get("betking", _BETKING_CACHE)
+    prev_n = len((prev or {}).get("data") or {})
+    if prev_n and got < prev_n * 0.8:
+        log.warning("betking refresh returned %d against %d stored, looks "
+                    "truncated; keeping the fuller copy", got, prev_n)
+        return False
+
+    _cache_put("betking", _BETKING_CACHE, fixtures)
+    log.info("betking refreshed: %d events of %d listed over %d days",
+             got, listed, stats.get("days"))
+    return True
+
+def _betking_loop():
+    entry = _cache_get("betking", _BETKING_CACHE)
+    if entry and entry.get("data"):
+        age = time.time() - entry["at"]
+        if age < _BETKING_TTL:
+            time.sleep(_BETKING_TTL - age)
+    while True:
+        ok = _refresh_betking_once()
+        time.sleep(_BETKING_TTL if ok else 300)
+
+def _start_betking_thread():
+    if not _BETKING_LOCK.acquire(blocking=False):
+        return
+    t = threading.Thread(target=_betking_loop, name="betking-refresh",
+                         daemon=True)
+    t.start()
+    log.info("betking refresher started (every %dm)", _BETKING_TTL // 60)
+
+_start_betking_thread()
+
+
 @app.route('/api/fixtures', methods=['GET'])
 def get_fixtures():
     entry = _cache_get("fixtures", _FIXTURES_CACHE)
@@ -1287,6 +1350,177 @@ def api_bet9ja_code():
     if out.get("code"):
         return jsonify({"success": True, **out})
     report("bet9ja booking refused", legs=len(resolved), detail=str(out.get("error"))[:300])
+    return jsonify({"success": False, **out}), 502
+
+
+# --- BetKing ---------------------------------------------------------------
+# Verified end to end on 14 Sep 2026: a three-leg slip built here was booked
+# through BetKing as PM18D2 and read back with the right three selections at
+# the right prices. See betking.py for the ids that had to be exact - in
+# particular that the selection id is MatchOddsID and NOT the OutcomeID next to
+# it, which books happily and produces a code containing nothing.
+@app.route('/api/betking/fixtures', methods=['GET'])
+def get_betking_fixtures():
+    """Every BetKing event, served from the background sweep.
+
+    One flat bag, no `league` argument, for the same reason Bet9ja's route has
+    none: the site pairs on team names and kick-off, never on competition.
+
+    `?date=YYYY-MM-DD` fetches a single day live, for debugging one day rather
+    than for the site.
+    """
+    date = request.args.get("date")
+    if date:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+            return jsonify({"success": False,
+                            "error": "date must be YYYY-MM-DD"}), 400
+        try:
+            events, listed = betking.fetch_day(date)
+        except Exception as ex:                  # noqa: BLE001 - user-facing
+            report("betking fixtures failed", date=date, error=str(ex))
+            return jsonify({"success": False, "error": str(ex),
+                            "matches": {}}), 502
+        return jsonify({"success": True, "date": date, "cached": False,
+                        "listed": listed, "count": len(events),
+                        "matches": events})
+
+    entry = _cache_get("betking", _BETKING_CACHE)
+    data = (entry or {}).get("data")
+    if not data:
+        # Say so rather than returning an empty bag with success: true. That
+        # lie is what made the Bet9ja integration's first outage invisible.
+        return jsonify({"success": False, "count": 0, "matches": {},
+                        "error": "betking fixtures not loaded yet"}), 503
+    return jsonify({"success": True, "cached": True,
+                    "ageSeconds": int(time.time() - entry["at"]),
+                    "count": len(data), "matches": data})
+
+
+@app.route('/api/betking/booking-code', methods=['POST'])
+def api_betking_code():
+    """Turn a set of picks into a BetKing booking code.
+
+    Body: {"selections": [{"eventId": "1005309147", "code": "1X"}, ...]}
+
+    The same three-way answer the other two books give, so one client path
+    serves all of them: every leg BetKing will not take comes back named in
+    `unbookable` with a reason, rather than the first one killing the request.
+
+      not_mapped   MARKET_MAP has no entry for this code. Refused here before
+                   any request is made, since it is already known locally.
+      event_gone   Their feed would not return the fixture at all.
+      not_priced   Mapped, and BetKing does not price that market on this
+                   game. No code change conjures a price a bookmaker is not
+                   offering, so it is reported at info: it keeps its count
+                   without pretending to be a fault.
+
+    There is no `suspended` case here, unlike Bet9ja. BetKing's suspended
+    markets come back with the price collapsed and betking.py drops those while
+    parsing, so they arrive as not_priced - which is what they are.
+    """
+    data = request.get_json(silent=True) or {}
+    picks = data.get("selections") or []
+    if not picks:
+        return jsonify({"success": False, "error": "no selections"}), 400
+    # THEIR CAP IS 40, NOT 50. Both other books take 50 selections on a slip
+    # and BetKing's own global variables say 40, so a slip that books fine
+    # elsewhere is refused here. Better to say so than to mint a code that
+    # will not open.
+    if len(picks) > betking.BETSLIP_MAX:
+        return jsonify({"success": False,
+                        "error": "betking takes at most %d selections"
+                                 % betking.BETSLIP_MAX,
+                        "sent": len(picks)}), 400
+
+    resolved = []
+    unmapped, unpriced, event_gone, same_game = [], [], [], []
+    # One deep fetch per EVENT, not per selection: the deep card is a megabyte
+    # and a slip can name the same fixture twice.
+    cache = {}
+    # WHICH FIXTURES ARE ALREADY ON THE SLIP. BetKing takes one selection per
+    # match on a multiple - their own compatibility list is empty on every
+    # market of every event checked - and a coupon carrying two comes back as
+    # a code with nothing in it. So the second leg on a game is named here and
+    # the client drops exactly that one, rather than the whole slip dying.
+    booked_games = set()
+    try:
+        for p in picks:
+            code = p.get("code")
+            event_id = p.get("eventId")
+            # eventId and prediction are the contract the site keys its retry
+            # on. `reason` is additive.
+            leg = {"eventId": event_id, "prediction": code}
+            if betking.market_for(code) is None:
+                leg["reason"] = "not_mapped"
+                unmapped.append(leg)
+                continue
+            if event_id in booked_games:
+                leg["reason"] = "same_game"
+                same_game.append(leg)
+                continue
+            if event_id not in cache:
+                cache[event_id] = betking.fetch_event(event_id)
+            ev = cache[event_id]
+            if not ev:
+                leg["reason"] = "event_gone"
+                event_gone.append(leg)
+                continue
+            if code not in (ev.get("odds") or {}):
+                leg["reason"] = "not_priced"
+                unpriced.append(leg)
+                continue
+            booked_games.add(event_id)
+            resolved.append({"event": ev, "code": code})
+    except Exception as ex:                      # noqa: BLE001 - user-facing
+        report("betking odds fetch failed", error=str(ex))
+        return jsonify({"success": False, "error": str(ex)}), 502
+
+    def _detail(legs):
+        return dict(
+            bad_legs=len(legs), total_legs=len(picks),
+            markets=", ".join(sorted({str(b["prediction"]) for b in legs})),
+            events=", ".join(sorted({str(b["eventId"]) for b in legs})[:10]))
+
+    # One Sentry issue per cause. A mapping gap is a bug; a market they do not
+    # sell on one fixture is not, and grouping them hides the first inside the
+    # second.
+    if unmapped:
+        report("booking: BetKing market is not mapped", **_detail(unmapped))
+    if event_gone:
+        report("booking: BetKing event would not load", **_detail(event_gone))
+    if unpriced:
+        report("booking: BetKing does not price this market on this fixture",
+               level="info", **_detail(unpriced))
+    if same_game:
+        # Their rule, not a fault of ours, and not something a retry can fix -
+        # so info, like the unpriced case.
+        report("booking: BetKing takes one selection per game on a multiple",
+               level="info", **_detail(same_game))
+
+    bad = unmapped + event_gone + unpriced + same_game
+    if bad:
+        # "No market there" is the sentence for two of these four and a plain
+        # untruth for the third: a second leg on a game is refused because it
+        # is a second leg, and the market is priced perfectly well. Say which.
+        detail = ("one selection per game is all BetKing takes on a multiple"
+                  if same_game and len(same_game) == len(bad)
+                  else "no market there for %d of %d picks" % (len(bad), len(picks)))
+        return jsonify({
+            "success": False,
+            "message": "BetKing rejected the slip",
+            "detail": detail,
+            "unbookable": bad,
+        }), 400
+
+    out = betking.generate_code(resolved)
+    if out.get("code") and not out.get("error"):
+        return jsonify({"success": True, **out})
+    # An error WITH a code is the one failure BetKing will not tell us about
+    # itself: the slip was accepted and the code is empty. It is a bug on our
+    # side every time - a selection id they did not recognise - so it is
+    # reported as one rather than shown to the punter as a bookmaker refusal.
+    report("betking booking refused", legs=len(resolved),
+           detail=str(out.get("error"))[:300], empty_code=out.get("code"))
     return jsonify({"success": False, **out}), 502
 
 
