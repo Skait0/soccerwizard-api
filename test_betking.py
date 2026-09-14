@@ -311,6 +311,18 @@ class TheSweep(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(listed, 1)
 
+    def test_the_sweep_reaches_the_weekend(self):
+        """Three days would hold none of the weekend until the Thursday.
+
+        The board reaches about nine days out and its two biggest days by far
+        are Saturday and Sunday - 146 and 102 fixtures on one measured board
+        against 8 to 37 on a weekday - so a short sweep makes BetKing look
+        like a book that carries nothing, exactly when slips get built.
+        """
+        import inspect
+        self.assertGreaterEqual(
+            inspect.signature(betking.all_fixtures).parameters["days"].default, 8)
+
     def test_a_failed_day_is_named_rather_than_counted_as_empty(self):
         with mock.patch.object(betking, "_get_json",
                                side_effect=RuntimeError("blocked")), \

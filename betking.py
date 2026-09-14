@@ -336,12 +336,24 @@ def fetch_day(date, timeout=30):
     return rows, listed
 
 
-def all_fixtures(days=3, pause=0.45, today=None):
-    """The sweep: the next few days of football, one request per day.
+def all_fixtures(days=8, pause=0.45, today=None):
+    """The sweep: the next eight days of football, one request per day.
 
-    Deliberately small. Their day feed is ~3MB, so this is three requests and
-    about ten megabytes against Bet9ja's per-league crawl of a hundred and
-    seventy. The pause is there anyway - the block that hit the other two books
+    EIGHT, NOT THREE, AND THE DIFFERENCE IS THE WEEKEND. The board reaches
+    about nine days out and its two biggest days by far are Saturday and
+    Sunday - 146 and 102 fixtures on one measured board, against 8 to 37 on a
+    weekday. A three-day sweep holds none of them until the Thursday, so the
+    book would read "doesn't have any of these games" for the whole weekend
+    slate, which is when slips actually get built.
+
+    Measured 14 Sep over ten days: 937 fixtures, 20.7MB, 11.6s, and their own
+    count agreed exactly on every day. Day eight onwards is a handful of
+    fixtures, so this stops where the board does. That puts BetKing's coverage
+    in the same range as the other two (Bet9ja 1222, SportyBet 1251) rather
+    than at a quarter of it.
+
+    Still eight requests against Bet9ja's per-league crawl of a hundred and
+    seventy. The pause stays anyway - the block that hit the other two books
     was about request RATE from a datacentre, and being cheap is not the same
     as being polite.
 
