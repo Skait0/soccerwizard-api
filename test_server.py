@@ -1268,33 +1268,112 @@ class PassThroughParity(unittest.TestCase):
         "BOUNDS_A_13", "BOUNDS_A_22", "BOUNDS_A_23", "BOUNDS_A_33",
     }
 
-    # Taken from SportyBet's own `favourite` list on 14 Sep rather than
-    # from a reader's complaint. Bet9ja sells none of these shapes: no
-    # first-goal market, no exact-goals variants, no winning margin, no
-    # goal range, and no per-half team totals. Split-only, all of them.
+    # Taken from SportyBet's own `favourite` list on 14 Sep rather than from a
+    # reader's complaint.
+    #
+    # THIS LIST SHRANK THE SAME DAY, AND THE REASON IT EXISTED WAS WRONG. It
+    # was first written as "Bet9ja sells none of these shapes: no first-goal
+    # market, no exact-goals variants, no winning margin, no goal range, no
+    # per-half team totals" - asserted from having mapped one book, without
+    # opening the other. Bet9ja sells four of those five. Reading their
+    # dictionary and then checking the 1,531 priced keys on a real event
+    # crossed 34 of these codes; what stayed is below, each with the reason it
+    # stayed.
     SPORTY_ONLY_CATALOGUE = {
-        "BOTHHALVES_OV_N", "BOTHHALVES_OV_Y", "BOTHHALVES_UN_N", "BOTHHALVES_UN_Y", "EXACT_0",
-        "EXACT_1", "EXACT_2", "EXACT_3", "EXACT_4", "EXACT_5",
-        "EXACT_6", "EXACT_FH_0", "EXACT_FH_1", "EXACT_FH_2", "EXACT_FH_3",
-        "EXACT_SH_0", "EXACT_SH_1", "EXACT_SH_2", "FH_AWAY_OVER_0.5", "FH_AWAY_OVER_1.5",
-        "FH_AWAY_OVER_2.5", "FH_AWAY_UNDER_0.5", "FH_AWAY_UNDER_1.5", "FH_AWAY_UNDER_2.5", "FH_HOME_OVER_0.5",
-        "FH_HOME_OVER_1.5", "FH_HOME_OVER_2.5", "FH_HOME_UNDER_0.5", "FH_HOME_UNDER_1.5", "FH_HOME_UNDER_2.5",
-        "FIRSTGOAL_1", "FIRSTGOAL_2", "FIRSTGOAL_FH_1", "FIRSTGOAL_FH_2", "FIRSTGOAL_FH_N",
-        "FIRSTGOAL_N", "FIRSTGOAL_SH_1", "FIRSTGOAL_SH_2", "FIRSTGOAL_SH_N", "GOALRANGE_0_1",
-        "GOALRANGE_2_3", "GOALRANGE_4_6", "GOALRANGE_7", "MARGIN_A1", "MARGIN_A2",
-        "MARGIN_A3", "MARGIN_DRAW", "MARGIN_H1", "MARGIN_H2", "MARGIN_H3",
-        "SH_AWAY_OVER_0.5", "SH_AWAY_OVER_1.5", "SH_AWAY_OVER_2.5", "SH_AWAY_UNDER_0.5", "SH_AWAY_UNDER_1.5",
-        "SH_AWAY_UNDER_2.5", "SH_HOME_OVER_0.5", "SH_HOME_OVER_1.5", "SH_HOME_OVER_2.5", "SH_HOME_UNDER_0.5",
-        "SH_HOME_UNDER_1.5", "SH_HOME_UNDER_2.5", "SH_OVER_0.5", "SH_OVER_1.5", "SH_OVER_2.5",
-        "SH_UNDER_0.5", "SH_UNDER_1.5", "SH_UNDER_2.5", "TEAMGOALS_A_0", "TEAMGOALS_A_1",
-        "TEAMGOALS_A_2", "TEAMGOALS_A_3", "TEAMGOALS_H_0", "TEAMGOALS_H_1", "TEAMGOALS_H_2",
-        "TEAMGOALS_H_3",
+        # The top rung of every exact-goals family. SportyBet's is "or more",
+        # Bet9ja's is that number exactly, so these two look like a pair and
+        # are not the same bet. Converting would narrow somebody's bet
+        # silently, which is worse than splitting it.
+        "EXACT_6", "EXACT_FH_3",
+        # Exact goals, nil. Their card starts at 1.
+        "EXACT_0",
+        # Second-half exact goals. Their S_EG1 is the first half only.
+        "EXACT_SH_0", "EXACT_SH_1", "EXACT_SH_2",
+        # "Not both halves over/under 1.5". Bet9ja sells the two halves as one
+        # combined outcome, so the YES side crosses and the NO side is four of
+        # their outcomes rather than one.
+        "BOTHHALVES_OV_N", "BOTHHALVES_UN_N",
+        # First goal within a half. S_1STSCORE2T is in their dictionary and was
+        # priced on none of four Premier League events carrying 1,100-1,500
+        # keys each, and they list no first-half equivalent at all.
+        "FIRSTGOAL_FH_1", "FIRSTGOAL_FH_2", "FIRSTGOAL_FH_N",
+        "FIRSTGOAL_SH_1", "FIRSTGOAL_SH_2", "FIRSTGOAL_SH_N",
+        # Goal range. Their Multi Goal bands are 1-2 through 3-6; ours are
+        # 0-1, 2-3, 4-6 and 7+. Not one band is shared.
+        "GOALRANGE_0_1", "GOALRANGE_2_3", "GOALRANGE_4_6", "GOALRANGE_7",
+        # One side's goals inside one half. S_OUHOME1T and its three siblings
+        # are listed in their dictionary and priced on none of those same four
+        # events. A key format that cannot be read off a real event is a
+        # guess, and a guessed key books the wrong bet rather than failing.
+        "FH_AWAY_OVER_0.5", "FH_AWAY_OVER_1.5", "FH_AWAY_OVER_2.5",
+        "FH_AWAY_UNDER_0.5", "FH_AWAY_UNDER_1.5", "FH_AWAY_UNDER_2.5",
+        "FH_HOME_OVER_0.5", "FH_HOME_OVER_1.5", "FH_HOME_OVER_2.5",
+        "FH_HOME_UNDER_0.5", "FH_HOME_UNDER_1.5", "FH_HOME_UNDER_2.5",
+        "SH_AWAY_OVER_0.5", "SH_AWAY_OVER_1.5", "SH_AWAY_OVER_2.5",
+        "SH_AWAY_UNDER_0.5", "SH_AWAY_UNDER_1.5", "SH_AWAY_UNDER_2.5",
+        "SH_HOME_OVER_0.5", "SH_HOME_OVER_1.5", "SH_HOME_OVER_2.5",
+        "SH_HOME_UNDER_0.5", "SH_HOME_UNDER_1.5", "SH_HOME_UNDER_2.5",
     }
+
     # MIXNG_1/X/2 WAS IN THIS LIST AND IS NOT ANY MORE. It looked like a gap
     # because SportyBet does not use the word: their name for no-goal is "Any
     # Clean Sheet", markets 863/864/865, read off their catalogue on 14 Sep
     # 2026. At least one clean sheet is exactly "not both teams scored", so it
     # is the same bet under another name and the family now crosses whole.
+
+    def test_the_top_rung_of_exact_goals_never_crosses(self):
+        """"6 or more" and "exactly 6" are not the same bet.
+
+        SportyBet's exact-goals families top out at "or more" - EXACT_6 is six
+        or more, EXACT_FH_3 is three or more. Bet9ja's S_EXACTGOAL runs 1 to 6
+        and its 6 means six exactly; S_EG1 runs 0 to 4 and its 3 means three
+        exactly. Mapping the two tops together would quietly hand somebody a
+        narrower bet than the one they placed, and a converted leg that loses
+        on a 7-goal game is indistinguishable from us having booked the wrong
+        market - which is exactly what `market_for(pred) or MARKET_MAP["1"]`
+        used to do.
+
+        The rungs below the top ARE the same bet on both books and do cross.
+        """
+        for code in ("EXACT_6", "EXACT_FH_3"):
+            self.assertIn(code, server.PASSTHROUGH_MAP,
+                          "%s should still be bookable on SportyBet" % code)
+            self.assertIsNone(server.bet9ja.market_for(code),
+                              "%s must not cross: their top rung is exact, "
+                              "ours is 'or more'" % code)
+        for code in ("EXACT_1", "EXACT_5", "EXACT_FH_0", "EXACT_FH_2"):
+            self.assertIsNotNone(server.bet9ja.market_for(code),
+                                 "%s is the same bet on both books" % code)
+
+    def test_a_team_total_of_three_does_cross_because_both_mean_three_plus(self):
+        """The same shape as above, with the opposite answer.
+
+        Bet9ja's exact team goals are 0, 1, 2 and "3+", which is what
+        SportyBet's is too. So the top rung crosses here where it cannot for
+        the match total - the rule is what the number MEANS, never where it
+        sits in the list.
+        """
+        for side in ("H", "A"):
+            for n in ("0", "1", "2", "3"):
+                code = "TEAMGOALS_%s_%s" % (side, n)
+                self.assertIsNotNone(server.bet9ja.market_for(code), code)
+        self.assertEqual(server.bet9ja.market_for("TEAMGOALS_H_3")[0], "S_GOALSHOME_3+")
+
+    def test_no_bet9ja_key_was_invented_for_a_market_they_never_price(self):
+        """Half-team totals are listed in their dictionary and never sold.
+
+        S_OUHOME1T and its three siblings appear in TRANS on every event and
+        were priced on none of four Premier League events carrying 1,100-1,500
+        keys each. The key format therefore cannot be READ, only guessed - and
+        a guessed key does not fail loudly, it books whatever it happens to
+        hit. Nothing here may point at one.
+        """
+        guessed = [c for c in ("FH_HOME_OVER_0.5", "FH_AWAY_UNDER_1.5",
+                               "SH_HOME_OVER_0.5", "SH_AWAY_UNDER_1.5",
+                               "FIRSTGOAL_SH_1")
+                   if server.bet9ja.market_for(c)]
+        self.assertEqual(guessed, [],
+                         "a key was invented for a market Bet9ja never prices")
 
     def test_highest_scoring_half_keeps_the_ids_read_off_the_catalogue(self):
         """52/53/54 and 436/438/440, not 1/2/3.

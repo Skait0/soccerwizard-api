@@ -264,6 +264,54 @@ for _l in ("-3", "-2.75", "-2.5", "-2.25", "-2", "-1.75", "-1.5", "-1.25",
            "1", "1.25", "1.5", "1.75", "2", "2.25", "2.5", "2.75", "3"):
     PASSTHROUGH_MAP["AH_1_%s" % _l] = ("S_AH@%s_1" % _l, 1)
     PASSTHROUGH_MAP["AH_2_%s" % _l] = ("S_AH@%s_2" % _l, 1)
+# ---------------------------------------------------------------------------
+# THE OTHER DIRECTION. Everything above was added so a Bet9ja code could reach
+# SportyBet. Mapping SportyBet's catalogue on 14 Sep left 158 codes this book
+# had no answer for, which meant a SportyBet code SPLIT where it could have
+# converted. These are the ones Bet9ja genuinely sells, read off their own
+# dictionary and then checked against the 1,531 priced keys on a real event -
+# not off the dictionary alone, which lists markets they never price.
+#
+# WHERE THE TWO BOOKS DISAGREE ABOUT WHAT A NUMBER MEANS, NOTHING IS MAPPED.
+# SportyBet's top exact-goals rung is "or more"; Bet9ja's is that number
+# exactly. EXACT_6 and EXACT_FH_3 therefore have no pair here and are left to
+# split - converting them would hand somebody a narrower bet than they placed,
+# which is the same class of mistake as booking an unmapped market as a home
+# win.
+for _o, _c in (("1", "1"), ("2", "2"), ("X", "N")):
+    # Their X on this market is no-goal, not a draw - there is no draw in a
+    # question about who scores first.
+    PASSTHROUGH_MAP["FIRSTGOAL_%s" % _c] = ("S_1STGOAL_%s" % _o, 1)
+for _o, _c in (("HT1", "H1"), ("HT2", "H2"), ("HT>2", "H3"),
+               ("AT1", "A1"), ("AT2", "A2"), ("AT>2", "A3"), ("X", "DRAW")):
+    PASSTHROUGH_MAP["MARGIN_%s" % _c] = ("S_WINMARGIN_%s" % _o, 1)
+for _side, _key in (("H", "S_GOALSHOME"), ("A", "S_GOALSAWAY")):
+    # "3+" on both sides, so the top rung crosses here where it does not for
+    # the match-total family above.
+    for _o, _c in (("0", "0"), ("1", "1"), ("2", "2"), ("3+", "3")):
+        PASSTHROUGH_MAP["TEAMGOALS_%s_%s" % (_side, _c)] = ("%s_%s" % (_key, _o), 1)
+for _n in ("1", "2", "3", "4", "5"):
+    PASSTHROUGH_MAP["EXACT_%s" % _n] = ("S_EXACTGOAL_%s" % _n, 1)
+for _n in ("0", "1", "2"):
+    PASSTHROUGH_MAP["EXACT_FH_%s" % _n] = ("S_EG1_%s" % _n, 1)
+for _l in ("0.5", "1.5", "2.5"):
+    PASSTHROUGH_MAP["SH_OVER_%s" % _l] = ("S_OU2T@%s_O" % _l, 1)
+    PASSTHROUGH_MAP["SH_UNDER_%s" % _l] = ("S_OU2T@%s_U" % _l, 1)
+# Both halves over (or under) 1.5. SportyBet asks it as a Yes/No; Bet9ja sells
+# the two halves as one combined outcome, so the YES crosses and the NO has no
+# single counterpart to cross to - "not both" is four of their outcomes, not
+# one.
+PASSTHROUGH_MAP["BOTHHALVES_OV_Y"] = ("S_UO121_O15O15", 1)
+PASSTHROUGH_MAP["BOTHHALVES_UN_Y"] = ("S_UO121_U15U15", 1)
+# LEFT UNMAPPED ON PURPOSE, having been looked for and not found priced:
+#   FH_/SH_ HOME/AWAY totals - S_OUHOME1T and its three siblings are in their
+#     dictionary and were priced on none of four Premier League events carrying
+#     1,100-1,500 keys each. A key format that cannot be read off a real event
+#     is a guess, and a guessed key books the wrong bet rather than failing.
+#   FIRSTGOAL_SH - same, S_1STSCORE2T is listed and never priced.
+#   GOALRANGE_* - their Multi Goal runs 1-2 through 3-6 and ours are 0-1, 2-3,
+#     4-6 and 7+. No shared band, so nothing to map.
+# ---------------------------------------------------------------------------
 # Not merged into MARKET_MAP for the same reason as its SportyBet twin: that
 # table is what the sweep fetches and what the board prices. These are fetched
 # per event at book time, where the full card comes back anyway.
