@@ -1257,6 +1257,15 @@ class PassThroughParity(unittest.TestCase):
         # Goals inside the first N minutes. No equivalent on their card either.
         "EARLY_OV_10_1.5", "EARLY_UN_10_1.5", "EARLY_OV_30_2.5", "EARLY_UN_30_2.5",
         "EARLY_OV_50_3.5", "EARLY_UN_50_3.5",
+        # Excluded number of goals, match and first half. No Bet9ja equivalent.
+        "EXGOALS_0", "EXGOALS_1", "EXGOALS_2", "EXGOALS_3", "EXGOALS_4", "EXGOALS_5",
+        "EXGOALS_FH_0", "EXGOALS_FH_1", "EXGOALS_FH_2", "EXGOALS_FH_3",
+        # Goal bounds - one side's goals as a range. Theirs sells exact team
+        # totals, not ranges, so these read and split here and cross nowhere.
+        "BOUNDS_H_0", "BOUNDS_H_1", "BOUNDS_H_2", "BOUNDS_H_11", "BOUNDS_H_12",
+        "BOUNDS_H_13", "BOUNDS_H_22", "BOUNDS_H_23", "BOUNDS_H_33",
+        "BOUNDS_A_0", "BOUNDS_A_1", "BOUNDS_A_2", "BOUNDS_A_11", "BOUNDS_A_12",
+        "BOUNDS_A_13", "BOUNDS_A_22", "BOUNDS_A_23", "BOUNDS_A_33",
     }
     # MIXNG_1/X/2 WAS IN THIS LIST AND IS NOT ANY MORE. It looked like a gap
     # because SportyBet does not use the word: their name for no-goal is "Any
@@ -1377,6 +1386,28 @@ class ACodeFromARealPunter(unittest.TestCase):
             m = server.PASSTHROUGH_MAP[code]
             got = "%s/%s/%s" % (m["marketId"], m["outcomeId"], m["specifier"])
             self.assertEqual(got, raw, code)
+
+    def test_pv5cll_the_three_it_could_not_read(self):
+        """A second reader's code, thirty-nine legs, three unreadable. All of
+        them use the outcome id as a VALUE rather than as an index, which
+        nothing else in these tables does."""
+        for raw, code in (
+            ("450004/1/", "EXGOALS_1"),          # not exactly one goal
+            ("810002/1/", "EXGOALS_FH_1"),       # not exactly one in the half
+            ("450003/23/", "BOUNDS_A_23"),       # away side score two to three+
+        ):
+            m = server.PASSTHROUGH_MAP[code]
+            got = "%s/%s/%s" % (m["marketId"], m["outcomeId"], m["specifier"])
+            self.assertEqual(got, raw, code)
+
+    def test_goal_bounds_ids_are_ranges_not_counts(self):
+        """11 is "exactly one" and 12 is "one to two" - reading them as numbers
+        in sequence would book a different range."""
+        self.assertEqual(server.PASSTHROUGH_MAP["BOUNDS_A_11"]["outcomeId"], 11)
+        self.assertEqual(server.PASSTHROUGH_MAP["BOUNDS_A_12"]["outcomeId"], 12)
+        self.assertEqual(server.PASSTHROUGH_MAP["BOUNDS_A_33"]["outcomeId"], 33)
+        self.assertEqual(server.PASSTHROUGH_MAP["BOUNDS_H_0"]["marketId"], 450002)
+        self.assertEqual(server.PASSTHROUGH_MAP["BOUNDS_A_0"]["marketId"], 450003)
 
     def test_the_1up_double_chance_ids_are_not_in_sign_order(self):
         """9 is Home or Draw, 10 is Home or AWAY, 11 is Draw or Away - the same

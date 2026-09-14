@@ -231,6 +231,31 @@ for _line in ("3.5", "4.5", "5.5", "6.5", "7.5"):
     PASSTHROUGH_MAP["CORNERS_A_UN_%s" % _line] = {
         "marketId": 900301, "outcomeId": 31, "specifier": "total=%s" % _line}
 
+# EXCLUDED NUMBER OF GOALS, market 450004 for the match and 810002 for the
+# first half. The bet is "the total will be anything BUT this number", and the
+# outcome id IS the number - 0,1,2,3,4 and 5 meaning five-or-more on the match,
+# 3 meaning three-or-more in the half. Nothing else in these tables uses the
+# outcome id as a value, which is worth knowing before somebody reads it as an
+# index. Found in PV5CLL, a reader's code: two legs of thirty-nine.
+for _n in ("0", "1", "2", "3", "4", "5"):
+    PASSTHROUGH_MAP["EXGOALS_%s" % _n] = {
+        "marketId": 450004, "outcomeId": int(_n), "specifier": ""}
+for _n in ("0", "1", "2", "3"):
+    PASSTHROUGH_MAP["EXGOALS_FH_%s" % _n] = {
+        "marketId": 810002, "outcomeId": int(_n), "specifier": ""}
+
+# GOAL BOUNDS, one side's goals as a RANGE: 450002 is the home team and 450003
+# the away team. The outcome id spells the range in digits - 0 is none, 1 is
+# exactly one, 12 is one-to-two, 13 is one-to-three-or-more, 33 is three-plus -
+# so the ids are not sequential and cannot be generated from a count. Written
+# out from their own card, PV5CLL carried `450003/23/` (two to three or more).
+_GOAL_BOUNDS = ("0", "1", "2", "11", "12", "13", "22", "23", "33")
+for _b in _GOAL_BOUNDS:
+    PASSTHROUGH_MAP["BOUNDS_H_%s" % _b] = {
+        "marketId": 450002, "outcomeId": int(_b), "specifier": ""}
+    PASSTHROUGH_MAP["BOUNDS_A_%s" % _b] = {
+        "marketId": 450003, "outcomeId": int(_b), "specifier": ""}
+
 # GOALS IN THE FIRST N MINUTES, market 60180, outcome 12 over and 13 under.
 # The specifier carries BOTH numbers - `minsnr=10|total=1.5` is "over 1.5 goals
 # in the first ten minutes" - which is why this cannot be folded into the plain
