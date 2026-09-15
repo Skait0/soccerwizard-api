@@ -72,6 +72,64 @@ function propose(code) {
   if ((m = /^FH_(OVER|UNDER)_([\d.]+)$/.exec(code))) {
     return [161, Number(m[2]), m[1] === "OVER" ? 12 : 13, "1st half total"];
   }
+  /* Second-half double chance. Their outcome ids are the SAME 9/10/11 the
+     match market uses, which is a coincidence worth not relying on elsewhere. */
+  if ((m = /^DC2_(1X|12|X2)$/.exec(code))) {
+    return [10299, 0, { "1X": 9, "12": 10, X2: 11 }[m[1]], "2nd half double chance"];
+  }
+  /* THE OR FAMILY, and it is a different bet from the AND family that sits
+     next to it in every catalogue. 9334 is "1x2 or GG/NG"; 9277 is "1X2 &
+     Total Goals". Mapping our MIXGG_1 ("home or both score") onto an AND
+     market would hand somebody a far narrower bet at a far longer price. */
+  /* 1x2-or-total. 9648, and I declared it absent because I searched MARKET
+     names for "or" - "Chance Mix Total Goals 1.5" has none, the OR lives in
+     the outcome labels. A real punter's code (3T2NBQ, Brighton v Arsenal,
+     "2 or Over (1.50)") is what found it. Search the outcomes. */
+  /* EXACTLY N GOALS - and our EXACT_ is that, not correct score, whatever the
+     name suggests. Their 9641 carries the number as the LINE and a single
+     outcome 74 "Goals", so the line is the bet. Do not confuse with EXGOALS_,
+     which is the complement ("anything but N") and has no home here. */
+  /* The two excluded-goals codes that are EQUIVALENCES rather than absences.
+     Total goals is a non-negative integer, so "anything but nought" and "over
+     0.5" have the same winners on every scoreline. Kept as a generator rule
+     rather than hand-added to the table: a hand-added entry is destroyed the
+     next time the table is regenerated, which is exactly what happened. */
+  if ((m = /^EXGOALS_(FH_)?0$/.exec(code))) {
+    return [m[1] ? 161 : 160, 0.5, 12, "excluded goals, the nought cases"];
+  }
+  if ((m = /^EXACT_(\d)$/.exec(code))) {
+    return [9641, Number(m[1]), 74, "exactly N goals"];
+  }
+  if ((m = /^MIX_([12X])_(OV|UN)_([\d.]+)$/.exec(code))) {
+    const side = { "1": 0, X: 1, "2": 2 }[m[1]];
+    const ids = [[2354, 2355], [2352, 2353], [2350, 2351]][side];
+    return [9648, Number(m[3]), m[2] === "OV" ? ids[0] : ids[1],
+            "chance mix 1x2 or total"];
+  }
+  if ((m = /^MIXGG_([12X])$/.exec(code))) {
+    return [9334, 0, { "1": 2348, X: 2346, "2": 2344 }[m[1]], "chance mix 1x2 or GG"];
+  }
+  if ((m = /^MIXNG_([12X])$/.exec(code))) {
+    return [9334, 0, { "1": 2349, X: 2347, "2": 2345 }[m[1]], "chance mix 1x2 or NG"];
+  }
+  if ((m = /^UP1_([12X])$/.exec(code))) {
+    return [10974, 0, { "1": 4, X: 2, "2": 5 }[m[1]], "1UP"];
+  }
+  if ((m = /^UP2_([12X])$/.exec(code))) {
+    return [10975, 0, { "1": 4, X: 2, "2": 5 }[m[1]], "2UP"];
+  }
+  if ((m = /^DC1UP_(1X|12|X2)$/.exec(code))) {
+    return [10987, 0, { "1X": 9, "12": 10, X2: 11 }[m[1]], "double chance 1UP"];
+  }
+  if ((m = /^HALFCORNER_([12E])$/.exec(code))) {
+    return [9793, 0, { "1": 436, "2": 438, E: 924 }[m[1]], "half most corners"];
+  }
+  if ((m = /^PEN_([YN])$/.exec(code))) {
+    return [699, 0, m[1] === "Y" ? 74 : 76, "penalty awarded"];
+  }
+  if ((m = /^WINHALF_([HA])_([YN])$/.exec(code))) {
+    return [m[1] === "H" ? 628 : 627, 0, m[2] === "Y" ? 74 : 76, "win either half"];
+  }
   if ((m = /^DNB_([12])$/.exec(code))) {
     /* 4 and 5, read off their card - NOT the 1714/1715 the handicaps use.
        Guessed wrong first time and the triple matched nothing, which is the

@@ -235,16 +235,6 @@ PASSTHROUGH_MAP = {
     "AH_2_1.5": (305, -1.5, 1715),
     "AH_2_2.5": (305, -2.5, 1715),
     "AH_2_3.5": (305, -3.5, 1715),
-    # --- excluded goals, the two that are exact equivalences (2) ---
-    # NOT A SUBSTITUTION. Total goals is a non-negative integer, so "the total
-    # is anything BUT zero" and "over 0.5" are the same proposition written two
-    # ways - same winners, same losers, no scoreline where they differ. That is
-    # why these two cross and EXGOALS_1 upwards do not: "not exactly one" is
-    # 0, 2, 3, 4... which no single over/under line expresses.
-    # BetKing sells the OPPOSITE market, 9641 Total Goals(Exact) N, and mapping
-    # onto that would sell the losing side of the same bet.
-    "EXGOALS_0": (160, 0.5, 12),
-    "EXGOALS_FH_0": (161, 0.5, 12),
     # --- chance mix 1x2 or GG (3) ---
     "MIXGG_1": (9334, 0, 2348),
     "MIXGG_2": (9334, 0, 2344),
@@ -297,6 +287,23 @@ PASSTHROUGH_MAP = {
     "EH_3_0_1": (342, 3, 1714),
     "EH_3_0_2": (342, 3, 1715),
     "EH_3_0_X": (342, 3, 1712),
+    # --- excluded goals, the nought cases (2) ---
+    # NOT A SUBSTITUTION. Total goals is a non-negative integer, so "the total
+    # is anything BUT zero" and "over 0.5" are one proposition written two
+    # ways. EXGOALS_1 upwards have no such equivalent - "not exactly one" is
+    # 0, 2, 3... which no single line expresses - and BetKing sells the
+    # OPPOSITE market, 9641, so mapping onto that sells the losing side.
+    # These were hand-added once and destroyed by the next regeneration; they
+    # are a rule in tools/gentail.js now.
+    "EXGOALS_0": (160, 0.5, 12),
+    "EXGOALS_FH_0": (161, 0.5, 12),
+    # --- exactly N goals (6) ---
+    "EXACT_1": (9641, 1, 74),
+    "EXACT_2": (9641, 2, 74),
+    "EXACT_3": (9641, 3, 74),
+    "EXACT_4": (9641, 4, 74),
+    "EXACT_5": (9641, 5, 74),
+    "EXACT_6": (9641, 6, 74),
     # --- half most corners (3) ---
     "HALFCORNER_1": (9793, 0, 436),
     "HALFCORNER_2": (9793, 0, 438),
@@ -424,9 +431,21 @@ NOT_CARRIED = {
     # the OUTCOME labels ("2 or Over"). A punter's own code found it: 3T2NBQ,
     # Brighton v Arsenal, market 9648. Search outcomes, not names, and do not
     # write "verified absent" off a search that only looked at half the data.
-    "EXACT_": "not read yet: correct score. 10298/1018 are on the card, and "
-              "this family is where the 'N or more' versus 'exactly N' trap "
-              "lives - read every outcome label before mapping any of it.",
+    # EXACT_ IS CARRIED NOW, and the note that used to sit here called it
+    # "correct score". It is not: our own mLabel says "Exactly N goals", and
+    # their 9641 Total Goals(Exact) N is the same bet with the number as the
+    # LINE. Third reason in this table written from a guess about what a family
+    # name meant rather than from reading it. Only EXACT_0 is absent - their
+    # 9641 starts at one, and nobody sells "exactly nought" under that name.
+    "EXACT_0": "verified absent: their 9641 runs 1 to 7. Exactly nought goals "
+               "is 0-0 and would live in a correct-score market, unread.",
+    # The half versions are NOT the same market and must not inherit 9641's
+    # mapping by looking similar. 9639 is named "1st Half - Total Goals 1" with
+    # a single Yes outcome, which could be "exactly one" or "at least one" -
+    # exactly the reading that has to be done rather than guessed.
+    "EXACT_FH_": "not read yet: 9639 is on the card but its single Yes outcome "
+                 "does not say whether it means exactly one or at least one.",
+    "EXACT_SH_": "not read yet: 9640, same question as EXACT_FH_.",
     "BOUNDS_": "not read yet: one side's goals as a range, and the target is "
                "9619 Total Multigoal Home / 9620 Total Multigoal Away, which "
                "ARE per-team. I first wrote that their Multi Goal was "
