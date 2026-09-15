@@ -63,8 +63,17 @@ class MarketTable(unittest.TestCase):
         # triple would silently drop a code rather than fail. Counted against
         # the sum rather than the modelled table alone - the invariant is that
         # nothing collides, not that the map is small.
-        self.assertEqual(len(betking._BY_TRIPLE),
-                         len(betking.MARKET_MAP) + len(betking.PASSTHROUGH_MAP))
+        # Smaller than the sum only by the codes that are DELIBERATELY two
+        # names for one bet - EXGOALS_0 and OVER_0.5 say the same thing about
+        # a non-negative integer. Anything else colliding is a code silently
+        # dropped from the reverse index.
+        # Only the first-half pair collides: our vocabulary has no OVER_0.5,
+        # so EXGOALS_0 is the only name we hold for (160, 0.5, 12) and owns it
+        # outright.
+        alias = {"EXGOALS_FH_0"}
+        self.assertEqual(
+            len(betking._BY_TRIPLE),
+            len(betking.MARKET_MAP) + len(betking.PASSTHROUGH_MAP) - len(alias))
 
     def test_a_code_is_in_one_table_or_the_other_never_both(self):
         # A code in both is two answers to one question, and which one wins
@@ -427,6 +436,16 @@ class ReadingACodeBack(unittest.TestCase):
         # step, and the pair drifts silently.
         for code, triple in betking.MARKET_MAP.items():
             self.assertEqual(betking._BY_TRIPLE[triple], code)
+
+    def test_an_alias_decodes_to_the_modelled_name(self):
+        """Two names for one bet, and the reader gets the clearer one.
+
+        EXGOALS_FH_0 is "not exactly 0 goals in the first half"; FH_OVER_0.5 is
+        "goal in 1st half". Same winners, same losers. Both map to (161,0.5,12)
+        and the reverse index has to pick, so it picks the modelled one."""
+        self.assertEqual(betking.market_for("EXGOALS_FH_0"),
+                         betking.market_for("FH_OVER_0.5"))
+        self.assertEqual(betking._BY_TRIPLE[(161, 0.5, 12)], "FH_OVER_0.5")
 
 
 class TheAsymmetryIsAccountedFor(unittest.TestCase):

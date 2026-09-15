@@ -235,6 +235,16 @@ PASSTHROUGH_MAP = {
     "AH_2_1.5": (305, -1.5, 1715),
     "AH_2_2.5": (305, -2.5, 1715),
     "AH_2_3.5": (305, -3.5, 1715),
+    # --- excluded goals, the two that are exact equivalences (2) ---
+    # NOT A SUBSTITUTION. Total goals is a non-negative integer, so "the total
+    # is anything BUT zero" and "over 0.5" are the same proposition written two
+    # ways - same winners, same losers, no scoreline where they differ. That is
+    # why these two cross and EXGOALS_1 upwards do not: "not exactly one" is
+    # 0, 2, 3, 4... which no single over/under line expresses.
+    # BetKing sells the OPPOSITE market, 9641 Total Goals(Exact) N, and mapping
+    # onto that would sell the losing side of the same bet.
+    "EXGOALS_0": (160, 0.5, 12),
+    "EXGOALS_FH_0": (161, 0.5, 12),
     # --- chance mix 1x2 or GG (3) ---
     "MIXGG_1": (9334, 0, 2348),
     "MIXGG_2": (9334, 0, 2344),
@@ -402,10 +412,13 @@ NOT_CARRIED = {
              "Goals(Exact) N' is a different bet again - exactly N, not over "
              "N. NINE LEGS of a real 39-leg ticket were these.",
     "UNDER_": "verified absent: see OVER_.",
-    "EXGOALS_": "verified absent, and the near-miss is an INVERSE. Our "
-                "EXGOALS_1 is 'NOT exactly 1 goal' (see mLabel); their 9641 "
-                "is 'Total Goals(Exact) 1'. Mapping them together would sell "
-                "somebody the exact opposite of their bet.",
+    "EXGOALS_": "verified absent from 1 upwards, and the near-miss is an "
+                "INVERSE. Our EXGOALS_1 is 'NOT exactly 1 goal'; their 9641 is "
+                "'Total Goals(Exact) 1'. Mapping them together would sell "
+                "somebody the exact opposite of their bet. The _0 cases DO "
+                "cross and are carried above: 'not exactly zero' and 'over "
+                "0.5' are the same proposition on a non-negative integer, so "
+                "that is an equivalence rather than a substitution.",
     # MIX_ WAS HERE, AND IT WAS WRONG. I searched their MARKET names for "or"
     # and "Chance Mix Total Goals 1.5" does not contain it - the OR lives in
     # the OUTCOME labels ("2 or Over"). A punter's own code found it: 3T2NBQ,
@@ -464,9 +477,16 @@ def reason_uncarried(code):
 # Reverse lookup, DERIVED rather than typed twice - a second literal is a
 # second thing to keep in step, and the pair would drift silently. Both tables,
 # because a pasted code is resolved through exactly the same index.
+# TWO NAMES FOR ONE BET, AND WHICH ONE COMES BACK. EXGOALS_0 ("the total is
+# anything but zero") and OVER_0.5 are the same proposition on a non-negative
+# integer, so they resolve to the same triple - the forward direction is happy
+# either way, and the reverse has to choose. The MODELLED name wins: a reader
+# should see "Goal in 1st half", not "Not exactly 0 goals in the first half",
+# and both are true of the same leg. So the modelled table is written last and
+# overwrites.
 _BY_TRIPLE = {triple: code
-              for code, triple in list(MARKET_MAP.items()) +
-              list(PASSTHROUGH_MAP.items())}
+              for code, triple in list(PASSTHROUGH_MAP.items()) +
+              list(MARKET_MAP.items())}
 
 
 def market_for(code):
