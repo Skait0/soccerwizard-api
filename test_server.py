@@ -321,11 +321,27 @@ class LiveFeedDoesNotRepeatItself(unittest.TestCase):
         out, _ = t._fetch(None, pages=pages)
         self.assertEqual(len(out), 3, "distinct pages must all be kept")
 
-class BookingIsCheckedBeforeItIsSent(unittest.TestCase):
-    """Half the card has no team-totals market, and one unplaceable leg among
-    forty loses all forty. We hold every event's odds already, so the answer is
-    known here without asking SportyBet - and naming the bad picks lets the
-    caller drop exactly those instead of guessing."""
+class BookingIsNoLongerRefusedOnOurOwnCache(unittest.TestCase):
+    """THE PREMISE THIS CLASS WAS BUILT ON TURNED OUT TO BE FALSE.
+
+    It read: half the card has no team-totals market, one unplaceable leg among
+    forty loses all forty, and we hold every event's odds already so the answer
+    is known here without asking SportyBet.
+
+    We do not hold every event's odds. SportyBet's fixtures feed carries a
+    PARTIAL market set per event - measured 15 Sep on the next day's card,
+    Russian Premier League events with 1/X/2, double chance, GG and the
+    first-half lines and no Over/Under at all, Swiss Super League events with
+    every Over/Under line and no 1X2 at all. Both book perfectly well.
+
+    A reader's own SportyBet code, JTEJA5, held four legs this route was
+    refusing, on the very event ids we match - Lugano 1X, Thun 1X, Baltika
+    OVER_1.5, Lokomotiv OVER_2.5 - every one returned as "no market there"
+    under a message naming SportyBet, who had never been asked.
+
+    So nothing is refused here any more. A leg our cache cannot price is
+    counted as a `suspect`, reported, and sent: the bookmaker names what it
+    will not take and the client drops exactly that."""
 
     def setUp(self):
         server._FIXTURES_CACHE.clear()
@@ -339,12 +355,14 @@ class BookingIsCheckedBeforeItIsSent(unittest.TestCase):
     def tearDown(self):
         server._FIXTURES_CACHE.clear()
 
-    def test_a_pick_with_no_market_is_named(self):
-        bad, _how = server._unbookable([
+    def test_a_pick_we_cannot_price_is_counted_and_still_sent(self):
+        bad, how = server._unbookable([
             {"eventId": "ev:good", "prediction": "OVER_1.5"},
             {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
         ])
-        self.assertEqual(bad, [{"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"}])
+        self.assertEqual(bad, [], "a missing price must not refuse the leg")
+        self.assertEqual(how["suspect"], 1, "but it is still worth counting")
+        self.assertEqual(how["suspect_markets"], ["HOME_OVER_0.5"])
 
     def test_a_fully_bookable_slip_is_left_alone(self):
         self.assertEqual(server._unbookable([
@@ -394,29 +412,30 @@ class BookingIsCheckedBeforeItIsSent(unittest.TestCase):
             {"eventId": "ev:thin", "prediction": "OVER_1.5"},
             {"eventId": "ev:gone", "prediction": "1X"},
         ])
-        self.assertEqual(len(bad), 1, "only the unpriced market is refused")
+        self.assertEqual(bad, [], "nothing is refused on our cache any more")
+        self.assertEqual(how["suspect"], 1, "the unpriced market is counted, not condemned")
         self.assertGreaterEqual(how["cache_age_s"], 1700)
         self.assertLessEqual(how["cache_age_s"], 1900)
         self.assertEqual(how["judged"], 2, "two legs on an event we hold")
         self.assertEqual(how["unknown"], 1, "and one we cannot judge at all")
 
-    def test_the_route_refuses_early_and_says_which(self):
+    def test_the_route_sends_the_slip_instead_of_refusing_it(self):
+        """It used to refuse here and name the leg. It cannot: the market may
+        be on their card and absent from our copy of it, which is what JTEJA5
+        showed. The slip goes, and SportyBet answers for its own board."""
         called = {"n": 0}
         real = server.generate_sportybet_code
-        server.generate_sportybet_code = lambda *a, **k: called.__setitem__("n", called["n"] + 1)
+        server.generate_sportybet_code = lambda *a, **k: (
+            called.__setitem__("n", called["n"] + 1) or {"code": "OK123"})
         try:
             with server.app.test_client() as c:
                 r = c.post("/api/generate-booking-code", json={"selections": [
                     {"eventId": "ev:good", "prediction": "OVER_1.5"},
                     {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
                 ]})
-                self.assertEqual(r.status_code, 400)
-                body = r.get_json()
-                self.assertFalse(body["success"])
-                self.assertEqual(body["unbookable"],
-                                 [{"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"}])
-                self.assertIn("no market there", body["detail"])
-            self.assertEqual(called["n"], 0, "must not spend a call on a doomed slip")
+                self.assertEqual(r.status_code, 200)
+                self.assertNotIn("unbookable", r.get_json() or {})
+            self.assertEqual(called["n"], 1, "the bookmaker must be the one asked")
         finally:
             server.generate_sportybet_code = real
 
@@ -442,7 +461,8 @@ class BookingIsCheckedBeforeItIsSent(unittest.TestCase):
         self.assertIn("legs_judged", seen)
         self.assertIn("legs_unknown", seen)
         self.assertEqual(seen["legs_unknown"], 1, "the leg we hold no prices for")
-        self.assertEqual(seen["bad_legs"], 1)
+        self.assertEqual(seen["suspect_legs"], 1,
+                         "a leg we cannot price is reported even though it is sent")
 
 class FailuresAreReported(unittest.TestCase):
     """A booking rejection is not an exception, so nothing raised and Sentry
@@ -514,11 +534,14 @@ class FailuresAreReported(unittest.TestCase):
         server._sentry = Exploding
         try:
             with server.app.test_client() as c:
+                # An unmapped market: the one refusal this route still makes on
+                # its own, and the path reporting sits on.
                 r = c.post("/api/generate-booking-code", json={"selections": [
-                    {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"}]})
+                    {"eventId": "ev:thin", "prediction": "NOT_A_MARKET"}]})
                 self.assertEqual(r.status_code, 400)
                 self.assertEqual(r.get_json()["unbookable"],
-                                 [{"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"}])
+                                 [{"eventId": "ev:thin", "prediction": "NOT_A_MARKET",
+                                   "reason": "not_mapped"}])
         finally:
             server._sentry = real
             server._FIXTURES_CACHE.clear()
@@ -1120,9 +1143,10 @@ class ThePreflightOnlyJudgesWhatItCanSee(unittest.TestCase):
         """The guard must not blind the check it was built for: half the card
         carries no team-totals market, and one unplaceable leg among forty
         loses all forty."""
-        bad, _m = self._judge(
+        bad, how = self._judge(
             [{"eventId": "e1", "prediction": "HOME_OVER_1.5"}], self.CACHE)
-        self.assertEqual(len(bad), 1, "a market the cache says is absent must still be caught")
+        self.assertEqual(bad, [], "our cache cannot condemn a market any more")
+        self.assertEqual(how["suspect"], 1, "but it is still counted and reported")
 
     def test_a_priced_modelled_market_passes(self):
         bad, _m = self._judge(

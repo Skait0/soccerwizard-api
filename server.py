@@ -1732,9 +1732,30 @@ def _unbookable(raw_selections):
     "invalid event data, no market there", which takes the whole slip down.
     One unplaceable leg among forty loses all forty.
 
-    We already hold every event's odds in the fixtures cache, so the answer is
-    known here without asking SportyBet. Checking costs nothing and turns a
-    flat rejection into a list of exactly which picks are the problem.
+    THAT PREMISE WAS FALSE, AND THIS NO LONGER REFUSES ANYTHING. It used to say
+    "we already hold every event's odds in the fixtures cache, so the answer is
+    known here without asking SportyBet". We do not: their fixtures feed
+    returns a PARTIAL market set per event. Measured 15 Sep on the next day's
+    card - Russian Premier League events carried 1/X/2, double chance, GG and
+    the first-half lines and no Over/Under at all; Swiss Super League events
+    carried every Over/Under line and no 1X2 at all. Both book perfectly well.
+
+    A reader's own SportyBet code settled it. JTEJA5 holds four legs this
+    function was refusing, on the very event ids we match:
+
+        sr:match:74374472  1X        Lugano v FC St. Gallen 1879
+        sr:match:74374468  1X        FC Thun v Servette Geneva
+        sr:match:72334336  OVER_1.5  FC Baltika Kaliningrad v FK Zenit
+        sr:match:72334340  OVER_2.5  Lokomotiv Moscow v PFK Krylia Sovetov
+
+    Every one came back from this route as "no market there", under a message
+    naming SportyBet, who had never been asked. The absence was in our cache,
+    the refusal was ours, and the punter was told the bookmaker had said no.
+
+    So the picks go through now and SportyBet answers for itself: it names the
+    legs it will not take, and the client already drops exactly those and
+    retries. The counting stays - a leg we would once have refused is worth
+    knowing about, so it is reported as a `suspect` and sent anyway.
 
     Silent when the cache is empty: no prices is not the same as prices that
     exclude a market, and refusing a slip because this server has just started
@@ -1753,12 +1774,13 @@ def _unbookable(raw_selections):
     entry = _cache_get("fixtures", _FIXTURES_CACHE)
     rows = (entry or {}).get("data") or []
     if not rows:
-        return [], {"cache_age_s": None, "judged": 0, "unknown": 0}
+        return [], {"cache_age_s": None, "judged": 0, "unknown": 0,
+                    "suspect": 0, "suspect_markets": []}
     odds_by_event = {}
     for m in rows:
         if isinstance(m, dict) and m.get("eventId"):
             odds_by_event[m["eventId"]] = m.get("odds") or {}
-    bad = []
+    suspect = []
     judged = unknown = 0
     for item in raw_selections:
         ev, pred = item.get("eventId"), item.get("prediction")
@@ -1780,12 +1802,21 @@ def _unbookable(raw_selections):
         judged += 1
         price = prices.get(pred)
         if not price or price <= 1.01:
-            bad.append({"eventId": ev, "prediction": pred})
+            # Suspect, not condemned. Our cache is missing a price for it; that
+            # is now known to be weak evidence, so it is counted for telemetry
+            # and the pick still goes to SportyBet, who can answer for their
+            # own card.
+            suspect.append({"eventId": ev, "prediction": pred})
     age = entry.get("at")
-    return bad, {
+    # `bad` is deliberately always empty: nothing here is refused any more.
+    # The shape stays so the caller keeps its telemetry and so a future rule
+    # with better evidence has somewhere to live.
+    return [], {
         "cache_age_s": int(time.time() - age) if age else None,
         "judged": judged,
         "unknown": unknown,
+        "suspect": len(suspect),
+        "suspect_markets": sorted({str(x["prediction"]) for x in suspect}),
     }
 
 
@@ -1821,25 +1852,21 @@ def api_generate_code():
             "unbookable": unmapped,
         }), 400
 
-    bad, how = _unbookable(raw_selections)
-    if bad:
-        # Named rather than counted, so the caller can drop exactly these and
-        # retry instead of guessing which leg broke it.
-        report("booking: picks with no market at SportyBet",
-               bad_legs=len(bad), total_legs=len(raw_selections),
-               markets=", ".join(sorted({b["prediction"] for b in bad})),
-               events=", ".join(sorted({b["eventId"] for b in bad})[:10]),
-               # What the verdict was made on. A refusal off a 44-minute-old
-               # cache is a different animal from one off a 2-minute-old cache,
-               # and only this can tell them apart.
+    # NOTHING IS REFUSED HERE ANY MORE - _unbookable carries the code that
+    # proved why. A leg our cache cannot price is still worth watching, so it
+    # is reported and sent: if SportyBet takes it, this line is the record that
+    # our cache was wrong about their card; if they refuse it they say so by
+    # name, and the client drops exactly that leg and retries.
+    _, how = _unbookable(raw_selections)
+    if how.get("suspect"):
+        report("booking: picks our cache cannot price, sent anyway",
+               suspect_legs=how["suspect"], total_legs=len(raw_selections),
+               markets=", ".join(how.get("suspect_markets") or []),
+               # What the old verdict would have been made on. A refusal off a
+               # 44-minute-old cache is a different animal from one off a
+               # 2-minute-old cache, and only this can tell them apart.
                cache_age_s=how["cache_age_s"],
                legs_judged=how["judged"], legs_unknown=how["unknown"])
-        return jsonify({
-            "success": False,
-            "message": "SportyBet rejected the slip",
-            "detail": "no market there for %d of %d picks" % (len(bad), len(raw_selections)),
-            "unbookable": bad,
-        }), 400
 
     formatted_selections = []
     for item in raw_selections:
