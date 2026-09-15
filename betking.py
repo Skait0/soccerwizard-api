@@ -308,6 +308,96 @@ PASSTHROUGH_MAP = {
 # exact-goals top rung means "N or more" on one book and "exactly N" on the
 # other. They stay unmapped until somebody reads them.
 
+# --- the asymmetry, as data rather than a comment --------------------------
+# A code our other books carry and this one does not is a leg that reads and
+# splits and can NEVER convert into BetKing. The comments above say why family
+# by family; this says it in a form a test can hold, so a code quietly added to
+# one table cannot look the same as one deliberately left off another.
+#
+# Keyed by prefix, longest match wins. Every uncarried code must match exactly
+# one entry - test_the_asymmetry_is_accounted_for walks our whole vocabulary
+# and fails on anything that is neither carried nor explained here.
+#
+# "verified absent" means checked across eight deep cards on 19-20 Sep 2026.
+# "not read yet" means nobody has sat down with their card - it is work, not a
+# property of their catalogue, and the two must never look the same.
+NOT_CARRIED = {
+    "AH_1_": "verified absent: 305 sells half-ball lines only (+/-0.5 1.5 2.5 "
+             "3.5). Whole balls exist at 342 and that is a DIFFERENT bet - "
+             "three-way, draw its own outcome, no push - so mapping onto it "
+             "narrows the punter's bet. Quarter balls are not sold at all.",
+    "AH_2_": "verified absent: see AH_1_.",
+    "FH_AH_": "verified absent: 344 offers -0.5 and 0.5 only.",
+    "SH_AH_": "verified absent: 9335 offers -1.5 -0.5 0.5 1.5 only.",
+    "EH_": "verified absent: 342 stops at three goals (-3 -2 -1 1 2 3).",
+    "CORNERS_": "verified absent: 190 runs 5.5-12.5, 10332 3.5-5.5, 10333 "
+                "2.5-6.5. The deepest team lines appeared on one card of "
+                "eight, so they are thin as well as bounded.",
+    "FH_HOME_": "verified absent: 10290 offers 0.5 and 1.5, not 2.5.",
+    "FH_AWAY_": "verified absent: 10291 offers 0.5 and 1.5, not 2.5.",
+    "SH_AWAY_": "verified absent: 10303 offers 0.5 and 1.5, not 2.5.",
+    # Everything below is unread rather than unsold. BetKing prices most of
+    # these families - they are on the card - but each needs its own
+    # outcome-by-outcome reading, and a family guessed from its name is how an
+    # exact-goals top rung meaning "N or more" on one book and "exactly N" on
+    # the other gets mapped together.
+    "BOUNDS_": "not read yet: multigoal bands. 9616 Multi Goal is on the card.",
+    "MIX_": "not read yet: 1X2 & total combinations. 9277 is on the card.",
+    "MIXGG_": "not read yet: 1X2 & both-to-score. 9885 is on the card.",
+    "MIXNG_": "not read yet: see MIXGG_.",
+    "EXACT_": "not read yet: correct score. 10298/1018 are on the card, and "
+              "this family is where the 'N or more' versus 'exactly N' trap "
+              "lives - read every outcome label before mapping any of it.",
+    "EXGOALS_": "not read yet: exact goals, 9641. Same trap as EXACT_.",
+    "TEAMGOALS_": "not read yet: team exact goals, 10286 and its home twin.",
+    "CARD_": "not read yet: bookings markets.",
+    "CORNRANGE_": "not read yet: corner bands.",
+    "HALFCORNER_": "not read yet: 9793 Half Most Corners is on the card.",
+    "FIRSTGOAL_": "not read yet: 10331 First Corner / first scorer family.",
+    "HIGHHALF_": "not read yet: highest scoring half. Crosses on the other two.",
+    "MARGIN_": "not read yet: winning margin.",
+    "EARLY_": "not read yet: 10978-10986 early-goal markets are on the card.",
+    "BOTHHALVES_": "not read yet.",
+    "GOALRANGE_": "not read yet: goal bands.",
+    "WINHALF_": "not read yet: 627/628 win-either-half are on the card.",
+    "DC1UP_": "not read yet: 10987 Double chance 1UP is on the card.",
+    "DC2_": "not read yet: second-half double chance, 10299.",
+    "HMC_": "not read yet: half most cards.",
+    "PEN_": "not read yet: 699 Penalty Taken is on the card.",
+    "UP1_": "not read yet: 10974 1X2 - 1UP is on the card and priced.",
+    "UP2_": "not read yet: 10975 1X2 - 2UP is on the card and priced.",
+    "OVER_": "not read yet: exact-goals style over. Not the OVER_n.5 totals, "
+             "which are modelled.",
+    "UNDER_": "not read yet: see OVER_.",
+    "DNB_": "carried - this entry exists so a prefix sweep cannot claim it.",
+    # Found by the test below rather than by reading the tables, which is the
+    # whole point of it: five half-scoped families that no rule in tools/
+    # gentail.js proposed and that no comment above covered either. They were
+    # neither carried nor explained, which is the state this file exists to
+    # make impossible.
+    "FH_EH_": "not read yet: first-half three-way handicap. 344 is the Asian "
+              "one; whether they sell a three-way half handicap is unchecked.",
+    "SH_EH_": "not read yet: second-half three-way handicap, same question.",
+    "FH_MIX_": "not read yet: first-half 1X2 & total. 10297 is on the card.",
+    "FH_CARD_": "not read yet: first-half team bookings.",
+    "FH_CARDUN_": "not read yet: the under side of first-half team bookings.",
+}
+
+
+def reason_uncarried(code):
+    """Why BetKing does not carry one of our codes, or None if it does.
+
+    Longest prefix wins, so FH_AH_ beats FH_ and AH_1_ beats AH_.
+    """
+    if market_for(code):
+        return None
+    best = None
+    for prefix, why in NOT_CARRIED.items():
+        if code.startswith(prefix) and (best is None or len(prefix) > len(best[0])):
+            best = (prefix, why)
+    return best[1] if best else None
+
+
 # Reverse lookup, DERIVED rather than typed twice - a second literal is a
 # second thing to keep in step, and the pair would drift silently. Both tables,
 # because a pasted code is resolved through exactly the same index.

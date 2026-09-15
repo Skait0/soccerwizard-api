@@ -396,6 +396,60 @@ class ReadingACodeBack(unittest.TestCase):
             self.assertEqual(betking._BY_TRIPLE[triple], code)
 
 
+class TheAsymmetryIsAccountedFor(unittest.TestCase):
+    """Every code we can say, this book either carries or has a reason not to.
+
+    "A code in one table and not the other is a leg that reads and splits and
+    can never convert." Keeping that difference as prose meant a code quietly
+    added to SportyBet's table looked exactly like one deliberately left off
+    BetKing's. As a test it cannot: adding a market anywhere in our vocabulary
+    now forces a decision here.
+
+    It earned itself immediately - it found 36 codes across five half-scoped
+    families (FH_EH_, SH_EH_, FH_MIX_, FH_CARD_, FH_CARDUN_) that no generator
+    rule proposed and no comment covered.
+    """
+
+    @staticmethod
+    def _vocabulary():
+        import server, bet9ja
+        return sorted(set(server.PASSTHROUGH_MAP) | set(bet9ja.PASSTHROUGH_MAP) |
+                      set(server.MARKET_MAP) | set(bet9ja.MARKET_MAP))
+
+    def test_nothing_is_silently_missing(self):
+        orphans = [c for c in self._vocabulary()
+                   if not betking.market_for(c) and not betking.reason_uncarried(c)]
+        self.assertEqual(orphans, [],
+                         "carried by another book, not carried here, and no "
+                         "reason given - say which it is in NOT_CARRIED")
+
+    def test_a_carried_code_never_also_claims_a_reason(self):
+        # A code cannot both convert and have an excuse for not converting.
+        for code in list(betking.MARKET_MAP) + list(betking.PASSTHROUGH_MAP):
+            self.assertIsNone(betking.reason_uncarried(code), code)
+
+    def test_the_longest_prefix_wins(self):
+        # FH_AH_ must beat AH_ and FH_, or a half-handicap inherits the match
+        # handicap's reason and says something untrue about their catalogue.
+        self.assertIn("344", betking.reason_uncarried("FH_AH_1_-1"))
+        self.assertIn("305", betking.reason_uncarried("AH_1_-1"))
+
+    def test_absent_and_unread_are_not_the_same_word(self):
+        # The distinction this file exists to protect: "verified absent" is a
+        # fact about their catalogue, "not read yet" is work we have not done.
+        for prefix, why in betking.NOT_CARRIED.items():
+            self.assertTrue(
+                why.startswith(("verified absent", "not read yet", "carried")),
+                "%s: a reason has to say which of the two it is" % prefix)
+
+    def test_the_whole_ball_asian_reason_names_the_trap(self):
+        # The one entry where the tempting fix ships a different bet. If this
+        # wording ever goes, so has the argument against mapping it.
+        why = betking.reason_uncarried("AH_1_-1")
+        self.assertIn("342", why)
+        self.assertIn("DIFFERENT bet", why)
+
+
 class TheSweep(unittest.TestCase):
 
     def test_a_day_reports_what_they_say_they_hold(self):
