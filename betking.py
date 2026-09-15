@@ -752,6 +752,16 @@ def _transaction_id():
     return "%s%d" % (str(int(time.time() * 1000))[3:], random.randint(1, 99))
 
 
+def _read_body(code, timeout=20):
+    """Their whole answer for one booking code.
+
+    One parser, two callers: generate_code wants the leg count to verify what
+    it just minted, and read_coupon wants the rest of it. Parsing the response
+    in both places is how the two would come to disagree about the same code.
+    """
+    return _get_json("%s/%s/%s" % (READ_URL, code, LANG), timeout)
+
+
 def read_code(code, timeout=20):
     """Read a booking code back. Anonymous, like everything else here.
 
@@ -759,8 +769,7 @@ def read_code(code, timeout=20):
     that exists but resolves to nothing comes back (0, []), which is exactly
     what a code booked with a selection id they do not recognise looks like.
     """
-    url = "%s/%s/%s" % (READ_URL, code, LANG)
-    body = _get_json(url, timeout)
+    body = _read_body(code, timeout)
     coupon = (body or {}).get("BookedCoupon") or {}
     return int(body.get("AvailableEventCount") or 0), (coupon.get("Odds") or [])
 
@@ -785,10 +794,29 @@ def read_coupon(code, timeout=20):
     which is a different question from what the code contains.
     """
     try:
-        available, rows = read_code(code, timeout)
+        body = _read_body(code, timeout)
     except Exception as ex:                      # noqa: BLE001 - user-facing
         log.warning("betking coupon read failed: %s", ex)
         return {"error": "request failed: %s" % ex}
+
+    coupon = (body or {}).get("BookedCoupon") or {}
+    rows = coupon.get("Odds") or []
+    available = int(body.get("AvailableEventCount") or 0)
+    # A REPRINT IS NOT A TRANSCRIPT, AND THIS BOOK SAYS SO OUT LOUD.
+    # A leg disappears from the coupon the moment its fixture starts, so a code
+    # read in the afternoon is shorter than the one somebody was handed in the
+    # morning - measured on DT166R, booked with four legs and reading back with
+    # one four hours later. Bet9ja does the same and tells us nothing; BetKing
+    # names the casualties, so the reader can be told rather than shown a
+    # quietly shorter slip and left to wonder.
+    #
+    # Two things it is NOT. The names are names only - no market, no selection -
+    # so a dropped leg cannot be re-booked or even described beyond the fixture.
+    # And the count decays too: FR2D84 was minted with four legs and now reports
+    # three as its "original", so this is the best account available rather than
+    # the truth. Both are why it is reported as what we READ, never as the slip.
+    removed = [n for n in (body.get("RemovedEvents") or []) if n]
+    booked = int(body.get("OriginalEventCount") or 0)
 
     if not rows:
         # A code they do not know answers 200 with BookedCoupon: null. So does
@@ -820,7 +848,10 @@ def read_coupon(code, timeout=20):
             "kickoff": leg.get("EventDate") or "",
             "odds": odd,
         })
-    return {"legs": out, "available": available}
+    return {"legs": out, "available": available,
+            # What the reader is owed when their code has thinned: how many it
+            # held, and which games have gone. Empty when nothing was dropped.
+            "removed": removed, "booked": booked}
 
 
 def generate_code(selections, timeout=30, verify=True):

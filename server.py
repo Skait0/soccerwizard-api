@@ -1685,8 +1685,20 @@ def api_read_slip():
     # A reprint is not a transcript - see bet9ja.read_coupon. The count is what
     # we READ, said plainly, so nothing downstream can imply it is the slip as
     # it was booked.
-    return jsonify({"success": True, "book": book, "code": code,
-                    "read": len(legs), "legs": legs})
+    out_json = {"success": True, "book": book, "code": code,
+                "read": len(legs), "legs": legs}
+    # AND WHEN THE BOOK CAN SAY WHAT IT DROPPED, SAY IT. A leg leaves a coupon
+    # the moment its fixture starts, so a code pasted in the afternoon is
+    # shorter than the one the punter was handed in the morning. Showing the
+    # remainder without a word reads as "your code only had three games in it".
+    # Only BetKing reports this; the other two thin out just as quietly and
+    # tell us nothing, so the fields are absent rather than zero - a caller can
+    # tell "none dropped" from "this book cannot say".
+    if out.get("removed"):
+        out_json["removed"] = out["removed"]
+    if out.get("booked"):
+        out_json["booked"] = out["booked"]
+    return jsonify(out_json)
 
 
 @app.route('/api/livescores', methods=['GET'])

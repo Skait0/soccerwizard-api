@@ -348,9 +348,19 @@ class ReadingACodeBack(unittest.TestCase):
         "EventDate": "2026-09-14T21:00:00+02:00",
     }]
 
-    def _read(self, rows, available=0):
-        with mock.patch.object(betking, "read_code",
-                               return_value=(available, rows)):
+    def _read(self, rows, available=0, body=None):
+        """Stub the RESPONSE, not read_code.
+
+        These stubbed read_code until read_coupon stopped going through it, at
+        which point every one of them quietly started hitting the live API and
+        asserting against whatever real code FR2D84 happened to be that
+        afternoon. They failed loudly, which is the only reason it was noticed;
+        a seam moved under a mock is otherwise invisible.
+        """
+        payload = dict(body or {})
+        payload.setdefault("AvailableEventCount", available)
+        payload.setdefault("BookedCoupon", {"Odds": rows})
+        with mock.patch.object(betking, "_read_body", return_value=payload):
             return betking.read_coupon("FR2D84")
 
     def test_a_leg_comes_back_in_our_own_market_code(self):
@@ -381,6 +391,29 @@ class ReadingACodeBack(unittest.TestCase):
 
     def test_a_code_with_nothing_in_it_is_not_found(self):
         self.assertEqual(self._read([]).get("notFound"), True)
+
+    def test_a_thinned_coupon_says_what_it_lost(self):
+        """A leg leaves the coupon the moment its fixture starts, so a code
+        pasted in the afternoon is shorter than the one the punter was handed.
+        Measured on DT166R: booked with four legs, read back with one four
+        hours later, and their answer named the two that had gone.
+
+        Showing the remainder silently reads as "your code only had one game
+        in it", which is a different and worse claim."""
+        out = self._read(self.ROWS, body={
+            "OriginalEventCount": 4,
+            "RemovedEvents": ["Instituto AC Cordoba - Estudiantes Rio Cuarto",
+                              None, "CD Universidad Catolica - Orense SC"],
+        })
+        self.assertEqual(out["booked"], 4)
+        # The null is theirs: a dropped leg they will not even name. Carrying
+        # it through would print an empty line at the reader.
+        self.assertEqual(len(out["removed"]), 2)
+        self.assertIn("Instituto AC Cordoba - Estudiantes Rio Cuarto", out["removed"])
+
+    def test_a_whole_coupon_reports_nothing_removed(self):
+        out = self._read(self.ROWS)
+        self.assertEqual(out["removed"], [])
 
     def test_available_is_not_the_leg_count(self):
         # A four-leg coupon reads back with available=0 while its Odds array
