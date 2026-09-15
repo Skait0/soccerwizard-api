@@ -566,7 +566,30 @@ def _cache_put(name, mem, data):
 # so 10 must be fetched or those picks fall back to estimated odds. The same
 # now applies to 68: a market the builder can select has to arrive with real
 # odds, or every first-half leg is priced off an estimate.
-FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20")
+#
+# THE CHANCE-MIX FAMILY WAS THE RULE ABOVE BEING BROKEN. The builder offers
+# "Draw or over 2.5", "Result or over 2.5", "Draw or GG" and "Result or GG",
+# and none of them were fetched - so they were the only markets on the site
+# priced from the model instead of from the book. Reported as combo odds being
+# wildly high, and that is exactly the shape it takes: these legs are short
+# (real prices read back from BetKing: 1.05, 1.07, 1.10, 1.11, 1.21), so a
+# target needs thirty or forty of them, and a few percent of error per leg
+# compounds - 1.08^40 is about twenty-one times. Every other market looked
+# right because every other market carried the bookmaker's own number.
+#
+#   854 = 1 or over 2.5     856 = X or over 2.5     858 = 2 or over 2.5
+#   860 = 1 or GG           861 = X or GG           862 = 2 or GG
+#
+# The UNDER halves (855, 857, 859) are deliberately not here: the builder does
+# not offer them, and each id is a full pass over the card.
+#
+# LAST ON PURPOSE. Each id is its own paged sweep, this doubles the passes from
+# seven to thirteen, and the 900-second deadline above truncates whatever has
+# not run yet. Ordered so a slow day costs the combo prices - which fall back
+# to an estimate, as they always did - rather than 1X2 or over/under, which
+# everything from the board to the booking pre-flight leans on.
+FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
+                      "854", "856", "858", "860", "861", "862")
 
 
 def _headers(region="ng"):

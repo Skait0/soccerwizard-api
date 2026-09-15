@@ -1850,3 +1850,66 @@ class TheRouteFeedsBetKingWhatBetKingReads(unittest.TestCase):
         self.assertEqual(len(sent), 1)
         self.assertEqual(sent[0]["SelectionId"], 2339553331)
         self.assertEqual(sent[0]["MatchId"], 1005309147)
+
+
+class EveryMarketTheBuilderOffersCarriesARealPrice(unittest.TestCase):
+    """The rule the chance-mix family was breaking, written down so it cannot
+    break again quietly.
+
+    server.py has said it for a while: "a market the builder can select has to
+    arrive with real odds, or every leg is priced off an estimate". Double
+    chance and the first-half line were each added to the sweep for exactly
+    that reason. The chance-mix markets - Draw or over 2.5, Result or over 2.5,
+    Draw or GG, Result or GG - never were, so they were the only markets on the
+    site priced from the model rather than from the book.
+
+    It shows up as combo odds being wildly high. Those legs are short (real
+    BetKing prices, read back: 1.05, 1.07, 1.10, 1.11, 1.21), so a target takes
+    thirty or forty of them, and a few percent of error per leg compounds:
+    1.08^40 is about twenty-one times the payout. Every other market looked
+    right because every other market carried the bookmaker's own number.
+    """
+
+    # What the builder can put on a slip. A new chip here means a new id in
+    # FIXTURE_MARKET_IDS, and this test is where that is remembered.
+    BUILDER_MARKETS = [
+        "1", "X", "2", "1X", "X2", "12",
+        "OVER_1.5", "OVER_2.5", "OVER_3.5", "GG", "NG", "FH_OVER_0.5",
+        "HOME_OVER_0.5", "HOME_OVER_1.5", "AWAY_OVER_0.5", "AWAY_OVER_1.5",
+        "MIX_1_OV_2.5", "MIX_X_OV_2.5", "MIX_2_OV_2.5",
+        "MIXGG_1", "MIXGG_X", "MIXGG_2",
+    ]
+
+    def test_every_offered_market_is_swept(self):
+        missing = []
+        for code in self.BUILDER_MARKETS:
+            ids = server.market_for(code)
+            self.assertIsNotNone(ids, "%s is offered but maps to nothing" % code)
+            if str(ids["marketId"]) not in server.FIXTURE_MARKET_IDS:
+                missing.append("%s (market %s)" % (code, ids["marketId"]))
+        self.assertEqual(missing, [],
+                         "offered with no real price, so priced off the model: "
+                         + ", ".join(missing))
+
+    def test_the_odds_extractor_can_name_the_new_markets(self):
+        """Fetching an id buys nothing if the merge cannot turn its outcomes
+        back into our code. _ODDS_LOOKUP is built from both tables, and the
+        chance-mix codes live in the pass-through one."""
+        for code in ("MIX_1_OV_2.5", "MIX_X_OV_2.5", "MIX_2_OV_2.5",
+                     "MIXGG_1", "MIXGG_X", "MIXGG_2"):
+            ids = server.market_for(code)
+            key = (str(ids["marketId"]), str(ids["outcomeId"]), ids.get("specifier", "") or "")
+            self.assertEqual(server._ODDS_LOOKUP.get(key), code,
+                             "a fetched %s outcome would be dropped on the floor" % code)
+
+    def test_win_a_half_is_a_known_gap(self):
+        """WIN A HALF IS STILL ESTIMATED, and this is the record of it rather
+        than a silent omission. Markets 50 and 51, one pass each, and the sweep
+        has just doubled from seven ids to thirteen against a host that has
+        refused us before - so it is a separate decision, not a drive-by. If it
+        is ever added, this test should be deleted and the two codes moved into
+        BUILDER_MARKETS above."""
+        for code in ("WINHALF_H_Y", "WINHALF_A_Y"):
+            ids = server.market_for(code)
+            self.assertNotIn(str(ids["marketId"]), server.FIXTURE_MARKET_IDS,
+                             "win-a-half is swept now - move it into BUILDER_MARKETS")
