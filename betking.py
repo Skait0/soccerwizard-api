@@ -161,6 +161,10 @@ MARKET_MAP = {
 # carry the NEGATED line - AH_2_-0.5 is the away team giving half a goal, which
 # is their "0.5 : 0".
 PASSTHROUGH_MAP = {
+    # --- 1UP (3) ---
+    "UP1_1": (10974, 0, 4),
+    "UP1_2": (10974, 0, 5),
+    "UP1_X": (10974, 0, 2),
     # --- 1st half handicap (4) ---
     "FH_AH_1_-0.5": (344, -0.5, 1714),
     "FH_AH_1_0.5": (344, 0.5, 1714),
@@ -179,6 +183,14 @@ PASSTHROUGH_MAP = {
     "FH_HOME_UNDER_0.5": (10290, 0.5, 13),
     "FH_HOME_UNDER_1.5": (10290, 1.5, 13),
     "FH_HOME_UNDER_2.5": (10290, 2.5, 13),
+    # --- 2UP (3) ---
+    "UP2_1": (10975, 0, 4),
+    "UP2_2": (10975, 0, 5),
+    "UP2_X": (10975, 0, 2),
+    # --- 2nd half double chance (3) ---
+    "DC2_12": (10299, 0, 10),
+    "DC2_1X": (10299, 0, 9),
+    "DC2_X2": (10299, 0, 11),
     # --- 2nd half handicap (6) ---
     "SH_AH_1_-0.5": (9335, -0.5, 1714),
     "SH_AH_1_-1.5": (9335, -1.5, 1714),
@@ -223,6 +235,17 @@ PASSTHROUGH_MAP = {
     "AH_2_1.5": (305, -1.5, 1715),
     "AH_2_2.5": (305, -2.5, 1715),
     "AH_2_3.5": (305, -3.5, 1715),
+    # --- chance mix 1x2 or GG (3) ---
+    "MIXGG_1": (9334, 0, 2348),
+    "MIXGG_2": (9334, 0, 2344),
+    "MIXGG_X": (9334, 0, 2346),
+    # --- chance mix 1x2 or NG (3) ---
+    "MIXNG_1": (9334, 0, 2349),
+    "MIXNG_2": (9334, 0, 2345),
+    "MIXNG_X": (9334, 0, 2347),
+    # --- double chance 1UP (2) ---
+    "DC1UP_1X": (10987, 0, 9),
+    "DC1UP_X2": (10987, 0, 11),
     # --- draw no bet (2) ---
     "DNB_1": (147, 0, 4),
     "DNB_2": (147, 0, 5),
@@ -245,6 +268,13 @@ PASSTHROUGH_MAP = {
     "EH_3_0_1": (342, 3, 1714),
     "EH_3_0_2": (342, 3, 1715),
     "EH_3_0_X": (342, 3, 1712),
+    # --- half most corners (3) ---
+    "HALFCORNER_1": (9793, 0, 436),
+    "HALFCORNER_2": (9793, 0, 438),
+    "HALFCORNER_E": (9793, 0, 924),
+    # --- penalty awarded (2) ---
+    "PEN_N": (699, 0, 76),
+    "PEN_Y": (699, 0, 74),
     # --- team corners (14) ---
     "CORNERS_A_OV_3.5": (10333, 3.5, 12),
     "CORNERS_A_OV_4.5": (10333, 4.5, 12),
@@ -275,6 +305,11 @@ PASSTHROUGH_MAP = {
     "CORNERS_UN_7.5": (190, 7.5, 13),
     "CORNERS_UN_8.5": (190, 8.5, 13),
     "CORNERS_UN_9.5": (190, 9.5, 13),
+    # --- win either half (4) ---
+    "WINHALF_A_N": (627, 0, 76),
+    "WINHALF_A_Y": (627, 0, 74),
+    "WINHALF_H_N": (628, 0, 76),
+    "WINHALF_H_Y": (628, 0, 74),
 }
 
 # --- what BetKing does NOT sell, and why it is absent -----------------------
@@ -322,10 +357,13 @@ PASSTHROUGH_MAP = {
 # "not read yet" means nobody has sat down with their card - it is work, not a
 # property of their catalogue, and the two must never look the same.
 NOT_CARRIED = {
-    "AH_1_": "verified absent: 305 sells half-ball lines only (+/-0.5 1.5 2.5 "
-             "3.5). Whole balls exist at 342 and that is a DIFFERENT bet - "
-             "three-way, draw its own outcome, no push - so mapping onto it "
-             "narrows the punter's bet. Quarter balls are not sold at all.",
+    "AH_1_": "verified absent: 305 sells half-ball lines only (-2.5 -1.5 -0.5 "
+             "0.5 1.5 2.5 3.5, checked on twelve cards). Whole balls exist at "
+             "342 and that is a DIFFERENT bet - three-way, draw its own "
+             "outcome, no push - so mapping onto it narrows the punter's bet. "
+             "Quarter balls are not sold at all. SEVEN LEGS of a real 39-leg "
+             "SportyBet ticket were whole-ball Asian handicaps, so this is the "
+             "single biggest thing BetKing cannot take.",
     "AH_2_": "verified absent: see AH_1_.",
     "FH_AH_": "verified absent: 344 offers -0.5 and 0.5 only.",
     "SH_AH_": "verified absent: 9335 offers -1.5 -0.5 0.5 1.5 only.",
@@ -336,49 +374,51 @@ NOT_CARRIED = {
     "FH_HOME_": "verified absent: 10290 offers 0.5 and 1.5, not 2.5.",
     "FH_AWAY_": "verified absent: 10291 offers 0.5 and 1.5, not 2.5.",
     "SH_AWAY_": "verified absent: 10303 offers 0.5 and 1.5, not 2.5.",
-    # Everything below is unread rather than unsold. BetKing prices most of
-    # these families - they are on the card - but each needs its own
-    # outcome-by-outcome reading, and a family guessed from its name is how an
-    # exact-goals top rung meaning "N or more" on one book and "exactly N" on
-    # the other gets mapped together.
-    "BOUNDS_": "not read yet: multigoal bands. 9616 Multi Goal is on the card.",
-    "MIX_": "not read yet: 1X2 & total combinations. 9277 is on the card.",
-    "MIXGG_": "not read yet: 1X2 & both-to-score. 9885 is on the card.",
-    "MIXNG_": "not read yet: see MIXGG_.",
+    # THREE ENTRIES BELOW WERE WRONG UNTIL A REAL TICKET WAS READ, and all
+    # three pointed at a market that is a DIFFERENT BET. That is the failure
+    # this table exists to prevent, and it got into the table itself.
+    "OVER_": "verified absent: whole-number totals. OVER_3 is 'over 3 goals' "
+             "with a push on exactly three; BetKing's 160 sells only .5 lines "
+             "(0.5-6.5) so there is no push line to cross to. 9641 'Total "
+             "Goals(Exact) N' is a different bet again - exactly N, not over "
+             "N. NINE LEGS of a real 39-leg ticket were these.",
+    "UNDER_": "verified absent: see OVER_.",
+    "EXGOALS_": "verified absent, and the near-miss is an INVERSE. Our "
+                "EXGOALS_1 is 'NOT exactly 1 goal' (see mLabel); their 9641 "
+                "is 'Total Goals(Exact) 1'. Mapping them together would sell "
+                "somebody the exact opposite of their bet.",
+    "MIX_": "verified absent across eight cards: this is the OR family - "
+            "MIX_1_OV_2.5 is 'home OR over 2.5'. BetKing sells two chance-mix "
+            "markets, 9334 (1x2 or GG/NG) and 9698 (GG/NG or total), and "
+            "neither is 1x2-or-total. 9277 '1X2 & Total Goals' sits right "
+            "beside them and is an AND - a far narrower bet at a far longer "
+            "price. FOUR LEGS of a real 39-leg ticket were these.",
     "EXACT_": "not read yet: correct score. 10298/1018 are on the card, and "
               "this family is where the 'N or more' versus 'exactly N' trap "
               "lives - read every outcome label before mapping any of it.",
-    "EXGOALS_": "not read yet: exact goals, 9641. Same trap as EXACT_.",
+    "BOUNDS_": "not read yet: one side's goals as a range. Their 9616 Multi "
+               "Goal is TOTAL goals, not per-team, so it is not the answer.",
     "TEAMGOALS_": "not read yet: team exact goals, 10286 and its home twin.",
     "CARD_": "not read yet: bookings markets.",
     "CORNRANGE_": "not read yet: corner bands.",
-    "HALFCORNER_": "not read yet: 9793 Half Most Corners is on the card.",
     "FIRSTGOAL_": "not read yet: 10331 First Corner / first scorer family.",
     "HIGHHALF_": "not read yet: highest scoring half. Crosses on the other two.",
     "MARGIN_": "not read yet: winning margin.",
     "EARLY_": "not read yet: 10978-10986 early-goal markets are on the card.",
     "BOTHHALVES_": "not read yet.",
     "GOALRANGE_": "not read yet: goal bands.",
-    "WINHALF_": "not read yet: 627/628 win-either-half are on the card.",
-    "DC1UP_": "not read yet: 10987 Double chance 1UP is on the card.",
-    "DC2_": "not read yet: second-half double chance, 10299.",
     "HMC_": "not read yet: half most cards.",
-    "PEN_": "not read yet: 699 Penalty Taken is on the card.",
-    "UP1_": "not read yet: 10974 1X2 - 1UP is on the card and priced.",
-    "UP2_": "not read yet: 10975 1X2 - 2UP is on the card and priced.",
-    "OVER_": "not read yet: exact-goals style over. Not the OVER_n.5 totals, "
-             "which are modelled.",
-    "UNDER_": "not read yet: see OVER_.",
     "DNB_": "carried - this entry exists so a prefix sweep cannot claim it.",
-    # Found by the test below rather than by reading the tables, which is the
-    # whole point of it: five half-scoped families that no rule in tools/
-    # gentail.js proposed and that no comment above covered either. They were
-    # neither carried nor explained, which is the state this file exists to
-    # make impossible.
+    # Two of the three cross and the third does not, which a family-shaped
+    # reason would have hidden. reason_uncarried asks market_for first, so this
+    # entry only ever speaks for the leg that is genuinely missing.
+    "DC1UP_": "verified absent: their 10987 Double chance 1UP offers 1X and X2 "
+              "and no 12 at all, on every card checked. The other two cross.",
     "FH_EH_": "not read yet: first-half three-way handicap. 344 is the Asian "
               "one; whether they sell a three-way half handicap is unchecked.",
     "SH_EH_": "not read yet: second-half three-way handicap, same question.",
-    "FH_MIX_": "not read yet: first-half 1X2 & total. 10297 is on the card.",
+    "FH_MIX_": "not read yet: first-half 1X2 & total. 10297 is on the card - "
+               "but check the AND/OR distinction above before trusting it.",
     "FH_CARD_": "not read yet: first-half team bookings.",
     "FH_CARDUN_": "not read yet: the under side of first-half team bookings.",
 }
