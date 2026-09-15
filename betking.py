@@ -243,6 +243,25 @@ PASSTHROUGH_MAP = {
     "MIXNG_1": (9334, 0, 2349),
     "MIXNG_2": (9334, 0, 2345),
     "MIXNG_X": (9334, 0, 2347),
+    # --- chance mix 1x2 or total (18) ---
+    "MIX_1_OV_1.5": (9648, 1.5, 2354),
+    "MIX_1_OV_2.5": (9648, 2.5, 2354),
+    "MIX_1_OV_3.5": (9648, 3.5, 2354),
+    "MIX_1_UN_1.5": (9648, 1.5, 2355),
+    "MIX_1_UN_2.5": (9648, 2.5, 2355),
+    "MIX_1_UN_3.5": (9648, 3.5, 2355),
+    "MIX_2_OV_1.5": (9648, 1.5, 2350),
+    "MIX_2_OV_2.5": (9648, 2.5, 2350),
+    "MIX_2_OV_3.5": (9648, 3.5, 2350),
+    "MIX_2_UN_1.5": (9648, 1.5, 2351),
+    "MIX_2_UN_2.5": (9648, 2.5, 2351),
+    "MIX_2_UN_3.5": (9648, 3.5, 2351),
+    "MIX_X_OV_1.5": (9648, 1.5, 2352),
+    "MIX_X_OV_2.5": (9648, 2.5, 2352),
+    "MIX_X_OV_3.5": (9648, 3.5, 2352),
+    "MIX_X_UN_1.5": (9648, 1.5, 2353),
+    "MIX_X_UN_2.5": (9648, 2.5, 2353),
+    "MIX_X_UN_3.5": (9648, 3.5, 2353),
     # --- double chance 1UP (2) ---
     "DC1UP_1X": (10987, 0, 9),
     "DC1UP_X2": (10987, 0, 11),
@@ -387,17 +406,21 @@ NOT_CARRIED = {
                 "EXGOALS_1 is 'NOT exactly 1 goal' (see mLabel); their 9641 "
                 "is 'Total Goals(Exact) 1'. Mapping them together would sell "
                 "somebody the exact opposite of their bet.",
-    "MIX_": "verified absent across eight cards: this is the OR family - "
-            "MIX_1_OV_2.5 is 'home OR over 2.5'. BetKing sells two chance-mix "
-            "markets, 9334 (1x2 or GG/NG) and 9698 (GG/NG or total), and "
-            "neither is 1x2-or-total. 9277 '1X2 & Total Goals' sits right "
-            "beside them and is an AND - a far narrower bet at a far longer "
-            "price. FOUR LEGS of a real 39-leg ticket were these.",
+    # MIX_ WAS HERE, AND IT WAS WRONG. I searched their MARKET names for "or"
+    # and "Chance Mix Total Goals 1.5" does not contain it - the OR lives in
+    # the OUTCOME labels ("2 or Over"). A punter's own code found it: 3T2NBQ,
+    # Brighton v Arsenal, market 9648. Search outcomes, not names, and do not
+    # write "verified absent" off a search that only looked at half the data.
     "EXACT_": "not read yet: correct score. 10298/1018 are on the card, and "
               "this family is where the 'N or more' versus 'exactly N' trap "
               "lives - read every outcome label before mapping any of it.",
-    "BOUNDS_": "not read yet: one side's goals as a range. Their 9616 Multi "
-               "Goal is TOTAL goals, not per-team, so it is not the answer.",
+    "BOUNDS_": "not read yet: one side's goals as a range, and the target is "
+               "9619 Total Multigoal Home / 9620 Total Multigoal Away, which "
+               "ARE per-team. I first wrote that their Multi Goal was "
+               "total-only; that is 9616, and I had stopped looking. Read "
+               "every band's outcome label before mapping - '33' means three "
+               "or more in our vocabulary, and a band that means exactly "
+               "three would be the same trap as EXACT_.",
     "TEAMGOALS_": "not read yet: team exact goals, 10286 and its home twin.",
     "CARD_": "not read yet: bookings markets.",
     "CORNRANGE_": "not read yet: corner bands.",
