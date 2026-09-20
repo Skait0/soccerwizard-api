@@ -464,6 +464,41 @@ class BookingIsNoLongerRefusedOnOurOwnCache(unittest.TestCase):
         self.assertEqual(seen["suspect_legs"], 1,
                          "a leg we cannot price is reported even though it is sent")
 
+    def test_an_unpriced_leg_is_reported_as_news_not_as_a_fault(self):
+        """SportyBet's odds feed carries less than their card does, so a leg we
+        cannot price is the ordinary case and most of these slips are accepted.
+        Reported at warning, it sat in Sentry beside the refusals that actually
+        cost a reader their code, and a warning stream where everything is a
+        warning gets ignored wholesale."""
+        seen = {}
+        real_report, real_code = server.report, server.generate_sportybet_code
+        server.report = lambda msg, level="warning", **ctx: seen.update(
+            {"msg": msg, "level": level})
+        server.generate_sportybet_code = lambda *a, **k: {"code": "X"}
+        try:
+            with server.app.test_client() as c:
+                c.post("/api/generate-booking-code", json={"selections": [
+                    {"eventId": "ev:good", "prediction": "OVER_1.5"},
+                    {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
+                ]})
+        finally:
+            server.report, server.generate_sportybet_code = real_report, real_code
+        self.assertIn("cannot price", seen.get("msg", ""))
+        self.assertEqual(seen.get("level"), "info",
+                         "an expected gap in their feed is not a fault")
+
+    def test_the_level_reaches_the_log_and_not_only_sentry(self):
+        """report() logged at warning whatever it was told, so demoting a call
+        changed Sentry and left Railway shouting the same line."""
+        with self.assertLogs(server.log, level="INFO") as cap:
+            server.report("routine thing", level="info", n=1)
+        self.assertTrue(any(r.levelname == "INFO" for r in cap.records),
+                        "the log line must carry the level it was given")
+        with self.assertLogs(server.log, level="WARNING") as cap:
+            server.report("bad thing", n=1)
+        self.assertTrue(any(r.levelname == "WARNING" for r in cap.records),
+                        "and warning must still be the default")
+
     def test_a_refusal_that_names_nothing_still_hands_back_the_suspects(self):
         """SportyBet's refusal is one sentence about the whole slip - "invalid
         event data, no market there" - and names no event and no market. The

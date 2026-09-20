@@ -62,8 +62,12 @@ def report(message, level="warning", **context):
     the booking path, and an error reporter that can break a booking is worse
     than no error reporter.
     """
-    log.warning("%s | %s", message,
-                " ".join("%s=%s" % (k, v) for k, v in sorted(context.items())))
+    # The level travels to the log as well as to Sentry. It used to be a
+    # warning here whatever the caller said, so a line reported as routine was
+    # still shouted at Railway - and a log where everything is a warning is a
+    # log where nothing is.
+    log.log(getattr(logging, level.upper(), logging.WARNING), "%s | %s", message,
+            " ".join("%s=%s" % (k, v) for k, v in sorted(context.items())))
     if not _sentry:
         return
     try:
@@ -1890,7 +1894,13 @@ def api_generate_code():
     # name, and the client drops exactly that leg and retries.
     _, how = _unbookable(raw_selections)
     if how.get("suspect"):
+        # INFO, NOT A WARNING. SportyBet's feed is partial by design - their
+        # card lists more than their odds feed carries - so a leg we cannot
+        # price is the normal case, not a fault, and most of these slips are
+        # accepted. Left at warning it drowned the real refusals, which is the
+        # signal this reporter exists for.
         report("booking: picks our cache cannot price, sent anyway",
+               level="info",
                suspect_legs=how["suspect"], total_legs=len(raw_selections),
                markets=", ".join(how.get("suspect_markets") or []),
                # What the old verdict would have been made on. A refusal off a
