@@ -1798,7 +1798,7 @@ def _unbookable(raw_selections):
     rows = (entry or {}).get("data") or []
     if not rows:
         return [], {"cache_age_s": None, "judged": 0, "unknown": 0,
-                    "suspect": 0, "suspect_markets": []}
+                    "suspect": 0, "suspect_markets": [], "suspects": []}
     odds_by_event = {}
     for m in rows:
         if isinstance(m, dict) and m.get("eventId"):
@@ -1834,12 +1834,20 @@ def _unbookable(raw_selections):
     # `bad` is deliberately always empty: nothing here is refused any more.
     # The shape stays so the caller keeps its telemetry and so a future rule
     # with better evidence has somewhere to live.
+    #
+    # The suspects themselves travel with the telemetry now, unsent. They are
+    # not evidence enough to refuse a leg BEFORE asking SportyBet - that was
+    # the JTEJA5 mistake and it stands. They are the only evidence there is
+    # AFTERWARDS: SportyBet's refusal names nothing at all, so without this the
+    # reader is told "invalid event data, no market there" about a slip of
+    # forty and given no leg to remove. See the rejection branch below.
     return [], {
         "cache_age_s": int(time.time() - age) if age else None,
         "judged": judged,
         "unknown": unknown,
         "suspect": len(suspect),
         "suspect_markets": sorted({str(x["prediction"]) for x in suspect}),
+        "suspects": suspect,
     }
 
 
@@ -1916,8 +1924,31 @@ def api_generate_code():
     report("booking: SportyBet rejected a slip that passed validation",
            reason=str(result.get("error"))[:200], legs=len(raw_selections),
            markets=",".join(sorted({(i.get("prediction") or "?") for i in raw_selections})))
-    return jsonify({"success": False, "message": "SportyBet rejected the slip",
-                    "detail": result.get("error"), "sent": result.get("sent")}), 400
+    # NAME SOMETHING, OR THE WHOLE SLIP DIES FOR A LEG NOBODY CAN FIND.
+    #
+    # SportyBet's refusal is one sentence about the slip - "invalid event data,
+    # no market there" - and it names no event and no market. Every other
+    # refusal on this API carries `unbookable`, the client drops exactly those
+    # legs, names the matches, and asks whether to book the rest. This one
+    # carried nothing, so the reader was shown a flat "SportyBet wouldn't take
+    # this slip" over a slip they could not correct. Reported 20 Sep.
+    #
+    # The suspects are our cache's own doubts: markets we model, on events we
+    # hold, where our copy has no price or a collapsed one. They are too weak
+    # to refuse a leg BEFORE asking - that premise was false and cost a reader
+    # four bookable legs (JTEJA5, see _unbookable) - but SportyBet has now
+    # answered, and it said no. Against a refusal they are the only candidates
+    # there are, so they are offered as such: the client asks before dropping
+    # anything, and a wrong guess costs one retry rather than the slip.
+    #
+    # Nothing invented when there are no suspects: the plain error stands, the
+    # same as today.
+    body = {"success": False, "message": "SportyBet rejected the slip",
+            "detail": result.get("error"), "sent": result.get("sent")}
+    suspects = how.get("suspects") or []
+    if suspects and len(suspects) < len(raw_selections):
+        body["unbookable"] = [dict(s, reason="suspect") for s in suspects]
+    return jsonify(body), 400
 
 
 @app.route('/', methods=['GET'])

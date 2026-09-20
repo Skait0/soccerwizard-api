@@ -464,6 +464,72 @@ class BookingIsNoLongerRefusedOnOurOwnCache(unittest.TestCase):
         self.assertEqual(seen["suspect_legs"], 1,
                          "a leg we cannot price is reported even though it is sent")
 
+    def test_a_refusal_that_names_nothing_still_hands_back_the_suspects(self):
+        """SportyBet's refusal is one sentence about the whole slip - "invalid
+        event data, no market there" - and names no event and no market. The
+        client can only drop legs that are named, so without this it showed
+        "SportyBet wouldn't take this slip" over forty legs and no way to find
+        the bad one. Reported 20 Sep by a reader who could not get a code and
+        was told nothing about which pick was the problem.
+
+        The suspects are weak evidence BEFORE asking, which is why nothing is
+        refused on them. After a refusal they are the only evidence there is."""
+        real = server.generate_sportybet_code
+        server.generate_sportybet_code = lambda *a, **k: {
+            "error": "invalid event data, no market there", "sent": []}
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/generate-booking-code", json={"selections": [
+                    {"eventId": "ev:good", "prediction": "OVER_1.5"},
+                    {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
+                ]})
+        finally:
+            server.generate_sportybet_code = real
+        self.assertEqual(r.status_code, 400)
+        body = r.get_json()
+        self.assertEqual([(b["eventId"], b["prediction"]) for b in body["unbookable"]],
+                         [("ev:thin", "HOME_OVER_0.5")],
+                         "the leg our cache could not price is the one to offer")
+        self.assertEqual(body["unbookable"][0]["reason"], "suspect",
+                         "named as a suspicion, not as the bookmaker's word")
+
+    def test_nothing_is_invented_when_every_leg_looks_fine(self):
+        """A refusal we have no candidate for must stay a plain error. Offering
+        the whole slip as unbookable would hand the client a retry with nothing
+        left in it, and offering a leg at random is a guess with somebody
+        else's bet on it."""
+        real = server.generate_sportybet_code
+        server.generate_sportybet_code = lambda *a, **k: {
+            "error": "invalid event data, no market there", "sent": []}
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/generate-booking-code", json={"selections": [
+                    {"eventId": "ev:good", "prediction": "OVER_1.5"},
+                    {"eventId": "ev:good", "prediction": "GG"},
+                ]})
+        finally:
+            server.generate_sportybet_code = real
+        self.assertEqual(r.status_code, 400)
+        self.assertNotIn("unbookable", r.get_json() or {})
+
+    def test_a_slip_of_nothing_but_suspects_is_not_emptied(self):
+        """Every leg suspect means the suspicion explains nothing. Dropping all
+        of them leaves no slip to retry, so the client would show its "can't
+        take any of these" card for a refusal that may have had another cause
+        entirely."""
+        real = server.generate_sportybet_code
+        server.generate_sportybet_code = lambda *a, **k: {
+            "error": "invalid event data, no market there", "sent": []}
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/generate-booking-code", json={"selections": [
+                    {"eventId": "ev:thin", "prediction": "HOME_OVER_0.5"},
+                    {"eventId": "ev:thin", "prediction": "GG"},
+                ]})
+        finally:
+            server.generate_sportybet_code = real
+        self.assertNotIn("unbookable", r.get_json() or {})
+
 class FailuresAreReported(unittest.TestCase):
     """A booking rejection is not an exception, so nothing raised and Sentry
     never saw one. report() makes them searchable events - and must never be
