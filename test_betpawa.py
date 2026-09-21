@@ -94,7 +94,7 @@ class MarketTable(unittest.TestCase):
     def test_an_unknown_market_refuses_rather_than_defaulting(self):
         # `market_for(pred) or HOME_WIN` shipped on another book and booked a
         # bet nobody asked for, because the bookmaker accepted it.
-        self.assertIsNone(betpawa.market_for("CORNERS_OV_9.5"))
+        self.assertIsNone(betpawa.market_for("PEN_Y"))
         self.assertIsNone(betpawa.market_for(""))
         self.assertIsNone(betpawa.market_for(None))
 
@@ -427,22 +427,120 @@ class TheReadBack(unittest.TestCase):
         self.assertEqual(out["legs"], 1)
 
 
-class TheAsymmetryIsWrittenDown(unittest.TestCase):
-    """What this book does NOT carry yet, said out loud rather than implied.
+class TheAsymmetryIsAccountedFor(unittest.TestCase):
+    """Every code we can say, this book either carries or has a reason not to.
 
-    Betpawa has the modelled 24 and no pass-through tail, so a code from
-    another book carrying corners or a handicap reads and splits here and
-    cannot convert. That is a decision about work not yet done - the tail is
-    step 5 of the integration order - and not a statement about their
-    catalogue, which demonstrably sells all of it (63 markets on a mid-table
-    fixture). The two must never look the same in a year.
+    A code in one table and not another is a leg that reads and splits and can
+    never convert. As prose that difference is invisible: a market quietly
+    added to one book looks exactly like one deliberately left off this one.
+    As a test it cannot - adding anything to our vocabulary forces a decision
+    here.
     """
 
-    def test_the_module_says_the_tail_is_unmapped_rather_than_absent(self):
+    @staticmethod
+    def _vocabulary():
+        import server, bet9ja, betking
+        return sorted(set(server.PASSTHROUGH_MAP) | set(bet9ja.PASSTHROUGH_MAP) |
+                      set(betking.PASSTHROUGH_MAP) | set(server.MARKET_MAP) |
+                      set(bet9ja.MARKET_MAP) | set(betking.MARKET_MAP))
+
+    def test_nothing_is_silently_missing(self):
+        orphans = [c for c in self._vocabulary()
+                   if not betpawa.market_for(c)
+                   and not betpawa.reason_uncarried(c)]
+        self.assertEqual(orphans, [],
+                         "carried by another book, not carried here, and no "
+                         "reason given - say which it is in NOT_CARRIED")
+
+    def test_a_carried_code_never_also_claims_a_reason(self):
+        # A code cannot both convert and have an excuse for not converting.
+        for code in list(betpawa.MARKET_MAP) + list(betpawa.PASSTHROUGH_MAP):
+            self.assertIsNone(betpawa.reason_uncarried(code), code)
+
+    def test_the_longest_prefix_wins(self):
+        # FH_AH_ must beat AH_, or a half-handicap inherits the match
+        # handicap's reason and says something untrue about their card.
+        self.assertIn("first-half", betpawa.reason_uncarried("FH_AH_1_-3.5"))
+        self.assertIn("three-way", betpawa.reason_uncarried("AH_1_-1"))
+        # And FH_CARD_ must not inherit anything from FH_.
+        self.assertIn("CARD_", betpawa.reason_uncarried("FH_CARD_H_2"))
+
+    def test_absent_and_unread_are_not_the_same_word(self):
+        # "Verified absent" is a fact about their catalogue; "not read yet" is
+        # work nobody has done. A year from now the two must still be
+        # distinguishable.
+        for prefix, why in betpawa.NOT_CARRIED.items():
+            self.assertTrue(
+                why.startswith(("verified absent", "not read yet", "carried")),
+                "%s: a reason has to say which of the two it is" % prefix)
+
+    def test_the_whole_ball_asian_reason_names_the_trap(self):
+        # The one entry where the tempting fix ships a different bet: their
+        # three-way handicap carries the whole numbers the Asian card lacks,
+        # and it does not push. If this wording goes, so has the argument.
+        why = betpawa.reason_uncarried("AH_1_-1")
+        self.assertIn("DIFFERENT bet", why)
+        self.assertIn("push", why)
+
+    def test_the_tail_was_generated_and_verified_rather_than_typed(self):
+        # The 24 invented codes on an earlier book were all hand-continued
+        # from a sibling family. The generator and the card count it ran
+        # against are named in the module so the next person can re-run it.
         with open("betpawa.py", encoding="utf-8") as fh:
             src = fh.read()
-        self.assertNotIn("PASSTHROUGH_MAP", src,
-                         "if the tail exists now, this test has to say so")
+        self.assertIn("tools/bpgen.js", src)
+        self.assertGreater(len(betpawa.PASSTHROUGH_MAP), 150)
+
+
+class TheTailResolvesBothWays(unittest.TestCase):
+
+    def test_no_pass_through_code_collides_with_a_modelled_one(self):
+        both = set(betpawa.MARKET_MAP) & set(betpawa.PASSTHROUGH_MAP)
+        self.assertEqual(both, set())
+
+    def test_one_triple_never_answers_to_two_codes(self):
+        # The read-back is a triple lookup, so a collision would decode a
+        # punter's leg as somebody else's market.
+        triples = list(betpawa.MARKET_MAP.values()) + \
+            list(betpawa.PASSTHROUGH_MAP.values())
+        self.assertEqual(len(triples), len(set(triples)))
+
+    def test_the_away_asian_line_is_the_home_one_negated(self):
+        """The sign that books the wrong team if it is guessed.
+
+        Their outcome carries its OWN side's number: the home price on a row
+        reads "-0.5" where ours reads AH_1_-0.5, and the away price on that
+        same row reads "+0.5" where ours reads AH_2_-0.5. Checked against the
+        prices per card when the table was generated - 54 comparisons to 0 -
+        and pinned here so a later edit cannot quietly flip it.
+        """
+        self.assertEqual(betpawa.PASSTHROUGH_MAP["AH_1_-0.5"][1], "-0.5")
+        self.assertEqual(betpawa.PASSTHROUGH_MAP["AH_2_-0.5"][1], "+0.5")
+        self.assertEqual(betpawa.PASSTHROUGH_MAP["AH_1_0.5"][1], "+0.5")
+        self.assertEqual(betpawa.PASSTHROUGH_MAP["AH_2_0.5"][1], "-0.5")
+
+    def test_the_draw_outcome_names_whichever_side_is_giving(self):
+        # Not the home side. On the row where the away team gives a goal the X
+        # price reads "Away -1", never "Home +1" - continuing the pattern the
+        # other two outcomes follow cost the whole family once.
+        self.assertEqual(betpawa.PASSTHROUGH_MAP["EH_0_1_X"][1], "Home -1")
+        self.assertEqual(betpawa.PASSTHROUGH_MAP["EH_1_0_X"][1], "Away -1")
+
+    def test_a_pass_through_leg_is_bookable_like_any_other(self):
+        # market_for reads BOTH tables. Keyed on the modelled one alone, every
+        # handicap and corner leg would come back "not_mapped" however well
+        # they price it, and no converted slip could ever be booked here.
+        self.assertIsNotNone(betpawa.market_for("CORNERS_OV_8.5"))
+        self.assertIsNotNone(betpawa.market_for("AH_1_-0.5"))
+        self.assertIsNotNone(betpawa.market_for("1X"))
+        self.assertIsNone(betpawa.market_for("PEN_Y"))
+
+    def test_the_sweep_still_asks_only_for_the_modelled_markets(self):
+        # The tail exists to read a pasted code, not to fill the board. Asking
+        # for 60 market types on every page of a sweep would multiply the
+        # payload for markets nothing on the board displays.
+        self.assertEqual(set(betpawa.SWEEP_MARKETS),
+                         {m for m, _l, _o in betpawa.MARKET_MAP.values()})
 
 
 class TheContainerCanActuallyRunThis(unittest.TestCase):

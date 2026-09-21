@@ -112,14 +112,361 @@ MARKET_MAP = {
     "AWAY_UNDER_1.5": ("5003", "1.5", "5005"),
 }
 
+
+
+# --- markets we carry but never model --------------------------------------
+# A CONVERTER NEEDS IDENTITY, NOT A PREDICTION. Everything above is a market
+# the model has an opinion about. These are not: they exist so a slip somebody
+# else built can be read, re-cut and moved between books without us pretending
+# to rate it. Nothing here is ever produced by tipCode, so no board, no record
+# and no calibration changes by their being here.
+#
+# GENERATED, NEVER TYPED - tools/bpgen.js, 21 Sep 2026, against the eight
+# deepest cards on the board (Barcelona-Getafe at 137 markets down to
+# Norway-Denmark at 126). Every candidate is proposed from the meaning of our
+# own code and kept ONLY if Betpawa actually prices it on one of them. 197 of
+# 382 crossed; the twelve that did not, and the 173 refused on meaning, are in
+# NOT_CARRIED below with a reason each.
+#
+# PROPOSED IN THEIR WORDS, NOT THEIR IDS. Betpawa names every market and every
+# outcome in full - "Total Score Over/Under - FT - Home Team", "Home by 3+" -
+# so the generator says what it MEANS and the card answers with the ids. The
+# last book had to guess numeric ids from siblings, which invented 24 codes
+# that matched nothing anywhere.
+#
+# THE HANDICAP SIGNS WERE CHECKED AGAINST THE PRICES, PER CARD. The side
+# receiving the bigger head start must be shorter, and it is: 54 comparisons
+# to 0 on the Asian market, 60 to 0 on the three-way one. Pooling prices
+# ACROSS cards - the first version of that check - reported three
+# disagreements out of sixteen, because Barcelona's -1.5 is shorter than a
+# Norwegian fixture's -0.5 for reasons that have nothing to do with the sign.
+#
+# AND THE DRAW OUTCOME NAMES WHICHEVER SIDE IS GIVING. On a three-way handicap
+# row where the home team gives a goal the X price reads "Home -1"; on the row
+# where the away team gives one it reads "Away -1", never "Home +1". Read off
+# three cards rather than continued from the pattern the other two outcomes
+# follow, which had cost the whole family.
+PASSTHROUGH_MAP = {
+    # --- asian handicap (28) ---
+    "AH_1_-0.5": ("3774", "-0.5", "3775"),
+    "AH_1_-1.5": ("3774", "-1.5", "3775"),
+    "AH_1_-2.5": ("3774", "-2.5", "3775"),
+    "AH_1_-3.5": ("3774", "-3.5", "3775"),
+    "AH_1_-4.5": ("3774", "-4.5", "3775"),
+    "AH_1_0.5": ("3774", "+0.5", "3775"),
+    "AH_1_1.5": ("3774", "+1.5", "3775"),
+    "AH_1_2.5": ("3774", "+2.5", "3775"),
+    "AH_2_-0.5": ("3774", "+0.5", "3776"),
+    "AH_2_-1.5": ("3774", "+1.5", "3776"),
+    "AH_2_-2.5": ("3774", "+2.5", "3776"),
+    "AH_2_-3.5": ("3774", "+3.5", "3776"),
+    "AH_2_-4.5": ("3774", "+4.5", "3776"),
+    "AH_2_0.5": ("3774", "-0.5", "3776"),
+    "AH_2_1.5": ("3774", "-1.5", "3776"),
+    "AH_2_2.5": ("3774", "-2.5", "3776"),
+    "FH_AH_1_-0.5": ("3747", "-0.5", "3748"),
+    "FH_AH_1_-1.5": ("3747", "-1.5", "3748"),
+    "FH_AH_1_0.5": ("3747", "+0.5", "3748"),
+    "FH_AH_2_-0.5": ("3747", "+0.5", "3749"),
+    "FH_AH_2_-1.5": ("3747", "+1.5", "3749"),
+    "FH_AH_2_0.5": ("3747", "-0.5", "3749"),
+    "SH_AH_1_-0.5": ("3756", "-0.5", "3757"),
+    "SH_AH_1_-1.5": ("3756", "-1.5", "3757"),
+    "SH_AH_1_0.5": ("3756", "+0.5", "3757"),
+    "SH_AH_2_-0.5": ("3756", "+0.5", "3758"),
+    "SH_AH_2_-1.5": ("3756", "+1.5", "3758"),
+    "SH_AH_2_0.5": ("3756", "-0.5", "3758"),
+    # --- corners (10) ---
+    "CORNERS_OV_10.5": ("1096783", "10.5", "1099466"),
+    "CORNERS_OV_6.5": ("1096783", "6.5", "1099466"),
+    "CORNERS_OV_7.5": ("1096783", "7.5", "1099466"),
+    "CORNERS_OV_8.5": ("1096783", "8.5", "1099466"),
+    "CORNERS_OV_9.5": ("1096783", "9.5", "1099466"),
+    "CORNERS_UN_10.5": ("1096783", "10.5", "1099467"),
+    "CORNERS_UN_6.5": ("1096783", "6.5", "1099467"),
+    "CORNERS_UN_7.5": ("1096783", "7.5", "1099467"),
+    "CORNERS_UN_8.5": ("1096783", "8.5", "1099467"),
+    "CORNERS_UN_9.5": ("1096783", "9.5", "1099467"),
+    # --- corner ranges (3) ---
+    "CORNRANGE_0_8": ("1096803", None, "1099437"),
+    "CORNRANGE_12": ("1096803", None, "1099439"),
+    "CORNRANGE_9_11": ("1096803", None, "1099438"),
+    # --- double chance 1UP (3) ---
+    "DC1UP_12": ("80000", None, "80003"),
+    "DC1UP_1X": ("80000", None, "80001"),
+    "DC1UP_X2": ("80000", None, "80002"),
+    # --- draw no bet (2) ---
+    "DNB_1": ("4703", None, "4704"),
+    "DNB_2": ("4703", None, "4705"),
+    # --- european handicap (42) ---
+    "EH_0_1_1": ("4724", "Home -1", "4725"),
+    "EH_0_1_2": ("4724", "Away +1", "4727"),
+    "EH_0_1_X": ("4724", "Home -1", "4726"),
+    "EH_0_2_1": ("4724", "Home -2", "4725"),
+    "EH_0_2_2": ("4724", "Away +2", "4727"),
+    "EH_0_2_X": ("4724", "Home -2", "4726"),
+    "EH_0_3_1": ("4724", "Home -3", "4725"),
+    "EH_0_3_2": ("4724", "Away +3", "4727"),
+    "EH_0_3_X": ("4724", "Home -3", "4726"),
+    "EH_0_4_1": ("4724", "Home -4", "4725"),
+    "EH_0_4_2": ("4724", "Away +4", "4727"),
+    "EH_0_4_X": ("4724", "Home -4", "4726"),
+    "EH_0_5_1": ("4724", "Home -5", "4725"),
+    "EH_0_5_2": ("4724", "Away +5", "4727"),
+    "EH_0_5_X": ("4724", "Home -5", "4726"),
+    "EH_1_0_1": ("4724", "Home +1", "4725"),
+    "EH_1_0_2": ("4724", "Away -1", "4727"),
+    "EH_1_0_X": ("4724", "Away -1", "4726"),
+    "EH_2_0_1": ("4724", "Home +2", "4725"),
+    "EH_2_0_2": ("4724", "Away -2", "4727"),
+    "EH_2_0_X": ("4724", "Away -2", "4726"),
+    "EH_3_0_1": ("4724", "Home +3", "4725"),
+    "EH_3_0_2": ("4724", "Away -3", "4727"),
+    "EH_3_0_X": ("4724", "Away -3", "4726"),
+    "FH_EH_0_1_1": ("4716", "Home -1", "4717"),
+    "FH_EH_0_1_2": ("4716", "Away +1", "4719"),
+    "FH_EH_0_1_X": ("4716", "Home -1", "4718"),
+    "FH_EH_0_2_1": ("4716", "Home -2", "4717"),
+    "FH_EH_0_2_2": ("4716", "Away +2", "4719"),
+    "FH_EH_0_2_X": ("4716", "Home -2", "4718"),
+    "FH_EH_1_0_1": ("4716", "Home +1", "4717"),
+    "FH_EH_1_0_2": ("4716", "Away -1", "4719"),
+    "FH_EH_1_0_X": ("4716", "Away -1", "4718"),
+    "SH_EH_0_1_1": ("4720", "Home -1", "4721"),
+    "SH_EH_0_1_2": ("4720", "Away +1", "4723"),
+    "SH_EH_0_1_X": ("4720", "Home -1", "4722"),
+    "SH_EH_0_2_1": ("4720", "Home -2", "4721"),
+    "SH_EH_0_2_2": ("4720", "Away +2", "4723"),
+    "SH_EH_0_2_X": ("4720", "Home -2", "4722"),
+    "SH_EH_1_0_1": ("4720", "Home +1", "4721"),
+    "SH_EH_1_0_2": ("4720", "Away -1", "4723"),
+    "SH_EH_1_0_X": ("4720", "Away -1", "4722"),
+    # --- exact goals (12) ---
+    "EXACT_0": ("4926", None, "4927"),
+    "EXACT_1": ("4926", None, "4928"),
+    "EXACT_2": ("4926", None, "4929"),
+    "EXACT_3": ("4926", None, "4930"),
+    "EXACT_4": ("4926", None, "4931"),
+    "EXACT_5": ("4926", None, "4932"),
+    "EXACT_6": ("4926", None, "1096818"),
+    "EXACT_FH_0": ("4898", None, "4899"),
+    "EXACT_FH_1": ("4898", None, "4900"),
+    "EXACT_SH_0": ("4912", None, "4913"),
+    "EXACT_SH_1": ("4912", None, "4914"),
+    "EXACT_SH_2": ("4912", None, "1089749"),
+    # --- team goals (24) ---
+    "FH_AWAY_OVER_0.5": ("4961", "0.5", "4962"),
+    "FH_AWAY_OVER_1.5": ("4961", "1.5", "4962"),
+    "FH_AWAY_OVER_2.5": ("4961", "2.5", "4962"),
+    "FH_AWAY_UNDER_0.5": ("4961", "0.5", "4963"),
+    "FH_AWAY_UNDER_1.5": ("4961", "1.5", "4963"),
+    "FH_AWAY_UNDER_2.5": ("4961", "2.5", "4963"),
+    "FH_HOME_OVER_0.5": ("4964", "0.5", "4965"),
+    "FH_HOME_OVER_1.5": ("4964", "1.5", "4965"),
+    "FH_HOME_OVER_2.5": ("4964", "2.5", "4965"),
+    "FH_HOME_UNDER_0.5": ("4964", "0.5", "4966"),
+    "FH_HOME_UNDER_1.5": ("4964", "1.5", "4966"),
+    "FH_HOME_UNDER_2.5": ("4964", "2.5", "4966"),
+    "SH_AWAY_OVER_0.5": ("4979", "0.5", "4980"),
+    "SH_AWAY_OVER_1.5": ("4979", "1.5", "4980"),
+    "SH_AWAY_OVER_2.5": ("4979", "2.5", "4980"),
+    "SH_AWAY_UNDER_0.5": ("4979", "0.5", "4981"),
+    "SH_AWAY_UNDER_1.5": ("4979", "1.5", "4981"),
+    "SH_AWAY_UNDER_2.5": ("4979", "2.5", "4981"),
+    "SH_HOME_OVER_0.5": ("4982", "0.5", "4983"),
+    "SH_HOME_OVER_1.5": ("4982", "1.5", "4983"),
+    "SH_HOME_OVER_2.5": ("4982", "2.5", "4983"),
+    "SH_HOME_UNDER_0.5": ("4982", "0.5", "4984"),
+    "SH_HOME_UNDER_1.5": ("4982", "1.5", "4984"),
+    "SH_HOME_UNDER_2.5": ("4982", "2.5", "4984"),
+    # --- 1X2-or-total, first half (6) ---
+    "FH_MIX_1_OV_1.5": ("25451913", "1.5", "25451914"),
+    "FH_MIX_1_UN_1.5": ("25451913", "1.5", "25451917"),
+    "FH_MIX_2_OV_1.5": ("25451913", "1.5", "25451916"),
+    "FH_MIX_2_UN_1.5": ("25451913", "1.5", "25451919"),
+    "FH_MIX_X_OV_1.5": ("25451913", "1.5", "25451915"),
+    "FH_MIX_X_UN_1.5": ("25451913", "1.5", "25451918"),
+    # --- first goal (3) ---
+    "FIRSTGOAL_1": ("28000224", "1", "28000225"),
+    "FIRSTGOAL_2": ("28000224", "1", "28000227"),
+    "FIRSTGOAL_N": ("28000224", "1", "28000226"),
+    # --- higher-scoring half (9) ---
+    "HIGHHALF_1": ("4728", None, "4729"),
+    "HIGHHALF_2": ("4728", None, "4730"),
+    "HIGHHALF_A_1": ("4732", None, "4733"),
+    "HIGHHALF_A_2": ("4732", None, "4734"),
+    "HIGHHALF_A_E": ("4732", None, "4735"),
+    "HIGHHALF_E": ("4728", None, "4731"),
+    "HIGHHALF_H_1": ("4736", None, "4737"),
+    "HIGHHALF_H_2": ("4736", None, "4738"),
+    "HIGHHALF_H_E": ("4736", None, "4739"),
+    # --- winning margin (7) ---
+    "MARGIN_A1": ("28000209", None, "28000213"),
+    "MARGIN_A2": ("28000209", None, "28000214"),
+    "MARGIN_A3": ("28000209", None, "28000215"),
+    "MARGIN_DRAW": ("28000209", None, "28000216"),
+    "MARGIN_H1": ("28000209", None, "28000210"),
+    "MARGIN_H2": ("28000209", None, "28000211"),
+    "MARGIN_H3": ("28000209", None, "28000212"),
+    # --- 1X2-or-both-score (6) ---
+    "MIXGG_1": ("3591790", None, "3591791"),
+    "MIXGG_2": ("3591790", None, "3591793"),
+    "MIXGG_X": ("3591790", None, "3591795"),
+    "MIXNG_1": ("3591790", None, "3591792"),
+    "MIXNG_2": ("3591790", None, "3591794"),
+    "MIXNG_X": ("3591790", None, "3591796"),
+    # --- 1X2-or-total (18) ---
+    "MIX_1_OV_1.5": ("1096755", "1.5", "1099337"),
+    "MIX_1_OV_2.5": ("1096755", "2.5", "1099337"),
+    "MIX_1_OV_3.5": ("1096755", "3.5", "1099337"),
+    "MIX_1_UN_1.5": ("1096755", "1.5", "1099340"),
+    "MIX_1_UN_2.5": ("1096755", "2.5", "1099340"),
+    "MIX_1_UN_3.5": ("1096755", "3.5", "1099340"),
+    "MIX_2_OV_1.5": ("1096755", "1.5", "1099339"),
+    "MIX_2_OV_2.5": ("1096755", "2.5", "1099339"),
+    "MIX_2_OV_3.5": ("1096755", "3.5", "1099339"),
+    "MIX_2_UN_1.5": ("1096755", "1.5", "1099342"),
+    "MIX_2_UN_2.5": ("1096755", "2.5", "1099342"),
+    "MIX_2_UN_3.5": ("1096755", "3.5", "1099342"),
+    "MIX_X_OV_1.5": ("1096755", "1.5", "1099338"),
+    "MIX_X_OV_2.5": ("1096755", "2.5", "1099338"),
+    "MIX_X_OV_3.5": ("1096755", "3.5", "1099338"),
+    "MIX_X_UN_1.5": ("1096755", "1.5", "1099341"),
+    "MIX_X_UN_2.5": ("1096755", "2.5", "1099341"),
+    "MIX_X_UN_3.5": ("1096755", "3.5", "1099341"),
+    # --- second-half goals (6) ---
+    "SH_OVER_0.5": ("4976", "0.5", "4977"),
+    "SH_OVER_1.5": ("4976", "1.5", "4977"),
+    "SH_OVER_2.5": ("4976", "2.5", "4977"),
+    "SH_UNDER_0.5": ("4976", "0.5", "4978"),
+    "SH_UNDER_1.5": ("4976", "1.5", "4978"),
+    "SH_UNDER_2.5": ("4976", "2.5", "4978"),
+    # --- team goals exact (8) ---
+    "TEAMGOALS_A_0": ("4938", None, "4939"),
+    "TEAMGOALS_A_1": ("4938", None, "4940"),
+    "TEAMGOALS_A_2": ("4938", None, "1080456"),
+    "TEAMGOALS_A_3": ("4938", None, "1080457"),
+    "TEAMGOALS_H_0": ("4942", None, "4943"),
+    "TEAMGOALS_H_1": ("4942", None, "4944"),
+    "TEAMGOALS_H_2": ("4942", None, "1080454"),
+    "TEAMGOALS_H_3": ("4942", None, "1080455"),
+    # --- 1UP / 2UP (6) ---
+    "UP1_1": ("28000810", None, "28000811"),
+    "UP1_2": ("28000810", None, "28000813"),
+    "UP1_X": ("28000810", None, "28000812"),
+    "UP2_1": ("28000850", None, "28000851"),
+    "UP2_2": ("28000850", None, "28000853"),
+    "UP2_X": ("28000850", None, "28000852"),
+    # --- win either half (4) ---
+    "WINHALF_A_N": ("1096809", None, "1099452"),
+    "WINHALF_A_Y": ("1096809", None, "1099451"),
+    "WINHALF_H_N": ("1096806", None, "1099446"),
+    "WINHALF_H_Y": ("1096806", None, "1099445"),
+}
+
 # The market type ids the sweep asks for. Derived from the table rather than
 # typed, so a market added above is swept without a second edit - the drift
 # between those two lists is exactly how a book ends up unable to book a market
 # it can price.
 SWEEP_MARKETS = sorted({m for m, _line, _out in MARKET_MAP.values()})
 
-# their key -> our code, derived rather than typed for the same reason.
-_BY_TRIPLE = {triple: code for code, triple in MARKET_MAP.items()}
+# --- what this book does NOT carry, and why ---------------------------------
+# A code in one book's table and not another's is a leg that reads and splits
+# and can never convert. Kept as an explicit table with a reason each, so a
+# line quietly added to one side never looks like a line deliberately left off
+# this one - and so that "verified absent" is never written where "nobody has
+# checked" is the truth. Every reason below is the second kind of sentence:
+# each was measured by tools/bpgen.js against eight deep cards on 21 Sep 2026.
+#
+# Longest prefix wins, which matters: AH_ is half carried (the half balls) and
+# FH_CARD_ must not inherit FH_'s answer.
+NOT_CARRIED = {
+    "AH_": "verified absent: their Asian card is half balls only, -5.5 to "
+           "+5.5 in whole steps of one (checked on eight deep cards). Quarter "
+           "balls are not sold at all, and whole balls exist ONLY on the "
+           "three-way Handicap 1X2, which is a DIFFERENT bet - the draw is "
+           "its own outcome and nothing pushes - so mapping onto it narrows "
+           "the punter's bet. The depth also stops at 2.5 for the side giving "
+           "and 4.5 for the side receiving.",
+    "FH_AH_": "verified absent: their first-half Asian card runs -2.5 to "
+              "+2.5, so the deeper lines have no rung.",
+    "SH_AH_": "verified absent: their second-half Asian card runs -2.5 to "
+              "+2.5, same as the first half.",
+    "EH_": "carried, except at depth: their three-way handicap reaches "
+           "Home -5 and Away +5, and the draw outcome names whichever side is "
+           "GIVING, so a line past that has nothing to map onto.",
+    "CORNERS_": "verified absent past 10.5: their total-corners card is 6.5 "
+                "to 10.5 and nothing above it appeared on any of eight cards.",
+    "CORNERS_H_": "verified absent: they sell total corners, corner 1X2 and "
+                  "corner odd/even, and no per-team corner line appears on "
+                  "any deep card.",
+    "CORNERS_A_": "verified absent: see CORNERS_H_.",
+    "CORNRANGE_H_": "verified absent: see CORNERS_H_.",
+    "CORNRANGE_A_": "verified absent: see CORNERS_H_.",
+    "CARD_": "verified absent: they sell total bookings and "
+             "team-with-most-bookings; no per-team booking count exists on "
+             "any deep card.",
+    "FH_CARD_": "verified absent: see CARD_.",
+    "FH_CARDUN_": "verified absent: see CARD_.",
+    "HMC_": "verified absent: their booking markets carry no half-versus-half "
+            "bet.",
+    "HALFCORNER_": "verified absent: their corner markets carry no "
+                   "half-versus-half bet.",
+    "PEN_": "verified absent: no penalty-awarded market on any deep card.",
+    "EARLY_": "verified absent: their early market is a 1X2 over the first "
+              "ten minutes, not a goals line over them.",
+    "EXGOALS_": "verified absent: a bet that the total is anything BUT n is "
+                "not sold here in any form.",
+    "GOALRANGE_": "verified absent: their grouped totals exist on the halves "
+                  "only (0-1, 2-3, 4+). The full-time equivalent is "
+                  "Multigoals, whose rungs start at 1-2 and never carry 0-1.",
+    "BOUNDS_": "verified absent: their per-team Multigoals rungs are 1-2, "
+               "1-3, 2-3, 4+ and no goal. Ours are a different set and the "
+               "ones that look alike are not - our 1-3 is one-to-three-OR-"
+               "MORE - while the rung that would agree is already "
+               "TEAMGOALS_x_0, and one triple cannot decode back to two codes.",
+    "BOTHHALVES_": "verified absent: their both-halves markets are about a "
+                   "TEAM scoring in each half, not about each half clearing a "
+                   "goals line.",
+    "DC2_": "verified absent: they run the 1UP promotion on double chance and "
+            "not 2UP.",
+    "FIRSTGOAL_FH_": "verified absent: their Goal market is numbered (1st, "
+                     "2nd, ...) rather than split by half, so there is no "
+                     "first-goal-in-the-half bet to map onto.",
+    "FIRSTGOAL_SH_": "verified absent: see FIRSTGOAL_FH_.",
+    "EXACT_FH_": "verified absent above 1: their first-half exact-goals card "
+                 "stops at 2+ where ours stops at 3+, so their top rung means "
+                 "MORE than our exactly-2 and there is no rung at all for our "
+                 "3. Pairing them by position would hand somebody a wider bet "
+                 "than they placed.",
+    "OVER_": "verified absent: every total they sell is a half line. A whole "
+             "line pushes on the number and the half line beside it does not, "
+             "so they are different bets.",
+    "UNDER_": "verified absent: see OVER_.",
+}
+
+
+def reason_uncarried(code):
+    """Why Betpawa does not carry one of our codes, or None if it does.
+
+    Longest prefix wins, so FH_AH_ beats AH_ and FH_CARD_ beats FH_.
+    """
+    if market_for(code):
+        return None
+    best = None
+    for prefix, why in NOT_CARRIED.items():
+        if code.startswith(prefix) and (best is None or len(prefix) > len(best[0])):
+            best = (prefix, why)
+    return best[1] if best else None
+
+
+# their key -> our code, derived rather than typed for the same reason. Both
+# tables, because a pasted code resolves through exactly the same index - and
+# the modelled table is written LAST so that where two of our names describe
+# one bet, the modelled name is the one a reader is shown.
+_BY_TRIPLE = {triple: code
+              for code, triple in list(PASSTHROUGH_MAP.items()) +
+              list(MARKET_MAP.items())}
 
 
 def market_for(code):
@@ -128,8 +475,13 @@ def market_for(code):
     Returns the triple or None. NEVER a default: an unmapped market that falls
     back to something plausible books a bet nobody asked for, and the book
     answers success because the selection it received was real.
+
+    BOTH TABLES, and every caller asks this rather than a table directly.
+    Keyed on MARKET_MAP alone, every handicap and corner leg would come back
+    "not_mapped" however well Betpawa prices it, so no converted slip carrying
+    one could ever be booked here.
     """
-    return MARKET_MAP.get(code)
+    return MARKET_MAP.get(code) or PASSTHROUGH_MAP.get(code)
 
 
 def _line(price, row):

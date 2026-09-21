@@ -22,5 +22,22 @@ Produce `ourcodes.json` with:
 
     python -c "import json,server,bet9ja; json.dump(sorted(set(server.PASSTHROUGH_MAP)|set(bet9ja.PASSTHROUGH_MAP)), open('ourcodes.json','w'))"
 
+    node tools/bpgen.js <ourcodes.json> <cards> <out.json>
+
+The same job for Betpawa, and the one difference worth knowing: their feed
+NAMES every market and every outcome in full, so a candidate is proposed in
+words ("Total Score Over/Under - FT - Home Team", "Home by 3+") and the card
+answers with the ids. Nothing is continued from a sibling family, which is
+where the 24 invented codes came from on the book before it.
+
+It also checks each handicap sign against the prices PER CARD. Pooling prices
+across cards - the first version - reported three disagreements out of
+sixteen, because one fixture's -1.5 is shorter than another's -0.5 for reasons
+that have nothing to do with the sign.
+
+`ourcodes.json` for that one wants BetKing's table in the union as well:
+
+    python -c "import json,server,bet9ja,betking; json.dump(sorted(set(server.PASSTHROUGH_MAP)|set(bet9ja.PASSTHROUGH_MAP)|set(betking.PASSTHROUGH_MAP)), open('ourcodes.json','w'))"
+
 The rejects matter as much as the map: grouped by family they are the
 asymmetry note that says what a book does not sell, and why.
