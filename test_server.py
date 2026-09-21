@@ -563,7 +563,39 @@ class BookingIsNoLongerRefusedOnOurOwnCache(unittest.TestCase):
                 ]})
         finally:
             server.generate_sportybet_code = real
-        self.assertNotIn("unbookable", r.get_json() or {})
+        body = r.get_json() or {}
+        self.assertNotIn("unbookable", body)
+        # BUT THE READER IS STILL OWED THE REASON. `unbookable` means "drop
+        # these and the rest may book", which is meaningless when it covers the
+        # whole slip - so it stays absent. The markets our copy of their card
+        # has no price for are said separately, as information rather than as a
+        # list to drop. Without this the page can only say "SportyBet wouldn't
+        # take this slip" and name nothing at all, which is what a reader hit
+        # on 21 Sep and what the live probe reproduced.
+        self.assertTrue(body.get("suspectAll"),
+                        "an all-suspect refusal must say so")
+        self.assertEqual(sorted(body.get("suspectMarkets") or []),
+                         ["GG", "HOME_OVER_0.5"],
+                         "and name the markets it could not price")
+
+    def test_a_refusal_with_no_suspects_at_all_says_nothing_extra(self):
+        """Nothing invented stays nothing invented: a slip we have no doubt
+        about gets the plain error, with neither field on it."""
+        real = server.generate_sportybet_code
+        server.generate_sportybet_code = lambda *a, **k: {
+            "error": "invalid event data, no market there", "sent": []}
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/generate-booking-code", json={"selections": [
+                    {"eventId": "ev:good", "prediction": "OVER_1.5"},
+                    {"eventId": "ev:good", "prediction": "GG"},
+                ]})
+        finally:
+            server.generate_sportybet_code = real
+        body = r.get_json() or {}
+        self.assertNotIn("unbookable", body)
+        self.assertNotIn("suspectAll", body)
+        self.assertNotIn("suspectMarkets", body)
 
 class FailuresAreReported(unittest.TestCase):
     """A booking rejection is not an exception, so nothing raised and Sentry

@@ -1958,6 +1958,21 @@ def api_generate_code():
     suspects = how.get("suspects") or []
     if suspects and len(suspects) < len(raw_selections):
         body["unbookable"] = [dict(s, reason="suspect") for s in suspects]
+    elif suspects:
+        # EVERY LEG SUSPECT IS STILL WORTH SAYING, JUST NOT AS `unbookable`.
+        # That field means "drop these and the rest may book", and when it
+        # covers the whole slip there is no rest - the client would offer a
+        # retry with nothing in it. So the guard above stays exactly as it is.
+        #
+        # The reader is owed the reason anyway. Measured against the live route
+        # on 21 Sep: ten legs on events whose feed carries no such market came
+        # back 400 with no `unbookable` and no reason at all, and the page could
+        # only say "SportyBet wouldn't take this slip" about a slip it could not
+        # explain. `suspect_markets` is the shortest true sentence available -
+        # these are the markets our copy of their card has no price for - and it
+        # is offered as information, never as a list to drop.
+        body["suspectAll"] = True
+        body["suspectMarkets"] = how.get("suspect_markets") or []
     return jsonify(body), 400
 
 
