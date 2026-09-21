@@ -521,7 +521,10 @@ class TheSweep(unittest.TestCase):
         """
         import inspect
         self.assertGreaterEqual(
-            inspect.signature(betking.all_fixtures).parameters["days"].default, 8)
+            inspect.signature(betking.all_fixtures).parameters["days"].default, 21,
+            "a pasted code reaches further than the board does - a 24-leg "
+            "betPawa code reached 12 October and this book could take two of "
+            "its legs, because the sweep had never asked for those days")
 
     def test_a_failed_day_is_named_rather_than_counted_as_empty(self):
         with mock.patch.object(betking, "_get_json",
