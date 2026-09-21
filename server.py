@@ -10,6 +10,7 @@ from curl_cffi import requests
 from urllib.parse import quote
 import bet9ja
 import betking
+import betpawa
 from curl_cffi.requests import RequestsError
 
 app = Flask(__name__)
@@ -518,6 +519,11 @@ _BET9JA_TTL = 45 * 60
 # than the other two, and the point of the interval is how rarely we ask.
 _BETKING_CACHE = {"at": 0, "data": None}
 _BETKING_TTL = 45 * 60
+# Betpawa pages its whole board rather than crawling dates: ten requests for
+# 920 fixtures reaching two months out. Same TTL as the rest, for the same
+# reason - the interval is about how rarely we ask, not how fast we can.
+_BETPAWA_CACHE = {"at": 0, "data": None}
+_BETPAWA_TTL = 45 * 60
 
 # --- Shared cache (opt-in) -------------------------------------------------
 # With one process the in-memory dicts above are fine. Set REDIS_URL (add a
@@ -1169,6 +1175,59 @@ def _start_betking_thread():
 _start_betking_thread()
 
 
+# --- Betpawa, the fourth book ----------------------------------------------
+# NO "LISTED" COUNT TO CHECK AGAINST, unlike the other three. Their board is an
+# ordered list paged a hundred at a time and they publish no total, so the
+# outside opinion that tells a throttled sweep from a quiet day does not exist
+# here. What is left is the previous copy, which is why the short-sweep guard
+# below is the only one - and why betpawa.all_fixtures reports how many pages
+# it actually read rather than only what it collected.
+_BETPAWA_LOCK = threading.Lock()
+
+def _refresh_betpawa_once():
+    try:
+        fixtures, stats = betpawa.all_fixtures()
+    except Exception as ex:                          # noqa: BLE001 - background
+        log.warning("betpawa refresh failed, keeping previous copy: %s", ex)
+        return False
+
+    got = len(fixtures)
+    if not fixtures:
+        log.warning("betpawa refresh returned nothing; keeping previous copy")
+        return False
+    prev = _cache_get("betpawa", _BETPAWA_CACHE)
+    prev_n = len((prev or {}).get("data") or {})
+    if prev_n and got < prev_n * 0.8:
+        log.warning("betpawa refresh returned %d against %d stored, looks "
+                    "truncated; keeping the fuller copy", got, prev_n)
+        return False
+
+    _cache_put("betpawa", _BETPAWA_CACHE, fixtures)
+    log.info("betpawa refreshed: %d events over %d pages",
+             got, stats.get("pages"))
+    return True
+
+def _betpawa_loop():
+    entry = _cache_get("betpawa", _BETPAWA_CACHE)
+    if entry and entry.get("data"):
+        age = time.time() - entry["at"]
+        if age < _BETPAWA_TTL:
+            time.sleep(_BETPAWA_TTL - age)
+    while True:
+        ok = _refresh_betpawa_once()
+        time.sleep(_BETPAWA_TTL if ok else 300)
+
+def _start_betpawa_thread():
+    if not _BETPAWA_LOCK.acquire(blocking=False):
+        return
+    t = threading.Thread(target=_betpawa_loop, name="betpawa-refresh",
+                         daemon=True)
+    t.start()
+    log.info("betpawa refresher started (every %dm)", _BETPAWA_TTL // 60)
+
+_start_betpawa_thread()
+
+
 @app.route('/api/fixtures', methods=['GET'])
 def get_fixtures():
     entry = _cache_get("fixtures", _FIXTURES_CACHE)
@@ -1551,6 +1610,152 @@ def api_betking_code():
     return jsonify({"success": False, **out}), 502
 
 
+@app.route('/api/betpawa/fixtures', methods=['GET'])
+def get_betpawa_fixtures():
+    """Every Betpawa event, served from the background sweep.
+
+    One flat bag and no `date` argument, unlike the BetKing route: their board
+    is not addressable by date at all. `?page=N` reads one page live for
+    debugging a sweep, and answers what that page holds rather than the board.
+    """
+    page = request.args.get("page")
+    if page is not None:
+        if not re.fullmatch(r"\d{1,3}", page):
+            return jsonify({"success": False,
+                            "error": "page must be a small number"}), 400
+        try:
+            events = betpawa.fetch_page(int(page) * betpawa.PAGE)
+        except Exception as ex:                  # noqa: BLE001 - user-facing
+            report("betpawa fixtures failed", page=page, error=str(ex))
+            return jsonify({"success": False, "error": str(ex),
+                            "matches": {}}), 502
+        rows = {}
+        for event in events:
+            row = betpawa._row(event)
+            betpawa._absorb(row, event)
+            if row["odds"]:
+                rows[row["eventId"]] = row
+        return jsonify({"success": True, "page": int(page), "cached": False,
+                        "count": len(rows), "matches": rows})
+
+    entry = _cache_get("betpawa", _BETPAWA_CACHE)
+    data = (entry or {}).get("data")
+    if not data:
+        # Say so rather than answering an empty bag with success: true - the
+        # lie that made the Bet9ja integration's first outage invisible.
+        return jsonify({"success": False, "count": 0, "matches": {},
+                        "error": "betpawa fixtures not loaded yet"}), 503
+    return jsonify({"success": True, "cached": True,
+                    "ageSeconds": int(time.time() - entry["at"]),
+                    "count": len(data), "matches": data})
+
+
+@app.route('/api/betpawa/booking-code', methods=['POST'])
+def api_betpawa_code():
+    """Turn a set of picks into a Betpawa booking code.
+
+    Body: {"selections": [{"eventId": "38090806", "code": "1X"}, ...]}
+
+    Same three-way answer as the other three books, so one client path serves
+    all four: every leg Betpawa will not take is named in `unbookable` with a
+    reason rather than the first one killing the request.
+
+      not_mapped   MARKET_MAP has no entry for this code, known locally and
+                   refused before any request is made.
+      event_gone   Their event endpoint would not return the fixture.
+      not_priced   Mapped, and they do not price that market on this game.
+      same_game    A second leg on a fixture already on the slip. Their
+                   multiple refuses it - 400 SPORTSBOOK_WRONG_SELECTION,
+                   naming nothing - so it is named here instead.
+    """
+    data = request.get_json(silent=True) or {}
+    picks = data.get("selections") or []
+    if not picks:
+        return jsonify({"success": False, "error": "no selections"}), 400
+    # OUR CAP, NOT THEIRS. Their booking endpoint took 300 selections on one
+    # code and read all 300 back, so there is no limit of Betpawa's to respect
+    # here - see betpawa.BETSLIP_MAX.
+    if len(picks) > betpawa.BETSLIP_MAX:
+        return jsonify({"success": False,
+                        "error": "betpawa slips are capped at %d selections "
+                                 "here" % betpawa.BETSLIP_MAX,
+                        "sent": len(picks)}), 400
+
+    resolved = []
+    unmapped, unpriced, event_gone, same_game = [], [], [], []
+    cache = {}
+    booked_games = set()
+    try:
+        for p in picks:
+            code = p.get("code")
+            event_id = p.get("eventId")
+            leg = {"eventId": event_id, "prediction": code}
+            if betpawa.market_for(code) is None:
+                leg["reason"] = "not_mapped"
+                unmapped.append(leg)
+                continue
+            if event_id in booked_games:
+                leg["reason"] = "same_game"
+                same_game.append(leg)
+                continue
+            if event_id not in cache:
+                cache[event_id] = betpawa.fetch_event(event_id)
+            ev = cache[event_id]
+            if not ev:
+                leg["reason"] = "event_gone"
+                event_gone.append(leg)
+                continue
+            if code not in (ev.get("odds") or {}):
+                leg["reason"] = "not_priced"
+                unpriced.append(leg)
+                continue
+            booked_games.add(event_id)
+            resolved.append({"event": ev, "code": code})
+    except Exception as ex:                      # noqa: BLE001 - user-facing
+        report("betpawa odds fetch failed", error=str(ex))
+        return jsonify({"success": False, "error": str(ex)}), 502
+
+    def _detail(legs):
+        return dict(
+            bad_legs=len(legs), total_legs=len(picks),
+            markets=", ".join(sorted({str(b["prediction"]) for b in legs})),
+            events=", ".join(sorted({str(b["eventId"]) for b in legs})[:10]))
+
+    if unmapped:
+        report("booking: Betpawa market is not mapped", **_detail(unmapped))
+    if event_gone:
+        report("booking: Betpawa event would not load", **_detail(event_gone))
+    if unpriced:
+        report("booking: Betpawa does not price this market on this fixture",
+               level="info", **_detail(unpriced))
+    if same_game:
+        report("booking: Betpawa takes one selection per game on a multiple",
+               level="info", **_detail(same_game))
+
+    bad = unmapped + event_gone + unpriced + same_game
+    if bad:
+        detail = ("one selection per game is all Betpawa takes on a multiple"
+                  if same_game and len(same_game) == len(bad)
+                  else "no market there for %d of %d picks"
+                       % (len(bad), len(picks)))
+        return jsonify({
+            "success": False,
+            "message": "Betpawa rejected the slip",
+            "detail": detail,
+            "unbookable": bad,
+        }), 400
+
+    out = betpawa.generate_code(resolved)
+    if out.get("code") and not out.get("error"):
+        return jsonify({"success": True, **out})
+    # Betpawa refuses a bad selection outright rather than minting an empty
+    # code, so an error here is usually theirs and not ours - but a code
+    # ALONGSIDE an error is the BetKing failure and is reported the same way.
+    report("betpawa booking refused", legs=len(resolved),
+           detail=str(out.get("error"))[:300], empty_code=out.get("code"))
+    return jsonify({"success": False, **out}), 502
+
+
 # --- reading a booking code back -------------------------------------------
 # BOTH BOOKS WILL HAND A CODE BACK, which is the fact the converter and the
 # splitter both rest on, and neither was reachable by guessing: SportyBet
@@ -1683,12 +1888,12 @@ def read_sporty_share(code, region="ng", timeout=12):
 
 @app.route('/api/slip', methods=['GET'])
 def api_read_slip():
-    """GET /api/slip?book=sporty|bet9ja|betking&code=XXXX -> the legs behind a code."""
+    """GET /api/slip?book=sporty|bet9ja|betking|betpawa&code=XXXX -> the legs behind a code."""
     book = (request.args.get("book") or "sporty").strip().lower()
     code = (request.args.get("code") or "").strip()
     if not _CODE_RE.match(code):
         return jsonify({"success": False, "error": "that is not a booking code"}), 400
-    if book not in ("sporty", "bet9ja", "betking"):
+    if book not in ("sporty", "bet9ja", "betking", "betpawa"):
         return jsonify({"success": False, "error": "unknown bookmaker"}), 400
 
     # Named rather than defaulted, so a typo in `book` can never be read
@@ -1697,6 +1902,8 @@ def api_read_slip():
         out = bet9ja.read_coupon(code)
     elif book == "betking":
         out = betking.read_coupon(code)
+    elif book == "betpawa":
+        out = betpawa.read_coupon(code)
     else:
         out = read_sporty_share(code)
     if out.get("notFound"):
