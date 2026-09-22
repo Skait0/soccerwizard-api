@@ -722,7 +722,7 @@ def fetch_day(date, timeout=30):
     return rows, listed
 
 
-def all_fixtures(days=21, pause=0.45, today=None):
+def all_fixtures(days=30, pause=0.45, today=None):
     """The sweep: the next eight days of football, one request per day.
 
     EIGHT, NOT THREE, AND THE DIFFERENCE IS THE WEEKEND. The board reaches
@@ -732,7 +732,7 @@ def all_fixtures(days=21, pause=0.45, today=None):
     book would read "doesn't have any of these games" for the whole weekend
     slate, which is when slips actually get built.
 
-    TWENTY-ONE, NOT EIGHT, AND THE DIFFERENCE IS EVERY PASTED CODE. A reader's
+    THIRTY, NOT EIGHT, AND THE DIFFERENCE IS EVERY PASTED CODE. A reader's
     betPawa code of 24 legs reached 12 October and BetKing could take two of
     them - not because BetKing lacks the games but because our sweep had never
     asked for them. Their own day feed answers 81 fixtures for 11 October and 7
@@ -741,7 +741,14 @@ def all_fixtures(days=21, pause=0.45, today=None):
     window the converter is judged on.
 
     Measured 14 Sep over ten days: 937 fixtures, 20.7MB, 11.6s, and their own
-    count agreed exactly on every day. That puts BetKing's coverage
+    count agreed exactly on every day.
+
+    THIRTY IS WHERE THEIR CARD ACTUALLY ENDS, measured rather than chosen: 33
+    fixtures on each of 17 and 18 October, 11 on the 13th, and nothing at all
+    on the 21st or 25th - one or two a day after that. Twenty-one days was the
+    first guess at this and it cut the 17th and 18th off, which is a BetKing
+    reader's own code (H11FW9) pointing at games we were saying they did not
+    have. That puts BetKing's coverage
     in the same range as the other two (Bet9ja 1222, SportyBet 1251) rather
     than at a quarter of it.
 

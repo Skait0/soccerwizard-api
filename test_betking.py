@@ -521,7 +521,7 @@ class TheSweep(unittest.TestCase):
         """
         import inspect
         self.assertGreaterEqual(
-            inspect.signature(betking.all_fixtures).parameters["days"].default, 21,
+            inspect.signature(betking.all_fixtures).parameters["days"].default, 30,
             "a pasted code reaches further than the board does - a 24-leg "
             "betPawa code reached 12 October and this book could take two of "
             "its legs, because the sweep had never asked for those days")
