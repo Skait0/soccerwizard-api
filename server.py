@@ -1958,6 +1958,109 @@ def get_livescores():
         return jsonify({"success": False, "error": str(ex), "matches": []}), 500
 
 
+def _verify_sporty_code(code, raw_selections, region="ng"):
+    """Does the code they just handed back hold the legs we sent?
+
+    IT DOES NOT ALWAYS, AND THEY SAY NOTHING. Measured 22 Sep: five legs sent
+    with one unknown event id among them came back as an ordinary share code
+    holding FOUR. No error, no warning, no mention of the leg that vanished -
+    exactly the failure BetKing taught us to check for, on the book this site
+    was built around and the only one whose codes were never read back.
+
+    A punter handed that code opens a slip with a game missing from it, and the
+    record we file claims a bet they do not hold.
+
+    Returns (ok, missing) where `missing` holds the selections that did not
+    survive. On any failure to read it back - their read endpoint down, a code
+    too fresh to resolve - it answers (True, []): unprovable is not the same as
+    wrong, and refusing a code we cannot check would be worse than the failure
+    this guards.
+    """
+    try:
+        got = read_sporty_share(code)
+    except Exception as ex:                      # noqa: BLE001 - user-facing
+        log.warning("sporty read-back failed for %s: %s", code, ex)
+        return True, []
+    if not isinstance(got, dict) or got.get("error"):
+        return True, []
+    legs = got.get("legs") or []
+    if not legs:
+        return True, []
+    held = {str(l.get("eventId")) for l in legs if l.get("eventId")}
+    if not held:
+        return True, []
+    missing = [it for it in raw_selections
+               if str(it.get("eventId")) not in held]
+    return (not missing), missing
+
+
+# BISECTION, BECAUSE THEIR REFUSAL NAMES NOTHING AND OUR CACHE IS A GUESS.
+#
+# SportyBet answers a bad slip with one sentence about the whole slip -
+# "invalid event data, no market there" - and names no event and no market.
+# Everything above tries to guess which leg from OUR copy of their card, and
+# that copy is both partial (their feed carries fewer markets than they sell)
+# and stale (45 minutes). When it has a price for every leg there are no
+# suspects at all, and the reader gets a flat "SportyBet wouldn't take this
+# slip" about a slip they cannot correct. Reported again on 22 Sep.
+#
+# So ask the only authority there is. Their booking endpoint is free, fast and
+# has no side effect worth worrying about - a refused slip mints nothing - so
+# the slip is split in half and each half offered back. A half that books is
+# clean and never split again; a half that is refused is split further. One
+# bad leg in sixteen costs about eight calls rather than sixteen, and the
+# legs it names are named by SportyBet rather than inferred.
+#
+# BOUNDED, because this runs while somebody waits: a call budget and a
+# deadline, and whatever has been learned when either runs out is what gets
+# returned. Finding nothing is a real answer too - it means they refuse the
+# COMBINATION rather than any single leg, which is a different sentence and
+# one the reader is owed.
+PROBE_MAX_CALLS = 12
+PROBE_DEADLINE_S = 6.0
+
+
+def _probe_refusal(formatted, region="ng"):
+    """Which legs SportyBet refuses on their own. Returns (bad, how).
+
+    `bad` holds indices into `formatted`. `how` records what the probe cost and
+    whether it ran out, so a partial answer is never read as a complete one.
+    """
+    started = time.time()
+    calls = {"n": 0}
+
+    def takes(subset):
+        if (calls["n"] >= PROBE_MAX_CALLS
+                or time.time() - started > PROBE_DEADLINE_S):
+            return None                      # out of budget: no opinion
+        calls["n"] += 1
+        got = generate_sportybet_code([formatted[i] for i in subset], region)
+        return bool(got.get("code"))
+
+    bad, ran_out = [], False
+
+    def split(subset):
+        nonlocal ran_out
+        if not subset:
+            return
+        ok = takes(subset)
+        if ok is None:
+            ran_out = True
+            return
+        if ok:
+            return                           # this whole half is fine
+        if len(subset) == 1:
+            bad.append(subset[0])
+            return
+        mid = len(subset) // 2
+        split(subset[:mid])
+        split(subset[mid:])
+
+    split(list(range(len(formatted))))
+    return bad, {"calls": calls["n"], "ran_out": ran_out,
+                 "seconds": round(time.time() - started, 2)}
+
+
 def _unbookable(raw_selections):
     """Which of these picks SportyBet has no market for.
 
@@ -2131,7 +2234,29 @@ def api_generate_code():
         })
     result = generate_sportybet_code(formatted_selections)
     if result.get("code"):
-        return jsonify({"success": True, "booking_code": result["code"]})
+        # READ IT BACK BEFORE HANDING IT OVER. They mint a perfectly ordinary
+        # code for a slip they only partly understood - see
+        # _verify_sporty_code - and the reader would open it to find a game
+        # missing with nothing anywhere saying so.
+        ok, missing = _verify_sporty_code(result["code"], raw_selections)
+        if ok:
+            return jsonify({"success": True, "booking_code": result["code"]})
+        report("booking: SportyBet dropped legs from the code it returned",
+               legs=len(raw_selections), lost=len(missing),
+               code=result["code"],
+               markets=", ".join(sorted({
+                   str(m.get("prediction")) for m in missing})))
+        # Named, so the client drops exactly those and offers the rest - the
+        # same path every other refusal on this API already takes.
+        return jsonify({
+            "success": False,
+            "message": "SportyBet rejected the slip",
+            "detail": "SportyBet returned a code holding %d of %d games"
+                      % (len(raw_selections) - len(missing), len(raw_selections)),
+            "unbookable": [{"eventId": m.get("eventId"),
+                            "prediction": m.get("prediction"),
+                            "reason": "dropped_by_book"} for m in missing],
+        }), 400
 
     # Got past our own check and SportyBet still said no. That is the case
     # worth seeing: it means the cache disagreed with them, or something else
@@ -2162,6 +2287,33 @@ def api_generate_code():
     # same as today.
     body = {"success": False, "message": "SportyBet rejected the slip",
             "detail": result.get("error"), "sent": result.get("sent")}
+
+    # ASK THEM WHICH LEG, RATHER THAN GUESSING FROM OUR OWN CACHE.
+    # Only on a multi-leg slip: a single leg refused alone is already named by
+    # being the only one there, and probing it would spend a call to learn
+    # nothing.
+    if len(formatted_selections) > 1:
+        bad_ix, probe = _probe_refusal(formatted_selections)
+        report("booking: probed a nameless SportyBet refusal",
+               level="info", legs=len(raw_selections), found=len(bad_ix),
+               calls=probe["calls"], seconds=probe["seconds"],
+               ran_out=probe["ran_out"],
+               markets=", ".join(sorted({
+                   str(raw_selections[i].get("prediction")) for i in bad_ix})))
+        if bad_ix and len(bad_ix) < len(raw_selections):
+            body["unbookable"] = [
+                {"eventId": raw_selections[i].get("eventId"),
+                 "prediction": raw_selections[i].get("prediction"),
+                 "reason": "refused_alone"} for i in bad_ix]
+            return jsonify(body), 400
+        if not bad_ix and not probe["ran_out"]:
+            # EVERY LEG BOOKS ALONE AND THE SLIP DOES NOT. That is a statement
+            # about the combination - two legs on one game, most likely - and
+            # telling the reader to remove "a leg" would be advice about a
+            # problem they do not have.
+            body["combination"] = True
+            return jsonify(body), 400
+
     suspects = how.get("suspects") or []
     if suspects and len(suspects) < len(raw_selections):
         body["unbookable"] = [dict(s, reason="suspect") for s in suspects]

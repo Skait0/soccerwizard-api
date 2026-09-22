@@ -1985,6 +1985,155 @@ class TheRouteFeedsBetKingWhatBetKingReads(unittest.TestCase):
         self.assertEqual(sent[0]["MatchId"], 1005309147)
 
 
+
+class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
+    """Their refusal is one sentence about the whole slip.
+
+    "invalid event data, no market there" names no event and no market, and a
+    reader was shown it again on 22 Sep over a slip they could not correct.
+    Our own cache cannot answer for them - it is partial by design and 45
+    minutes old - so the slip is bisected back at their booking endpoint and
+    the legs are named by SportyBet.
+
+    Measured live the same day: 199 of the day's upcoming events carry no
+    team-totals price at all, and asking for one is refused exactly this way.
+    """
+
+    @staticmethod
+    def _legs(n):
+        return [{"eventId": "sr:match:%d" % i, "marketId": "1",
+                 "outcomeId": "1", "specifier": ""} for i in range(n)]
+
+    def _run(self, bad_ix, legs=8):
+        """Stand in for their endpoint: any subset holding a bad leg is refused."""
+        sent = []
+        picks = self._legs(legs)
+
+        def fake(subset, region="ng"):
+            sent.append(len(subset))
+            ids = {x["eventId"] for x in subset}
+            if any(picks[i]["eventId"] in ids for i in bad_ix):
+                return {"error": "invalid event data, no market there"}
+            return {"code": "OK%d" % len(sent)}
+
+        old = server.generate_sportybet_code
+        server.generate_sportybet_code = fake
+        try:
+            return picks, server._probe_refusal(picks), sent
+        finally:
+            server.generate_sportybet_code = old
+
+    def test_one_bad_leg_among_eight_is_named(self):
+        picks, (found, how), sent = self._run([5])
+        self.assertEqual(found, [5])
+        self.assertFalse(how["ran_out"])
+        # Bisection, not a sweep: eight legs must not cost eight calls.
+        self.assertLess(how["calls"], 8, "this is walking the slip, not halving it")
+
+    def test_two_bad_legs_are_both_named(self):
+        picks, (found, how), sent = self._run([1, 6])
+        self.assertEqual(sorted(found), [1, 6])
+
+    def test_a_slip_that_is_fine_leg_by_leg_names_nothing(self):
+        """Every leg books alone and the slip does not.
+
+        That is a statement about the COMBINATION, and telling the reader to
+        remove "a leg" would be advice about a problem they do not have. The
+        route answers `combination: true` instead of inventing a culprit.
+        """
+        picks = self._legs(4)
+        calls = {"n": 0}
+
+        def fake(subset, region="ng"):
+            calls["n"] += 1
+            return ({"error": "no"} if len(subset) == len(picks)
+                    else {"code": "OK"})
+
+        old = server.generate_sportybet_code
+        server.generate_sportybet_code = fake
+        try:
+            found, how = server._probe_refusal(picks)
+        finally:
+            server.generate_sportybet_code = old
+        self.assertEqual(found, [])
+        self.assertFalse(how["ran_out"])
+
+    def test_the_probe_is_bounded_and_says_when_it_ran_out(self):
+        """It runs while somebody waits. A partial answer must never read as a
+        complete one - `ran_out` is what stops the route claiming the slip is
+        fine when it simply stopped asking."""
+        picks = self._legs(64)
+
+        def fake(subset, region="ng"):
+            return {"error": "no"}                # everything is refused
+
+        old = server.generate_sportybet_code
+        server.generate_sportybet_code = fake
+        try:
+            found, how = server._probe_refusal(picks)
+        finally:
+            server.generate_sportybet_code = old
+        self.assertLessEqual(how["calls"], server.PROBE_MAX_CALLS)
+        self.assertTrue(how["ran_out"])
+
+
+class TheCodeSportyBetHandsBackIsReadBack(unittest.TestCase):
+    """They mint an ordinary code for a slip they only partly understood.
+
+    Measured 22 Sep on the live endpoint: five legs sent with one unknown event
+    id among them came back as share code holding FOUR, with no error and no
+    mention of the leg that vanished. That is the BetKing failure, on the book
+    this site was built around and the only one whose codes were never checked.
+    """
+
+    SENT = [{"eventId": "sr:match:1", "prediction": "1X"},
+            {"eventId": "sr:match:2", "prediction": "1X"},
+            {"eventId": "sr:match:3", "prediction": "OVER_1.5"}]
+
+    def _with_read(self, reply):
+        old = server.read_sporty_share
+        server.read_sporty_share = lambda code, **kw: reply
+        try:
+            return server._verify_sporty_code("ABC123", self.SENT)
+        finally:
+            server.read_sporty_share = old
+
+    def test_a_short_code_names_the_leg_that_vanished(self):
+        ok, missing = self._with_read({"legs": [
+            {"eventId": "sr:match:1"}, {"eventId": "sr:match:2"}]})
+        self.assertFalse(ok)
+        self.assertEqual([m["eventId"] for m in missing], ["sr:match:3"])
+
+    def test_a_complete_code_passes(self):
+        ok, missing = self._with_read({"legs": [
+            {"eventId": "sr:match:1"}, {"eventId": "sr:match:2"},
+            {"eventId": "sr:match:3"}]})
+        self.assertTrue(ok)
+        self.assertEqual(missing, [])
+
+    def test_a_code_we_cannot_read_is_not_called_wrong(self):
+        """Unprovable is not the same as wrong. Their read endpoint being down,
+        or a code too fresh to resolve, must not refuse a booking that may be
+        perfectly good - that would be worse than the failure this guards."""
+        for reply in ({"error": "not found"}, {"legs": []}, None, "junk"):
+            ok, missing = self._with_read(reply)
+            self.assertTrue(ok, repr(reply))
+            self.assertEqual(missing, [])
+
+    def test_a_read_that_raises_is_not_called_wrong_either(self):
+        old = server.read_sporty_share
+
+        def boom(code, **kw):
+            raise RuntimeError("their endpoint fell over")
+
+        server.read_sporty_share = boom
+        try:
+            ok, missing = server._verify_sporty_code("ABC123", self.SENT)
+        finally:
+            server.read_sporty_share = old
+        self.assertTrue(ok)
+        self.assertEqual(missing, [])
+
 class EveryMarketTheBuilderOffersCarriesARealPrice(unittest.TestCase):
     """The rule the chance-mix family was breaking, written down so it cannot
     break again quietly.
