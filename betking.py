@@ -44,6 +44,7 @@ MaxNoOfEvents in their own global variables), not the 50 both other books
 allow.
 """
 
+import datetime
 import json
 import logging
 import threading
@@ -593,6 +594,15 @@ def _items(payload):
                 yield item
 
 
+def _utc_date(stamp):
+    """The calendar date of their stamp IN UTC, or "" if it is unreadable."""
+    try:
+        return datetime.datetime.fromisoformat(
+            str(stamp)).astimezone(datetime.timezone.utc).date().isoformat()
+    except Exception:                            # noqa: BLE001 - upstream text
+        return str(stamp or "")[:10]
+
+
 def _row(item):
     """The empty shell of one fixture, in the shape the other two books use."""
     return {
@@ -608,7 +618,13 @@ def _row(item):
         "kickoff": item.get("ItemDate") or "",
         "league": item.get("TournamentName") or "",
         "country": item.get("CategoryName") or "",
-        "startdate": (item.get("ItemDate") or "")[:10],
+        # UTC, LIKE THE OTHER THREE BOOKS - not the first ten characters of
+        # their stamp. Their feed speaks UTC+2: a match at 23:30 UTC arrives as
+        # "2026-09-27T01:30:00+02:00" and the slice made its date the 27th
+        # while SportyBet, Bet9ja and Betpawa all called it the 26th. Nothing
+        # on the site reads this field, which is exactly why it went unnoticed
+        # - it is read by people, and it sent one straight to the wrong day.
+        "startdate": _utc_date(item.get("ItemDate")),
         "odds": {},
         "raw": {},
         # What build_selection needs to make a leg, per code. Kept beside the
@@ -764,7 +780,12 @@ def all_fixtures(days=30, pause=0.45, today=None):
     import datetime
     base = today or datetime.date.today()
     out, listed, failed = {}, 0, []
-    for n in range(days):
+    # ONE DAY PAST THE WINDOW, BECAUSE THEIR PAGES ARE UTC+2. A match at 23:30
+    # UTC sits on their NEXT day's page, so a sweep that stops on the last day
+    # of the window loses that day's late kickoffs entirely - and those are the
+    # American ones, which is how a reader's Philadelphia leg came back as a
+    # game BetKing supposedly did not have.
+    for n in range(days + 1):
         day = (base + datetime.timedelta(days=n)).isoformat()
         rows, day_listed = fetch_day(day)
         if not rows:

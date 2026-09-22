@@ -532,7 +532,10 @@ class TheSweep(unittest.TestCase):
              mock.patch.object(betking.time, "sleep"):
             fixtures, stats = betking.all_fixtures(days=2)
         self.assertEqual(fixtures, {})
-        self.assertEqual(len(stats["failed"]), 2)
+        # Three, not two: the sweep reads one page PAST its window, because
+        # their pages are UTC+2 and the last day's late kickoffs sit on the
+        # next one. See TheirDayIsNotOurDay.
+        self.assertEqual(len(stats["failed"]), 3)
         self.assertEqual(stats["listed"], 0)
 
 
@@ -552,3 +555,42 @@ class TheContainerCanActuallyRunThis(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheirDayIsNotOurDay(unittest.TestCase):
+    """Their feed speaks UTC+2, and both halves of that cost real fixtures.
+
+    A match at 23:30 UTC arrives as "2026-09-27T01:30:00+02:00". It sits on
+    THEIR 27 September page, so a sweep that stops on the last day of its
+    window never sees that day's late kickoffs - the American ones. And the
+    row's own date was the first ten characters of their stamp, so the same
+    match was filed as the 27th here while SportyBet, Bet9ja and Betpawa all
+    called it the 26th.
+
+    Found by a reader: a Philadelphia Union leg came back as a game BetKing
+    supposedly did not have, and BetKing had it all along.
+    """
+
+    def test_the_row_dates_a_late_kickoff_in_utc(self):
+        self.assertEqual(betking._utc_date("2026-09-27T01:30:00+02:00"),
+                         "2026-09-26")
+        self.assertEqual(betking._utc_date("2026-10-10T16:30:00+00:00"),
+                         "2026-10-10")
+
+    def test_an_unreadable_stamp_still_answers_something(self):
+        self.assertEqual(betking._utc_date(None), "")
+        self.assertEqual(betking._utc_date("nonsense"), "nonsense")
+
+    def test_the_sweep_reads_one_page_past_its_window(self):
+        days = []
+
+        def fake(date, timeout=30):
+            days.append(date)
+            return {}, 0
+
+        with mock.patch.object(betking, "fetch_day", side_effect=fake), \
+             mock.patch.object(betking.time, "sleep"):
+            betking.all_fixtures(days=3, today=__import__("datetime").date(2026, 9, 22))
+        self.assertEqual(days, ["2026-09-22", "2026-09-23", "2026-09-24",
+                                "2026-09-25"],
+                         "the day after the window carries its late kickoffs")
