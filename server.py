@@ -599,7 +599,16 @@ def _cache_put(name, mem, data):
 # to an estimate, as they always did - rather than 1X2 or over/under, which
 # everything from the board to the booking pre-flight leans on.
 FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
-                      "854", "856", "858", "860", "861", "862")
+                      "854", "856", "858", "860", "861", "862",
+                      # Corners, total for the match. Swept for AVAILABILITY
+                      # as much as price: books open corners a few days before
+                      # kick-off and some leagues never, and the site's corners
+                      # chip offers a line only where this feed quotes it. On
+                      # 23 Sep 2026 the list endpoint returned 17 of 300 events
+                      # with it open - the chip without this built slips no
+                      # book would take. The codes already sit in
+                      # PASSTHROUGH_MAP, so _ODDS_LOOKUP maps them unchanged.
+                      "166")
 
 
 def _headers(region="ng"):

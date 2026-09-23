@@ -2160,7 +2160,23 @@ class EveryMarketTheBuilderOffersCarriesARealPrice(unittest.TestCase):
         "HOME_OVER_0.5", "HOME_OVER_1.5", "AWAY_OVER_0.5", "AWAY_OVER_1.5",
         "MIX_1_OV_2.5", "MIX_X_OV_2.5", "MIX_2_OV_2.5",
         "MIXGG_1", "MIXGG_X", "MIXGG_2",
+        # The corners chip, 23 Sep 2026: over and under 7.5-10.5, the range
+        # every book sells. Swept for availability as much as price - the
+        # site offers a corners line only where this feed quotes it.
+        "CORNERS_OV_7.5", "CORNERS_UN_7.5", "CORNERS_OV_8.5", "CORNERS_UN_8.5",
+        "CORNERS_OV_9.5", "CORNERS_UN_9.5", "CORNERS_OV_10.5", "CORNERS_UN_10.5",
     ]
+
+    def test_corner_outcomes_come_back_as_our_codes(self):
+        """The site gates every corners leg on this feed carrying its code,
+        so a corners outcome the merge cannot name is a chip that builds
+        nothing, silently."""
+        for line in ("7.5", "8.5", "9.5", "10.5"):
+            for side in ("OV", "UN"):
+                code = "CORNERS_%s_%s" % (side, line)
+                ids = server.market_for(code)
+                key = (str(ids["marketId"]), str(ids["outcomeId"]), ids.get("specifier", "") or "")
+                self.assertEqual(server._ODDS_LOOKUP.get(key), code)
 
     def test_every_offered_market_is_swept(self):
         missing = []
