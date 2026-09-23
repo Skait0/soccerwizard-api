@@ -204,6 +204,13 @@ for _n, _line in ((1, "0.5"), (2, "1.5"), (3, "2.5")):
 # Corners for the match, against SportyBet's 166. Their card runs 7.5 to 14.5
 # and SportyBet's 6.5 to 12.5, so the shared middle is mapped and the ends are
 # left alone - a line one book does not sell is not a line to invent.
+# Total shots, against SportyBet's 900394. Read off the priced card on
+# 23 Sep 2026 (Norway v Denmark: S_OUSHOTS@24.5_O .. @27.5_O). Same lines as
+# SportyBet's, which is what lets one chip serve both.
+for _line in ("19.5", "20.5", "21.5", "22.5", "23.5", "24.5", "25.5", "26.5", "27.5", "28.5", "29.5", "30.5", "31.5"):
+    PASSTHROUGH_MAP["SHOTS_OV_%s" % _line] = ("S_OUSHOTS@%s_O" % _line, 1)
+    PASSTHROUGH_MAP["SHOTS_UN_%s" % _line] = ("S_OUSHOTS@%s_U" % _line, 1)
+
 for _line in ("7.5", "8.5", "9.5", "10.5", "11.5", "12.5", "13.5", "14.5"):
     PASSTHROUGH_MAP["CORNERS_OV_%s" % _line] = ("S_OUCORNERS@%s_O" % _line, 1)
     PASSTHROUGH_MAP["CORNERS_UN_%s" % _line] = ("S_OUCORNERS@%s_U" % _line, 1)

@@ -216,6 +216,16 @@ for _n in range(1, 7):
 # They do not carry the same ones. SportyBet runs 6.5 to 12.5 and Bet9ja 7.5 to
 # 14.5, so 7.5 through 12.5 cross and the ends do not: a 6.5 leg reads and
 # splits here with nowhere to land there, and the same for their 13.5 and 14.5.
+# TOTAL SHOTS, market 900394 - corners' shape exactly, outcome 12 over and 13
+# under on a total= specifier. Read off Netherlands v Germany, 23 Sep 2026.
+# The line moves with the game (Kosovo v Ireland near 21.5, Portugal v Wales
+# near 27.5), so every half line the card has shown is mapped.
+for _line in ("19.5", "20.5", "21.5", "22.5", "23.5", "24.5", "25.5", "26.5", "27.5", "28.5", "29.5", "30.5", "31.5"):
+    PASSTHROUGH_MAP["SHOTS_OV_%s" % _line] = {
+        "marketId": 900394, "outcomeId": 12, "specifier": "total=%s" % _line}
+    PASSTHROUGH_MAP["SHOTS_UN_%s" % _line] = {
+        "marketId": 900394, "outcomeId": 13, "specifier": "total=%s" % _line}
+
 for _line in ("6.5", "7.5", "8.5", "9.5", "10.5", "11.5", "12.5"):
     PASSTHROUGH_MAP["CORNERS_OV_%s" % _line] = {
         "marketId": 166, "outcomeId": 12, "specifier": "total=%s" % _line}
@@ -608,7 +618,11 @@ FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
                       # with it open - the chip without this built slips no
                       # book would take. The codes already sit in
                       # PASSTHROUGH_MAP, so _ODDS_LOOKUP maps them unchanged.
-                      "166")
+                      "166",
+                      # Total shots - the same reason as corners: sold on
+                      # marquee games about a day out, lines that move with
+                      # the game, and the site offers only what this quotes.
+                      "900394")
 
 
 def _headers(region="ng"):

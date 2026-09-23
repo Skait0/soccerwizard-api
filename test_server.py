@@ -2165,6 +2165,8 @@ class EveryMarketTheBuilderOffersCarriesARealPrice(unittest.TestCase):
         # site offers a corners line only where this feed quotes it.
         "CORNERS_OV_7.5", "CORNERS_UN_7.5", "CORNERS_OV_8.5", "CORNERS_UN_8.5",
         "CORNERS_OV_9.5", "CORNERS_UN_9.5", "CORNERS_OV_10.5", "CORNERS_UN_10.5",
+        # Total shots, overs only on the site, 23 Sep 2026.
+        "SHOTS_OV_19.5", "SHOTS_OV_24.5", "SHOTS_OV_31.5",
     ]
 
     def test_corner_outcomes_come_back_as_our_codes(self):

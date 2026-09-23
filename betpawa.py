@@ -395,6 +395,10 @@ NOT_CARRIED = {
     "EH_": "carried, except at depth: their three-way handicap reaches "
            "Home -5 and Away +5, and the draw outcome names whichever side is "
            "GIVING, so a line past that has nothing to map onto.",
+    "SHOTS_": "not read yet: total shots was mapped on "
+              "23 Sep 2026 from SportyBet (900394) and Bet9ja (S_OUSHOTS) "
+              "cards only, and this book's card has not been read for it. The "
+              "site's shots chip offers SportyBet and Bet9ja alone until it is.",
     "CORNERS_": "verified absent past 10.5: their total-corners card is 6.5 "
                 "to 10.5 and nothing above it appeared on any of eight cards.",
     "CORNERS_H_": "verified absent: they sell total corners, corner 1X2 and "

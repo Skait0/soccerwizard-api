@@ -405,6 +405,10 @@ NOT_CARRIED = {
     "FH_AH_": "verified absent: 344 offers -0.5 and 0.5 only.",
     "SH_AH_": "verified absent: 9335 offers -1.5 -0.5 0.5 1.5 only.",
     "EH_": "verified absent: 342 stops at three goals (-3 -2 -1 1 2 3).",
+    "SHOTS_": "not read yet: total shots was mapped on "
+              "23 Sep 2026 from SportyBet (900394) and Bet9ja (S_OUSHOTS) "
+              "cards only, and this book's card has not been read for it. The "
+              "site's shots chip offers SportyBet and Bet9ja alone until it is.",
     "CORNERS_": "verified absent: 190 runs 5.5-12.5, 10332 3.5-5.5, 10333 "
                 "2.5-6.5. The deepest team lines appeared on one card of "
                 "eight, so they are thin as well as bounded.",
