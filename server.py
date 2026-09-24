@@ -2039,15 +2039,38 @@ def _verify_sporty_code(code, raw_selections, region="ng"):
 # returned. Finding nothing is a real answer too - it means they refuse the
 # COMBINATION rather than any single leg, which is a different sentence and
 # one the reader is owed.
-PROBE_MAX_CALLS = 12
-PROBE_DEADLINE_S = 6.0
+#
+# TWELVE CALLS WAS TOO FEW, AND HALF OF THEM WERE WASTED (24 Sep). A 23-leg
+# slider slip with two refused legs needs 17-19 calls under plain bisection,
+# so the probe ran out having named nothing, the reader was offered our own
+# guess, and the retry died on the same sentence. Measured on the live card
+# that day: 29 legs, 27 booked alone, 2 refused (Over 1.5 and a team total,
+# both markets our copy of their card had no price for).
+#
+# Two changes, simulated over 2,000 random slips per size before shipping:
+#   - The whole slip is already known to be refused, so it is not asked again;
+#     and when the left half books, the fault is in the right half, so the
+#     right half is split without being asked. That halves the cost: two bad
+#     legs in 29 now take a median of 12 calls (p95 15), not 17.
+#   - A leg reached only by that inference is asked on its own before it is
+#     named. The inference assumes one leg is at fault; when the fault is the
+#     COMBINATION it is false, and naming a leg that books alone would drop a
+#     good bet. So every leg in `bad` has been refused by SportyBet by itself.
+#   - Legs our cache already doubts go first, so the faults tend to share a
+#     half and the search closes on them sooner.
+# Sequential still, never parallel: a burst from Railway's IP gets refused.
+# Calls run ~0.1s each there, so forty fits inside the deadline.
+PROBE_MAX_CALLS = 40
+PROBE_DEADLINE_S = 8.0
 
 
-def _probe_refusal(formatted, region="ng"):
+def _probe_refusal(formatted, region="ng", first=()):
     """Which legs SportyBet refuses on their own. Returns (bad, how).
 
     `bad` holds indices into `formatted`. `how` records what the probe cost and
     whether it ran out, so a partial answer is never read as a complete one.
+    `first` is indices to search before the rest - the legs we already doubt.
+    Call only on a slip SportyBet has just refused whole.
     """
     started = time.time()
     calls = {"n": 0}
@@ -2062,24 +2085,49 @@ def _probe_refusal(formatted, region="ng"):
 
     bad, ran_out = [], False
 
-    def split(subset):
+    def split(subset, refused):
+        """`refused` is True when this subset is known to be refused - either
+        asked, or inferred from its sibling booking. Returns True/False for
+        refused, or None when the budget ran out before it could say."""
         nonlocal ran_out
         if not subset:
-            return
-        ok = takes(subset)
+            return False
+        asked = not refused
+        if asked:
+            ok = takes(subset)
+            if ok is None:
+                ran_out = True
+                return None
+            if ok:
+                return False                 # this whole half is fine
+        if len(subset) == 1:
+            bad.append((subset[0], not asked))
+            return True
+        mid = len(subset) // 2
+        left = split(subset[:mid], False)
+        # Left booked, so the fault lies right: split it without asking. Left
+        # refused or unknown says nothing about the right, so the right is asked.
+        split(subset[mid:], left is False)
+        return True
+
+    head = [i for i in dict.fromkeys(first) if 0 <= i < len(formatted)]
+    order = head + [i for i in range(len(formatted)) if i not in set(head)]
+    split(order, True)
+    # Confirm anything named by inference alone. Cheap - one call per such leg
+    # - and it is what keeps a combination refusal from being blamed on a leg
+    # SportyBet would take by itself. Unconfirmed when the budget runs out
+    # means unnamed: a guess is never sent as their answer.
+    confirmed = []
+    for i, inferred in bad:
+        if not inferred:
+            confirmed.append(i)
+            continue
+        ok = takes([i])
         if ok is None:
             ran_out = True
-            return
-        if ok:
-            return                           # this whole half is fine
-        if len(subset) == 1:
-            bad.append(subset[0])
-            return
-        mid = len(subset) // 2
-        split(subset[:mid])
-        split(subset[mid:])
-
-    split(list(range(len(formatted))))
+        elif not ok:
+            confirmed.append(i)
+    bad = confirmed
     return bad, {"calls": calls["n"], "ran_out": ran_out,
                  "seconds": round(time.time() - started, 2)}
 
@@ -2316,7 +2364,11 @@ def api_generate_code():
     # being the only one there, and probing it would spend a call to learn
     # nothing.
     if len(formatted_selections) > 1:
-        bad_ix, probe = _probe_refusal(formatted_selections)
+        doubted = {(s.get("eventId"), s.get("prediction"))
+                   for s in (how.get("suspects") or [])}
+        bad_ix, probe = _probe_refusal(formatted_selections, first=[
+            i for i, it in enumerate(raw_selections)
+            if (it.get("eventId"), it.get("prediction")) in doubted])
         report("booking: probed a nameless SportyBet refusal",
                level="info", legs=len(raw_selections), found=len(bad_ix),
                calls=probe["calls"], seconds=probe["seconds"],

@@ -2076,6 +2076,112 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
         self.assertLessEqual(how["calls"], server.PROBE_MAX_CALLS)
         self.assertTrue(how["ran_out"])
 
+    def test_two_bad_legs_in_a_29_leg_slip_are_both_found(self):
+        """The 24 Sep report, at its real size. Twelve calls ran out on this
+        and named nothing, so the reader was sent round on a guess."""
+        for bad in ([4, 10], [0, 28], [13, 14], [2, 17]):
+            picks, (found, how), sent = self._run(bad, legs=29)
+            self.assertEqual(sorted(found), bad, bad)
+            self.assertFalse(how["ran_out"], bad)
+            self.assertNotIn(29, sent, "the whole slip is already known refused")
+
+    def test_every_named_leg_is_refused_alone_even_when_the_fault_is_a_pair(self):
+        """Property over random slips. Faults are single legs AND pairs that
+        are refused only together. Whatever the probe names must be a leg
+        SportyBet refuses by itself - inference is never sent as their word -
+        and, within budget, every single-leg fault is named."""
+        import random
+        rnd = random.Random(7)
+        checked = 0
+        for _ in range(600):
+            n = rnd.randint(2, 40)
+            singles = set(rnd.sample(range(n), rnd.randint(0, min(4, n))))
+            rest = [i for i in range(n) if i not in singles]
+            pairs = [tuple(rnd.sample(rest, 2))] if len(rest) >= 2 and rnd.random() < 0.5 else []
+            picks = self._legs(n)
+            ix = {p["eventId"]: i for i, p in enumerate(picks)}
+
+            def refused(subset):
+                s = {ix[x["eventId"]] for x in subset}
+                return bool(s & singles) or any(a in s and b in s for a, b in pairs)
+
+            if not refused(picks):
+                continue
+            checked += 1
+
+            def fake(subset, region="ng"):
+                return {"error": "no"} if refused(subset) else {"code": "OK"}
+
+            old = server.generate_sportybet_code
+            server.generate_sportybet_code = fake
+            try:
+                found, how = server._probe_refusal(picks)
+            finally:
+                server.generate_sportybet_code = old
+            case = "n=%d singles=%s pairs=%s" % (n, sorted(singles), pairs)
+            for i in found:
+                self.assertTrue(refused([picks[i]]), "named leg %d books alone: %s" % (i, case))
+            if not how["ran_out"]:
+                self.assertEqual(sorted(found), sorted(singles), case)
+        self.assertGreater(checked, 300)
+
+    def test_doubted_legs_are_searched_first(self):
+        """Legs our cache has no price for are asked about first, so when they
+        are the fault the search closes on them in fewer calls."""
+        picks = self._legs(29)
+        bad = {4, 10}
+
+        def run(first):
+            n = {"c": 0}
+
+            def fake(subset, region="ng"):
+                n["c"] += 1
+                ids = {x["eventId"] for x in subset}
+                return ({"error": "no"} if any(picks[i]["eventId"] in ids for i in bad)
+                        else {"code": "OK"})
+            old = server.generate_sportybet_code
+            server.generate_sportybet_code = fake
+            try:
+                found, how = server._probe_refusal(picks, first=first)
+            finally:
+                server.generate_sportybet_code = old
+            return sorted(found), n["c"]
+
+        plain, plain_calls = run(())
+        hinted, hinted_calls = run([4, 10])
+        self.assertEqual(plain, [4, 10])
+        self.assertEqual(hinted, [4, 10])
+        self.assertLess(hinted_calls, plain_calls)
+
+    def test_the_route_names_both_legs_of_a_29_leg_slip(self):
+        """End to end through the route: the refusal comes back naming exactly
+        the two legs SportyBet will not take, as `refused_alone`."""
+        legs = [{"eventId": "sr:match:%d" % i, "prediction": "1X"} for i in range(29)]
+        legs[4]["prediction"] = "OVER_1.5"
+        legs[10]["prediction"] = "AWAY_OVER_0.5"
+        bad = {("sr:match:4", server.market_for("OVER_1.5")["marketId"]),
+               ("sr:match:10", server.market_for("AWAY_OVER_0.5")["marketId"])}
+
+        def fake(subset, region="ng"):
+            if any((x["eventId"], x["marketId"]) in bad for x in subset):
+                return {"error": "invalid event data, no market there", "sent": subset}
+            return {"code": "OK"}
+
+        old_gen, old_ver = server.generate_sportybet_code, server._verify_sporty_code
+        server.generate_sportybet_code = fake
+        server._verify_sporty_code = lambda code, sel: (True, [])
+        server._FIXTURES_CACHE.clear()
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/generate-booking-code", json={"selections": legs})
+        finally:
+            server.generate_sportybet_code, server._verify_sporty_code = old_gen, old_ver
+        self.assertEqual(r.status_code, 400)
+        body = r.get_json()
+        self.assertEqual(sorted((b["eventId"], b["prediction"]) for b in body["unbookable"]),
+                         [("sr:match:10", "AWAY_OVER_0.5"), ("sr:match:4", "OVER_1.5")])
+        self.assertTrue(all(b["reason"] == "refused_alone" for b in body["unbookable"]))
+
 
 class TheCodeSportyBetHandsBackIsReadBack(unittest.TestCase):
     """They mint an ordinary code for a slip they only partly understood.
