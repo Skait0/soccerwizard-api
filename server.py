@@ -2165,6 +2165,115 @@ def _probe_refusal(formatted, region="ng", first=()):
                  "seconds": round(time.time() - started, 2)}
 
 
+# ASK THEIR LIVE CARD WHICH LEG IS DEAD, BEFORE GUESSING.
+#
+# HANDOFF.md (3 Sep) said this could not be done: "there is no single-event
+# endpoint to re-check against". There is - factsCenter/event, which
+# _sporty_event_name already calls for team names. It returns the event's whole
+# market list (299 markets on Arsenal v Leeds) with a status per market and
+# isActive per outcome. Measured 25 Sep against our 40-minute-old copy: goals
+# markets 1.4% closed, team corners 5%, total corners 10.5%, total shots 15% -
+# SportyBet re-lines corners and shots as the price moves and deletes the old
+# line, so a slip with three or four of them was refused about half the time.
+#
+# Only AFTER they refuse, never before: a leg is not refused on our evidence
+# before SportyBet has answered (JTEJA5, see _unbookable). One request per
+# event, one at a time, remembered for a minute - against _probe_refusal's
+# up-to-40 sequential re-bookings, which it now runs ahead of.
+LIVE_TTL = 60
+LIVE_MAX_EVENTS = 30
+LIVE_BUDGET_S = 6
+_LIVE_CACHE = {}
+
+
+def _event_markets(event_id, region="ng"):
+    """One event's live card: {"status", "markets": {(mid, oid, spec): (status,
+    isActive)}}, or None when they did not answer."""
+    hit = _LIVE_CACHE.get(event_id)
+    if hit and time.time() - hit[0] < LIVE_TTL:
+        return hit[1]
+    url = ("https://www.sportybet.com/api/%s/factsCenter/event"
+           "?eventId=%s&productId=3" % (region, quote(str(event_id))))
+    out = None
+    try:
+        r = requests.get(url, headers=_headers(region), impersonate="chrome120",
+                         timeout=5)
+        d = (r.json() or {}).get("data") or {}
+        if d.get("homeTeamName"):
+            out = {"status": d.get("status"), "markets": {}}
+            for m in d.get("markets") or []:
+                for o in m.get("outcomes") or []:
+                    out["markets"][(str(m.get("id")), str(o.get("id")),
+                                    m.get("specifier") or "")] = (
+                        m.get("status"), o.get("isActive"))
+    except Exception as ex:                      # noqa: BLE001 - best effort
+        log.info("sportybet live card failed for %s: %s", event_id, ex)
+    if len(_LIVE_CACHE) > 2000:
+        _LIVE_CACHE.clear()
+    _LIVE_CACHE[event_id] = (time.time(), out)
+    return out
+
+
+def _nearest_open_line(markets, key):
+    """The open line of the same market and side closest to the one refused,
+    as our code - "SHOTS_OV_27.5" for a refused SHOTS_OV_25.5 - or None."""
+    mid, oid, spec = key
+    try:
+        old = float(spec.split("=", 1)[1])
+    except (IndexError, ValueError):
+        return None
+    best = None
+    for (m, o, s), st in markets.items():
+        if m != mid or o != oid or not s.startswith("total=") or st != (0, 1):
+            continue
+        code = _ODDS_LOOKUP.get((m, o, s))
+        try:
+            gap = abs(float(s.split("=", 1)[1]) - old)
+        except ValueError:
+            continue
+        if code and (best is None or gap < best[0]):
+            best = (gap, code)
+    return best[1] if best else None
+
+
+def _live_verdicts(raw_selections, region="ng"):
+    """For a slip SportyBet has just refused: the legs their live card says are
+    closed, as [{"i", "reason", "now"?}]. reason is "started", "closed" or
+    "line_moved" (with `now`, the current line). A leg is only named when their
+    card was read and positively lacks it open - silence is never a verdict."""
+    evs = []
+    for it in raw_selections:
+        if it.get("eventId") and it["eventId"] not in evs:
+            evs.append(it["eventId"])
+    # ONE AT A TIME. Concurrent requests from Railway's IP got every one
+    # refused (see _start_fixtures_thread), so this stays sequential under a
+    # deadline; a card not read in time is unknown, and the probe follows.
+    cards, deadline = {}, time.time() + LIVE_BUDGET_S
+    for e in evs[:LIVE_MAX_EVENTS]:
+        if time.time() > deadline:
+            break
+        cards[e] = _event_markets(e, region)
+    bad = []
+    for i, it in enumerate(raw_selections):
+        live = cards.get(it.get("eventId"))
+        m = market_for(it.get("prediction"))
+        if not live or not m:
+            continue
+        started = live["status"] not in (0, None)
+        if not live["markets"] and not started:
+            continue                    # an empty card that has not started says nothing
+        key = (str(m["marketId"]), str(m["outcomeId"]), m.get("specifier") or "")
+        if live["markets"].get(key) == (0, 1):
+            continue
+        v = {"i": i, "reason": "started" if started else "closed"}
+        if not started and key[2].startswith("total="):
+            now = _nearest_open_line(live["markets"], key)
+            if now and now != it.get("prediction"):
+                v.update(reason="line_moved", now=now)
+        bad.append(v)
+    return bad
+
+
 def _unbookable(raw_selections):
     """Which of these picks SportyBet has no market for.
 
@@ -2391,6 +2500,28 @@ def api_generate_code():
     # same as today.
     body = {"success": False, "message": "SportyBet rejected the slip",
             "detail": result.get("error"), "sent": result.get("sent")}
+
+    # THEIR LIVE CARD FIRST - see _live_verdicts. It names the dead legs with a
+    # reason in one request per game; the probe below stays for what the card
+    # cannot see (a combination rule, a card that did not answer).
+    live_t = time.time()
+    live_bad = _live_verdicts(raw_selections)
+    report("booking: live card read after a SportyBet refusal",
+           level="info", legs=len(raw_selections), found=len(live_bad),
+           seconds=round(time.time() - live_t, 2),
+           reasons=", ".join(sorted({v["reason"] for v in live_bad})),
+           markets=", ".join(sorted({
+               str(raw_selections[v["i"]].get("prediction")) for v in live_bad})))
+    if live_bad and len(live_bad) < len(raw_selections):
+        body["unbookable"] = []
+        for v in live_bad:
+            leg = {"eventId": raw_selections[v["i"]].get("eventId"),
+                   "prediction": raw_selections[v["i"]].get("prediction"),
+                   "reason": v["reason"]}
+            if v.get("now"):
+                leg["now"] = v["now"]
+            body["unbookable"].append(leg)
+        return jsonify(body), 400
 
     # ASK THEM WHICH LEG, RATHER THAN GUESSING FROM OUR OWN CACHE.
     # Only on a multi-leg slip: a single leg refused alone is already named by

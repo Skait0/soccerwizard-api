@@ -8,6 +8,9 @@ os.environ.pop("SENTRY_DSN", None)          # keep Sentry a no-op
 
 import server
 
+# No test reaches SportyBet's live card. A test that wants one sets its own.
+server._event_markets = lambda *a, **k: None
+
 
 class MarketMapIntegrity(unittest.TestCase):
     def test_both_sides_present_for_two_way_markets(self):
@@ -2345,3 +2348,66 @@ class TeamCornersBuildable(unittest.TestCase):
         ev = {"markets": [{"id": 900301, "specifier": "total=2.5",
                            "outcomes": [{"id": "30", "odds": "1.41"}, {"id": "31", "odds": "2.85"}]}]}
         self.assertEqual(server._extract_odds(ev), {"CORNERS_A_OV_2.5": 1.41, "CORNERS_A_UN_2.5": 2.85})
+
+
+class LiveCardAfterRefusal(unittest.TestCase):
+    """_live_verdicts: after SportyBet refuses, their live card names the dead
+    legs - and silence is never a verdict."""
+
+    CARD = {"status": 0, "markets": {
+        ("18", "12", "total=2.5"): (0, 1),                   # goals over 2.5 open
+        ("900394", "12", "total=27.5"): (0, 1),              # shots re-lined to 27.5
+        ("900394", "12", "total=28.5"): (0, 1),
+        ("166", "12", "total=9.5"): (1, 1),                  # corners 9.5 suspended
+    }}
+
+    def setUp(self):
+        self.real = server._event_markets
+        server._event_markets = lambda ev, region="ng": {
+            "ev:live": self.CARD, "ev:gone": None,
+            "ev:ko": {"status": 1, "markets": {}},
+            "ev:blank": {"status": 0, "markets": {}},
+        }.get(ev)
+
+    def tearDown(self):
+        server._event_markets = self.real
+
+    def verdicts(self, legs):
+        return server._live_verdicts([{"eventId": e, "prediction": p} for e, p in legs])
+
+    def test_an_open_leg_is_left_alone(self):
+        self.assertEqual(self.verdicts([("ev:live", "OVER_2.5")]), [])
+
+    def test_a_moved_line_names_the_current_one(self):
+        self.assertEqual(self.verdicts([("ev:live", "SHOTS_OV_25.5")]),
+                         [{"i": 0, "reason": "line_moved", "now": "SHOTS_OV_27.5"}],
+                         "the nearest open line of the same market and side")
+
+    def test_a_suspended_market_is_closed_not_moved(self):
+        self.assertEqual(self.verdicts([("ev:live", "CORNERS_OV_9.5")]),
+                         [{"i": 0, "reason": "closed"}])
+
+    def test_a_game_that_kicked_off_says_so(self):
+        self.assertEqual(self.verdicts([("ev:ko", "OVER_2.5")]),
+                         [{"i": 0, "reason": "started"}])
+
+    def test_no_card_or_an_empty_one_names_nothing(self):
+        """JTEJA5: a leg is never condemned on missing evidence."""
+        self.assertEqual(self.verdicts([("ev:gone", "OVER_2.5"), ("ev:blank", "OVER_2.5")]), [])
+
+    def test_the_route_names_dead_legs_from_the_card_before_probing(self):
+        real_code, real_probe = server.generate_sportybet_code, server._probe_refusal
+        server.generate_sportybet_code = lambda *a, **k: {
+            "error": "invalid event data, no market there", "sent": []}
+        server._probe_refusal = lambda *a, **k: self.fail("the card answered; no probe")
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/generate-booking-code", json={"selections": [
+                    {"eventId": "ev:live", "prediction": "OVER_2.5"},
+                    {"eventId": "ev:live", "prediction": "SHOTS_OV_25.5"},
+                ]})
+        finally:
+            server.generate_sportybet_code, server._probe_refusal = real_code, real_probe
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["unbookable"], [{"eventId": "ev:live",
+            "prediction": "SHOTS_OV_25.5", "reason": "line_moved", "now": "SHOTS_OV_27.5"}])
