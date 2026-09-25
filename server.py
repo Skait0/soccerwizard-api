@@ -2200,12 +2200,15 @@ def _event_markets(event_id, region="ng"):
                          timeout=5)
         d = (r.json() or {}).get("data") or {}
         if d.get("homeTeamName"):
-            out = {"status": d.get("status"), "markets": {}}
+            out = {"status": d.get("status"), "markets": {}, "odds": {}}
             for m in d.get("markets") or []:
                 for o in m.get("outcomes") or []:
-                    out["markets"][(str(m.get("id")), str(o.get("id")),
-                                    m.get("specifier") or "")] = (
-                        m.get("status"), o.get("isActive"))
+                    k = (str(m.get("id")), str(o.get("id")), m.get("specifier") or "")
+                    out["markets"][k] = (m.get("status"), o.get("isActive"))
+                    try:
+                        out["odds"][k] = float(o.get("odds"))
+                    except (TypeError, ValueError):
+                        pass
     except Exception as ex:                      # noqa: BLE001 - best effort
         log.info("sportybet live card failed for %s: %s", event_id, ex)
     if len(_LIVE_CACHE) > 2000:
@@ -2270,6 +2273,11 @@ def _live_verdicts(raw_selections, region="ng"):
             now = _nearest_open_line(live["markets"], key)
             if now and now != it.get("prediction"):
                 v.update(reason="line_moved", now=now)
+                nm = market_for(now)
+                price = (live.get("odds") or {}).get(
+                    (str(nm["marketId"]), str(nm["outcomeId"]), nm.get("specifier") or ""))
+                if price:
+                    v["odds"] = price
         bad.append(v)
     return bad
 
@@ -2376,6 +2384,40 @@ def _unbookable(raw_selections):
         "suspect_markets": sorted({str(x["prediction"]) for x in suspect}),
         "suspects": suspect,
     }
+
+
+LINE_CHECK_EVENTS = 8
+_LINE_PREFIXES = ("CORNERS_", "SHOTS_")
+
+
+@app.route('/api/sporty/live-check', methods=['POST'])
+def api_sporty_live_check():
+    """The corners and shots legs of a slip, checked on SportyBet's live card
+    BEFORE booking. Those are the lines they re-line as the price moves and
+    delete (15% of shots lines stale inside our 45-minute cache, 25 Sep), so
+    they are the ones worth a request; goals legs (1.4%) are not. Nothing is
+    refused here - the page shows the reader what moved and asks.
+
+    Body {"selections": [{"eventId", "prediction"}]}. Returns {"verdicts":
+    [{"eventId", "prediction", "reason", "now"?, "odds"?}]}, `odds` being the
+    live price of `now`. At most LINE_CHECK_EVENTS games are read."""
+    sel = (request.json or {}).get("selections") or []
+    legs, evs = [], set()
+    for s in sel:
+        if not isinstance(s, dict) or not str(s.get("prediction") or "").startswith(_LINE_PREFIXES):
+            continue
+        if s.get("eventId") not in evs and len(evs) >= LINE_CHECK_EVENTS:
+            continue
+        evs.add(s.get("eventId"))
+        legs.append({"eventId": s.get("eventId"), "prediction": s.get("prediction")})
+    out = []
+    for v in _live_verdicts(legs):
+        leg = dict(legs[v["i"]], reason=v["reason"])
+        for k in ("now", "odds"):
+            if v.get(k):
+                leg[k] = v[k]
+        out.append(leg)
+    return jsonify({"verdicts": out, "checked": len(legs)})
 
 
 @app.route('/api/generate-booking-code', methods=['POST'])
@@ -2590,6 +2632,9 @@ def home():
             redis_ok = False
     return jsonify({
         "status": "SoccerWizard API is running successfully!",
+        # Which commit is serving, so "is my push live?" is one request, not a
+        # guess from cache ages. Railway sets this on every deploy.
+        "commit": (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or "")[:7] or None,
         "cache": "redis" if redis_ok else "memory",
         "redisConfigured": bool(REDIS_URL),
         # Same reason as redisConfigured: after setting SENTRY_DSN this says

@@ -2359,7 +2359,7 @@ class LiveCardAfterRefusal(unittest.TestCase):
         ("900394", "12", "total=27.5"): (0, 1),              # shots re-lined to 27.5
         ("900394", "12", "total=28.5"): (0, 1),
         ("166", "12", "total=9.5"): (1, 1),                  # corners 9.5 suspended
-    }}
+    }, "odds": {("900394", "12", "total=27.5"): 1.85}}
 
     def setUp(self):
         self.real = server._event_markets
@@ -2380,8 +2380,8 @@ class LiveCardAfterRefusal(unittest.TestCase):
 
     def test_a_moved_line_names_the_current_one(self):
         self.assertEqual(self.verdicts([("ev:live", "SHOTS_OV_25.5")]),
-                         [{"i": 0, "reason": "line_moved", "now": "SHOTS_OV_27.5"}],
-                         "the nearest open line of the same market and side")
+                         [{"i": 0, "reason": "line_moved", "now": "SHOTS_OV_27.5", "odds": 1.85}],
+                         "the nearest open line of the same market and side, at its live price")
 
     def test_a_suspended_market_is_closed_not_moved(self):
         self.assertEqual(self.verdicts([("ev:live", "CORNERS_OV_9.5")]),
@@ -2410,4 +2410,37 @@ class LiveCardAfterRefusal(unittest.TestCase):
             server.generate_sportybet_code, server._probe_refusal = real_code, real_probe
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.get_json()["unbookable"], [{"eventId": "ev:live",
-            "prediction": "SHOTS_OV_25.5", "reason": "line_moved", "now": "SHOTS_OV_27.5"}])
+            "prediction": "SHOTS_OV_25.5", "reason": "line_moved", "now": "SHOTS_OV_27.5"}],
+            "the refusal names the line; the price travels with the pre-booking check")
+
+
+    def test_the_pre_booking_check_reads_only_corners_and_shots(self):
+        """Goals legs are 1.4% stale and not worth a request; these are the
+        lines SportyBet re-lines. The page asks before it books."""
+        seen = []
+        real = server._event_markets
+        server._event_markets = lambda ev, region="ng": (seen.append(ev), self.CARD)[1]
+        try:
+            with server.app.test_client() as c:
+                r = c.post("/api/sporty/live-check", json={"selections": [
+                    {"eventId": "ev:a", "prediction": "OVER_2.5"},
+                    {"eventId": "ev:b", "prediction": "SHOTS_OV_25.5"},
+                ]})
+        finally:
+            server._event_markets = real
+        self.assertEqual(seen, ["ev:b"], "the goals leg costs no request")
+        self.assertEqual(r.get_json()["verdicts"], [{"eventId": "ev:b",
+            "prediction": "SHOTS_OV_25.5", "reason": "line_moved",
+            "now": "SHOTS_OV_27.5", "odds": 1.85}])
+
+    def test_the_pre_booking_check_reads_at_most_eight_games(self):
+        seen = []
+        real = server._event_markets
+        server._event_markets = lambda ev, region="ng": (seen.append(ev), None)[1]
+        try:
+            with server.app.test_client() as c:
+                c.post("/api/sporty/live-check", json={"selections": [
+                    {"eventId": "ev:%d" % i, "prediction": "CORNERS_OV_9.5"} for i in range(12)]})
+        finally:
+            server._event_markets = real
+        self.assertEqual(len(seen), server.LINE_CHECK_EVENTS)
