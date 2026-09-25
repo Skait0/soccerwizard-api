@@ -308,7 +308,11 @@ for _pre, _mid in (("H", 900306), ("A", 900307)):
 # their catalogue on 14 Sep: 3.5 through 7.5 on the home side, and a real
 # punter's code carried `900300/30/total=3.5` - which read back as an unknown
 # market because only one line of this family had ever been mapped.
-for _line in ("3.5", "4.5", "5.5", "6.5", "7.5"):
+# WIDENED 25 Sep 2026 when the site began BUILDING these, not just reading
+# them: the away side's card sits lower (1.5-5.5 on Armenia v Latvia and
+# Arbroath v Queens Park), so 0.5-2.5 and 8.5-9.5 join. Same ids re-read that
+# day on the live card: 30 over, 31 under - NOT market 166's 12 and 13.
+for _line in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5", "6.5", "7.5", "8.5", "9.5"):
     PASSTHROUGH_MAP["CORNERS_H_OV_%s" % _line] = {
         "marketId": 900300, "outcomeId": 30, "specifier": "total=%s" % _line}
     PASSTHROUGH_MAP["CORNERS_H_UN_%s" % _line] = {
@@ -623,7 +627,13 @@ FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
                       # Total shots - the same reason as corners: sold on
                       # marquee games about a day out, lines that move with
                       # the game, and the site offers only what this quotes.
-                      "900394")
+                      "900394",
+                      # Corners per team, home then away (25 Sep 2026), for
+                      # the site's Team corners chip: 108 listed events had
+                      # them against 54 with the total. LAST on purpose - if
+                      # the sweep ever runs out of time these are what gets
+                      # cut, never the markets above.
+                      "900300", "900301")
 
 
 def _headers(region="ng"):

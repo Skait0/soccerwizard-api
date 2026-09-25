@@ -1404,13 +1404,10 @@ class PassThroughParity(unittest.TestCase):
     SPORTY_ONLY_14SEP = {
         # Double chance with the 1UP promotion. Bet9ja runs 1UP on 1X2 only.
         "DC1UP_1X", "DC1UP_12", "DC1UP_X2",
-        # One side's corners. Bet9ja sells team corners nowhere on their card.
-        "CORNERS_H_OV_3.5", "CORNERS_H_UN_3.5", "CORNERS_H_OV_4.5", "CORNERS_H_UN_4.5",
-        "CORNERS_H_OV_5.5", "CORNERS_H_UN_5.5", "CORNERS_H_OV_6.5", "CORNERS_H_UN_6.5",
-        "CORNERS_H_OV_7.5", "CORNERS_H_UN_7.5",
-        "CORNERS_A_OV_3.5", "CORNERS_A_UN_3.5", "CORNERS_A_OV_4.5", "CORNERS_A_UN_4.5",
-        "CORNERS_A_OV_5.5", "CORNERS_A_UN_5.5", "CORNERS_A_OV_6.5", "CORNERS_A_UN_6.5",
-        "CORNERS_A_OV_7.5", "CORNERS_A_UN_7.5",
+        # One side's corners USED to be here ("Bet9ja sells team corners
+        # nowhere on their card", 14 Sep). Wrong by 25 Sep: their live card
+        # carries S_CORNERSHOMEOU / S_CORNERSAWAYOU on every MLS game checked,
+        # so both books map 0.5-9.5 and the family is no longer one-sided.
         # Goals inside the first N minutes. No equivalent on their card either.
         "EARLY_OV_10_1.5", "EARLY_UN_10_1.5", "EARLY_OV_30_2.5", "EARLY_UN_30_2.5",
         "EARLY_OV_50_3.5", "EARLY_UN_50_3.5",
@@ -2319,3 +2316,32 @@ class EveryMarketTheBuilderOffersCarriesARealPrice(unittest.TestCase):
             ids = server.market_for(code)
             self.assertNotIn(str(ids["marketId"]), server.FIXTURE_MARKET_IDS,
                              "win-a-half is swept now - move it into BUILDER_MARKETS")
+
+
+class TeamCornersBuildable(unittest.TestCase):
+    """25 Sep 2026: the site's Team corners chip builds these, so both books
+    must book them and the sweep must quote them."""
+
+    def test_sporty_uses_30_31_not_the_totals_12_13(self):
+        for side, mid in (("H", 900300), ("A", 900301)):
+            for line in ("1.5", "2.5", "3.5", "4.5", "5.5", "6.5"):
+                ov = server.PASSTHROUGH_MAP["CORNERS_%s_OV_%s" % (side, line)]
+                un = server.PASSTHROUGH_MAP["CORNERS_%s_UN_%s" % (side, line)]
+                self.assertEqual((ov["marketId"], ov["outcomeId"], ov["specifier"]), (mid, 30, "total=%s" % line))
+                self.assertEqual((un["marketId"], un["outcomeId"]), (mid, 31))
+
+    def test_bet9ja_keys_name_the_side(self):
+        m = server.bet9ja.PASSTHROUGH_MAP
+        self.assertEqual(m["CORNERS_H_OV_4.5"][0], "S_CORNERSHOMEOU@4.5_HCO")
+        self.assertEqual(m["CORNERS_H_UN_4.5"][0], "S_CORNERSHOMEOU@4.5_HCU")
+        self.assertEqual(m["CORNERS_A_OV_2.5"][0], "S_CORNERSAWAYOU@2.5_ACO")
+        self.assertEqual(m["CORNERS_A_UN_2.5"][0], "S_CORNERSAWAYOU@2.5_ACU")
+
+    def test_the_sweep_asks_for_both_sides_after_everything_else(self):
+        ids = server.FIXTURE_MARKET_IDS
+        self.assertEqual(ids[-2:], ("900300", "900301"))
+
+    def test_a_swept_outcome_comes_back_as_its_code(self):
+        ev = {"markets": [{"id": 900301, "specifier": "total=2.5",
+                           "outcomes": [{"id": "30", "odds": "1.41"}, {"id": "31", "odds": "2.85"}]}]}
+        self.assertEqual(server._extract_odds(ev), {"CORNERS_A_OV_2.5": 1.41, "CORNERS_A_UN_2.5": 2.85})

@@ -216,6 +216,19 @@ for _line in ("7.5", "8.5", "9.5", "10.5", "11.5", "12.5", "13.5", "14.5"):
     PASSTHROUGH_MAP["CORNERS_OV_%s" % _line] = ("S_OUCORNERS@%s_O" % _line, 1)
     PASSTHROUGH_MAP["CORNERS_UN_%s" % _line] = ("S_OUCORNERS@%s_U" % _line, 1)
 
+# Corners per team, against SportyBet's 900300/900301. Read off the priced card
+# on 25 Sep 2026 (San Jose v Portland and four more MLS games): home keys
+# S_CORNERSHOMEOU@3.5_HCO .. @6.5_HCU, away S_CORNERSAWAYOU@2.5_ACO .. @7.5_ACU.
+# The suffix names the side (HC/AC) as well as over/under (O/U), so a home key
+# can never be mistaken for an away one. Lines move with the side, so every
+# half line SportyBet maps is mapped here too; one this card does not carry is
+# simply never priced.
+for _line in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5", "6.5", "7.5", "8.5", "9.5"):
+    PASSTHROUGH_MAP["CORNERS_H_OV_%s" % _line] = ("S_CORNERSHOMEOU@%s_HCO" % _line, 1)
+    PASSTHROUGH_MAP["CORNERS_H_UN_%s" % _line] = ("S_CORNERSHOMEOU@%s_HCU" % _line, 1)
+    PASSTHROUGH_MAP["CORNERS_A_OV_%s" % _line] = ("S_CORNERSAWAYOU@%s_ACO" % _line, 1)
+    PASSTHROUGH_MAP["CORNERS_A_UN_%s" % _line] = ("S_CORNERSAWAYOU@%s_ACU" % _line, 1)
+
 # The four families SportyBet already had and this side did not, found by
 # reading their card rather than guessing at names: win either half is spelled
 # per side rather than as one market with a team outcome, draw no bet is plain,
