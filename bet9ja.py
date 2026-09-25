@@ -37,6 +37,7 @@ import time
 # need it is how you end up debugging this twice.
 from curl_cffi import requests
 from urllib.parse import quote
+from srid import sr_id
 
 log = logging.getLogger(__name__)
 
@@ -454,6 +455,8 @@ def fetch_events(league_id, group=POPULAR, timeout=15, by_group=True):
                 # Their betslip wants this, and it is not EXTID: a real slip
                 # carries "3070" where EXTID is an eight-digit provider id.
                 "eventCode": str(ev.get("C") or ""),
+                # EXTID IS Sportradar's match id - see srid.py.
+                "srId": sr_id(ev.get("EXTID")),
                 "teams": ev.get("DS") or "",
                 "kickoff": ev.get("STARTDATEUTC") or "",
                 "league": ev.get("GN") or grp.get("GN") or "",

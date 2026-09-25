@@ -11,6 +11,7 @@ from urllib.parse import quote
 import bet9ja
 import betking
 import betpawa
+from srid import sr_id
 from curl_cffi.requests import RequestsError
 
 app = Flask(__name__)
@@ -1909,6 +1910,25 @@ def read_sporty_share(code, region="ng", timeout=12):
     return {"legs": out}
 
 
+def _stamp_sr(book, legs):
+    """Give every leg Sportradar's match id where its book shares it, so the
+    converter can pair a leg across books by id before it tries names.
+
+    SportyBet's id is it. BetKing's coupon carries it (betking.read_coupon).
+    Bet9ja's coupon does not - only its own event id - so it is read off the
+    cached feed, where EXTID is kept. A leg the cache has not seen keeps no
+    srId and the site falls back to names, as it always did. Betpawa has none.
+    """
+    if book == "sporty":
+        for leg in legs:
+            leg["srId"] = sr_id(leg.get("eventId"))
+    elif book == "bet9ja":
+        data = (_cache_get("bet9ja", _BET9JA_CACHE) or {}).get("data") or {}
+        for leg in legs:
+            row = data.get(str(leg.get("eventId")))
+            leg["srId"] = (row or {}).get("srId")
+
+
 @app.route('/api/slip', methods=['GET'])
 def api_read_slip():
     """GET /api/slip?book=sporty|bet9ja|betking|betpawa&code=XXXX -> the legs behind a code."""
@@ -1939,6 +1959,7 @@ def api_read_slip():
     legs = out.get("legs") or []
     if not legs:
         return jsonify({"success": False, "error": "that code has no games in it"}), 404
+    _stamp_sr(book, legs)
     # A reprint is not a transcript - see bet9ja.read_coupon. The count is what
     # we READ, said plainly, so nothing downstream can imply it is the slip as
     # it was booked.

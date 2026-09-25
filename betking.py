@@ -56,6 +56,7 @@ import time
 # about how it answers Railway - that difference is exactly what took the other
 # two integrations down. IMPERSONATE goes on every call.
 from curl_cffi import requests
+from srid import sr_id
 
 log = logging.getLogger(__name__)
 
@@ -615,6 +616,7 @@ def _row(item):
         # Their betslip carries the provider's id alongside their own; both go
         # on the wire, so both are kept.
         "eventCode": str(item.get("ExtProvIDItem") or ""),
+        "srId": sr_id(item.get("ExtProvIDItem")),
         "teams": item.get("ItemName") or "",
         # An ISO string with an offset, which Date.parse handles as-is. Do not
         # "normalise" it - the site pairs on this and a rewritten stamp is a
@@ -977,6 +979,7 @@ def read_coupon(code, timeout=20):
                   leg.get("IDSelectionType"))
         out.append({
             "eventId": leg.get("MatchId"),
+            "srId": sr_id(leg.get("ProviderEventId")),
             "prediction": _BY_TRIPLE.get(triple),
             # What they called it, kept whether or not we mapped it: an
             # unmapped leg still has to be nameable on screen, and their own
