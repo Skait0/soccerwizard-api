@@ -1927,13 +1927,15 @@ def _stamp_sr(book, legs):
     SportyBet's id is it. BetKing's coupon carries it (betking.read_coupon).
     Bet9ja's coupon does not - only its own event id - so it is read off the
     cached feed, where EXTID is kept. A leg the cache has not seen keeps no
-    srId and the site falls back to names, as it always did. Betpawa has none.
+    srId and the site falls back to names, as it always did. Betpawa's coupon
+    lacks it too; its feed rows carry it off the SPORTRADAR widget (25 Sep).
     """
     if book == "sporty":
         for leg in legs:
             leg["srId"] = sr_id(leg.get("eventId"))
-    elif book == "bet9ja":
-        data = (_cache_get("bet9ja", _BET9JA_CACHE) or {}).get("data") or {}
+    elif book in ("bet9ja", "betpawa"):
+        cache = _BET9JA_CACHE if book == "bet9ja" else _BETPAWA_CACHE
+        data = (_cache_get(book, cache) or {}).get("data") or {}
         for leg in legs:
             row = data.get(str(leg.get("eventId")))
             leg["srId"] = (row or {}).get("srId")

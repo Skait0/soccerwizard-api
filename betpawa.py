@@ -24,6 +24,7 @@ import logging
 import time
 
 from curl_cffi import requests
+from srid import sr_id
 
 log = logging.getLogger(__name__)
 
@@ -550,6 +551,15 @@ def _get_json(url, params=None, timeout=30, attempts=3, pause=1.5):
     raise last
 
 
+def _sportradar(event):
+    for w in (event or {}).get("widgets") or []:
+        if str(w.get("type") or "").upper() == "SPORTRADAR":
+            got = sr_id(w.get("id"))
+            if got:
+                return got
+    return None
+
+
 def _row(event):
     """The empty shell of one fixture, in the shape the other three books use."""
     parts = event.get("participants") or []
@@ -559,6 +569,11 @@ def _row(event):
         "eventId": str(event.get("id")),
         "slotId": str(event.get("id")),
         "eventCode": "",
+        # Sportradar's match id, from the widget typed SPORTRADAR - the same
+        # number SportyBet writes as sr:match:NNN (74 of 100 on one list page,
+        # 25 Sep 2026). The GENIUSSPORTS widget beside it is another company's
+        # number and is never read.
+        "srId": _sportradar(event),
         "teams": teams,
         # An ISO stamp in UTC, passed through untouched. The site pairs on it,
         # and a rewritten stamp is a new way to be wrong.

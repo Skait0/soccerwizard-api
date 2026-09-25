@@ -38,3 +38,23 @@ class EveryLegGetsItsId(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BetpawaCarriesItToo(unittest.TestCase):
+    """25 Sep 2026: Betpawa's events list widgets typed SPORTRADAR and
+    GENIUSSPORTS. Only the first is Sportradar's number."""
+
+    def test_the_sportradar_widget_not_the_genius_one(self):
+        import betpawa
+        ev = {"widgets": [{"id": "14473711", "type": "GENIUSSPORTS"},
+                          {"id": "66299604", "type": "SPORTRADAR"}]}
+        self.assertEqual(betpawa._sportradar(ev), "66299604")
+        self.assertIsNone(betpawa._sportradar({"widgets": [{"id": "14473711", "type": "GENIUSSPORTS"}]}))
+        self.assertEqual(betpawa._row({"id": 36436187, "widgets": ev["widgets"]})["srId"], "66299604")
+
+    def test_a_betpawa_leg_reads_it_off_the_cached_feed(self):
+        cache = {"at": 1, "data": {"36436187": {"srId": "66299604"}}}
+        legs = [{"eventId": "36436187"}]
+        with mock.patch.object(server, "_cache_get", return_value=cache):
+            server._stamp_sr("betpawa", legs)
+        self.assertEqual(legs[0]["srId"], "66299604")
