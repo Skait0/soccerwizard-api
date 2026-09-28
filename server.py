@@ -1,18 +1,20 @@
-import os
-import re
-import time
 import json
 import logging
+import os
+import re
 import threading
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from curl_cffi import requests
+import time
 from urllib.parse import quote
+
+from curl_cffi import requests
+from curl_cffi.requests import RequestsError
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+
 import bet9ja
 import betking
 import betpawa
 from srid import sr_id
-from curl_cffi.requests import RequestsError
 
 app = Flask(__name__)
 CORS(app)
@@ -39,7 +41,7 @@ if SENTRY_DSN:
         )
         log.info("Sentry error tracking enabled")
         _sentry = sentry_sdk
-    except Exception as ex:
+    except Exception as ex:  # noqa: BLE001
         log.warning("SENTRY_DSN set but Sentry init failed (is sentry-sdk installed?): %s", ex)
         _sentry = None
 else:
@@ -69,7 +71,7 @@ def report(message, level="warning", **context):
     # still shouted at Railway - and a log where everything is a warning is a
     # log where nothing is.
     log.log(getattr(logging, level.upper(), logging.WARNING), "%s | %s", message,
-            " ".join("%s=%s" % (k, v) for k, v in sorted(context.items())))
+            " ".join(f"{k}={v}" for k, v in sorted(context.items())))
     if not _sentry:
         return
     try:
@@ -78,7 +80,7 @@ def report(message, level="warning", **context):
             for k, v in context.items():
                 scope.set_extra(k, v)
             _sentry.capture_message(message, level=level)
-    except Exception as ex:   # never let reporting break the thing it reports on
+    except Exception as ex:   # never let reporting break the thing it reports on  # noqa: BLE001
         log.warning("sentry capture failed: %s", ex)
 
 
@@ -205,10 +207,10 @@ PASSTHROUGH_MAP = {
 # and away 1+ to 3+ are what can cross; anything above that reads and splits
 # here and has nowhere to land there.
 for _n in range(1, 7):
-    PASSTHROUGH_MAP["CARD_H_%d" % _n] = {
-        "marketId": 800060, "outcomeId": "800060:%08d" % _n, "specifier": ""}
-    PASSTHROUGH_MAP["CARD_A_%d" % _n] = {
-        "marketId": 800060, "outcomeId": "800060:%08d" % (100 + _n), "specifier": ""}
+    PASSTHROUGH_MAP[f"CARD_H_{_n:d}"] = {
+        "marketId": 800060, "outcomeId": f"800060:{_n:08d}", "specifier": ""}
+    PASSTHROUGH_MAP[f"CARD_A_{_n:d}"] = {
+        "marketId": 800060, "outcomeId": f"800060:{100 + _n:08d}", "specifier": ""}
 
 # CORNERS, total for the match. Market 166, outcome 12 over and 13 under - the
 # same shape as goals on market 18, which is why it needed no thought once it
@@ -222,16 +224,16 @@ for _n in range(1, 7):
 # The line moves with the game (Kosovo v Ireland near 21.5, Portugal v Wales
 # near 27.5), so every half line the card has shown is mapped.
 for _line in ("19.5", "20.5", "21.5", "22.5", "23.5", "24.5", "25.5", "26.5", "27.5", "28.5", "29.5", "30.5", "31.5"):
-    PASSTHROUGH_MAP["SHOTS_OV_%s" % _line] = {
-        "marketId": 900394, "outcomeId": 12, "specifier": "total=%s" % _line}
-    PASSTHROUGH_MAP["SHOTS_UN_%s" % _line] = {
-        "marketId": 900394, "outcomeId": 13, "specifier": "total=%s" % _line}
+    PASSTHROUGH_MAP[f"SHOTS_OV_{_line}"] = {
+        "marketId": 900394, "outcomeId": 12, "specifier": f"total={_line}"}
+    PASSTHROUGH_MAP[f"SHOTS_UN_{_line}"] = {
+        "marketId": 900394, "outcomeId": 13, "specifier": f"total={_line}"}
 
 for _line in ("6.5", "7.5", "8.5", "9.5", "10.5", "11.5", "12.5"):
-    PASSTHROUGH_MAP["CORNERS_OV_%s" % _line] = {
-        "marketId": 166, "outcomeId": 12, "specifier": "total=%s" % _line}
-    PASSTHROUGH_MAP["CORNERS_UN_%s" % _line] = {
-        "marketId": 166, "outcomeId": 13, "specifier": "total=%s" % _line}
+    PASSTHROUGH_MAP[f"CORNERS_OV_{_line}"] = {
+        "marketId": 166, "outcomeId": 12, "specifier": f"total={_line}"}
+    PASSTHROUGH_MAP[f"CORNERS_UN_{_line}"] = {
+        "marketId": 166, "outcomeId": 13, "specifier": f"total={_line}"}
 
 # ---------------------------------------------------------------------------
 # THE SIBLING FAMILIES. Half-versions and per-team versions of markets already
@@ -253,18 +255,18 @@ for _mid, _pre, _lines in (
         (87, "SH_", ((0, 1), (0, 2), (1, 0)))):
     for _h, _a in _lines:
         for _sfx, _out in (("1", 1711), ("X", 1712), ("2", 1713)):
-            PASSTHROUGH_MAP["%sEH_%d_%d_%s" % (_pre, _h, _a, _sfx)] = {
+            PASSTHROUGH_MAP[f"{_pre}EH_{_h:d}_{_a:d}_{_sfx}"] = {
                 "marketId": _mid, "outcomeId": _out,
-                "specifier": "hcp=%d:%d" % (_h, _a)}
+                "specifier": f"hcp={_h:d}:{_a:d}"}
 
 # ASIAN HANDICAP WITHIN ONE HALF. 66 and 88 against 16 for the match, and the
 # same two outcomes - 1714 home, 1715 away.
 for _pre, _mid in (("FH_", 66), ("SH_", 88)):
     for _l in ("-2", "-1.5", "-1", "-0.5", "0", "0.5"):
-        PASSTHROUGH_MAP["%sAH_1_%s" % (_pre, _l)] = {
-            "marketId": _mid, "outcomeId": 1714, "specifier": "hcp=%s" % _l}
-        PASSTHROUGH_MAP["%sAH_2_%s" % (_pre, _l)] = {
-            "marketId": _mid, "outcomeId": 1715, "specifier": "hcp=%s" % _l}
+        PASSTHROUGH_MAP[f"{_pre}AH_1_{_l}"] = {
+            "marketId": _mid, "outcomeId": 1714, "specifier": f"hcp={_l}"}
+        PASSTHROUGH_MAP[f"{_pre}AH_2_{_l}"] = {
+            "marketId": _mid, "outcomeId": 1715, "specifier": f"hcp={_l}"}
 
 # FIRST-HALF 1X2 & TOTAL. The full-match twin is six separate Yes/No markets
 # (854-859); this is ONE market with six outcomes, so the ids are read off it
@@ -272,7 +274,7 @@ for _pre, _mid in (("FH_", 66), ("SH_", 88)):
 for _sfx, _out in (("1_UN", 794), ("1_OV", 796), ("X_UN", 798),
                    ("X_OV", 800), ("2_UN", 802), ("2_OV", 804)):
     _sign, _dir = _sfx.split("_")
-    PASSTHROUGH_MAP["FH_MIX_%s_%s_1.5" % (_sign, _dir)] = {
+    PASSTHROUGH_MAP[f"FH_MIX_{_sign}_{_dir}_1.5"] = {
         "marketId": 79, "outcomeId": _out, "specifier": "total=1.5"}
 
 # CORNER RANGE, the match and each side. Same composite-id shape as goal range
@@ -281,13 +283,13 @@ for _sfx, _out in (("1_UN", 794), ("1_OV", 796), ("X_UN", 798),
 _VAR_PR12 = "variant=sr:point_range:12+"
 _VAR_PR7 = "variant=sr:point_range:7+"
 for _band, _out in (("0_8", 1141), ("9_11", 1142), ("12", 1143)):
-    PASSTHROUGH_MAP["CORNRANGE_%s" % _band] = {
-        "marketId": 169, "outcomeId": "sr:point_range:12+:%d" % _out,
+    PASSTHROUGH_MAP[f"CORNRANGE_{_band}"] = {
+        "marketId": 169, "outcomeId": f"sr:point_range:12+:{_out:d}",
         "specifier": _VAR_PR12}
 for _side, _mid in (("H", 170), ("A", 171)):
     for _band, _out in (("0_2", 1144), ("3_4", 1145), ("5_6", 1146), ("7", 1147)):
-        PASSTHROUGH_MAP["CORNRANGE_%s_%s" % (_side, _band)] = {
-            "marketId": _mid, "outcomeId": "sr:point_range:7+:%d" % _out,
+        PASSTHROUGH_MAP[f"CORNRANGE_{_side}_{_band}"] = {
+            "marketId": _mid, "outcomeId": f"sr:point_range:7+:{_out:d}",
             "specifier": _VAR_PR7}
 
 # ONE SIDE'S BOOKINGS IN THE FIRST HALF. 900306 home, 900307 away, outcome 30
@@ -297,10 +299,10 @@ for _side, _mid in (("H", 170), ("A", 171)):
 # follow it.
 for _pre, _mid in (("H", 900306), ("A", 900307)):
     for _n, _line in ((1, "0.5"), (2, "1.5"), (3, "2.5")):
-        PASSTHROUGH_MAP["FH_CARD_%s_%d" % (_pre, _n)] = {
-            "marketId": _mid, "outcomeId": 30, "specifier": "total=%s" % _line}
-        PASSTHROUGH_MAP["FH_CARDUN_%s_%d" % (_pre, _n)] = {
-            "marketId": _mid, "outcomeId": 31, "specifier": "total=%s" % _line}
+        PASSTHROUGH_MAP[f"FH_CARD_{_pre}_{_n:d}"] = {
+            "marketId": _mid, "outcomeId": 30, "specifier": f"total={_line}"}
+        PASSTHROUGH_MAP[f"FH_CARDUN_{_pre}_{_n:d}"] = {
+            "marketId": _mid, "outcomeId": 31, "specifier": f"total={_line}"}
 # ---------------------------------------------------------------------------
 
 # ONE SIDE'S CORNERS. 900300 is the HOME team's total and 900301 the away
@@ -313,14 +315,14 @@ for _pre, _mid in (("H", 900306), ("A", 900307)):
 # Arbroath v Queens Park), so 0.5-2.5 and 8.5-9.5 join. Same ids re-read that
 # day on the live card: 30 over, 31 under - NOT market 166's 12 and 13.
 for _line in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5", "6.5", "7.5", "8.5", "9.5"):
-    PASSTHROUGH_MAP["CORNERS_H_OV_%s" % _line] = {
-        "marketId": 900300, "outcomeId": 30, "specifier": "total=%s" % _line}
-    PASSTHROUGH_MAP["CORNERS_H_UN_%s" % _line] = {
-        "marketId": 900300, "outcomeId": 31, "specifier": "total=%s" % _line}
-    PASSTHROUGH_MAP["CORNERS_A_OV_%s" % _line] = {
-        "marketId": 900301, "outcomeId": 30, "specifier": "total=%s" % _line}
-    PASSTHROUGH_MAP["CORNERS_A_UN_%s" % _line] = {
-        "marketId": 900301, "outcomeId": 31, "specifier": "total=%s" % _line}
+    PASSTHROUGH_MAP[f"CORNERS_H_OV_{_line}"] = {
+        "marketId": 900300, "outcomeId": 30, "specifier": f"total={_line}"}
+    PASSTHROUGH_MAP[f"CORNERS_H_UN_{_line}"] = {
+        "marketId": 900300, "outcomeId": 31, "specifier": f"total={_line}"}
+    PASSTHROUGH_MAP[f"CORNERS_A_OV_{_line}"] = {
+        "marketId": 900301, "outcomeId": 30, "specifier": f"total={_line}"}
+    PASSTHROUGH_MAP[f"CORNERS_A_UN_{_line}"] = {
+        "marketId": 900301, "outcomeId": 31, "specifier": f"total={_line}"}
 
 # EXCLUDED NUMBER OF GOALS, market 450004 for the match and 810002 for the
 # first half. The bet is "the total will be anything BUT this number", and the
@@ -329,10 +331,10 @@ for _line in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5", "6.5", "7.5", "8.5", "9.
 # outcome id as a value, which is worth knowing before somebody reads it as an
 # index. Found in PV5CLL, a reader's code: two legs of thirty-nine.
 for _n in ("0", "1", "2", "3", "4", "5"):
-    PASSTHROUGH_MAP["EXGOALS_%s" % _n] = {
+    PASSTHROUGH_MAP[f"EXGOALS_{_n}"] = {
         "marketId": 450004, "outcomeId": int(_n), "specifier": ""}
 for _n in ("0", "1", "2", "3"):
-    PASSTHROUGH_MAP["EXGOALS_FH_%s" % _n] = {
+    PASSTHROUGH_MAP[f"EXGOALS_FH_{_n}"] = {
         "marketId": 810002, "outcomeId": int(_n), "specifier": ""}
 
 # GOAL BOUNDS, one side's goals as a RANGE: 450002 is the home team and 450003
@@ -342,9 +344,9 @@ for _n in ("0", "1", "2", "3"):
 # out from their own card, PV5CLL carried `450003/23/` (two to three or more).
 _GOAL_BOUNDS = ("0", "1", "2", "11", "12", "13", "22", "23", "33")
 for _b in _GOAL_BOUNDS:
-    PASSTHROUGH_MAP["BOUNDS_H_%s" % _b] = {
+    PASSTHROUGH_MAP[f"BOUNDS_H_{_b}"] = {
         "marketId": 450002, "outcomeId": int(_b), "specifier": ""}
-    PASSTHROUGH_MAP["BOUNDS_A_%s" % _b] = {
+    PASSTHROUGH_MAP[f"BOUNDS_A_{_b}"] = {
         "marketId": 450003, "outcomeId": int(_b), "specifier": ""}
 
 # ------------------------------------------------------------------------
@@ -374,71 +376,71 @@ _VAR_MARGIN = "variant=sr:winning_margin:3+"
 # the `goalnr=1` specifier is what makes it the FIRST one.
 for _code, _mkt in (("FIRSTGOAL", 8), ("FIRSTGOAL_FH", 62), ("FIRSTGOAL_SH", 84)):
     for _sfx, _out in (("1", 6), ("N", 7), ("2", 8)):
-        PASSTHROUGH_MAP["%s_%s" % (_code, _sfx)] = {
+        PASSTHROUGH_MAP[f"{_code}_{_sfx}"] = {
             "marketId": _mkt, "outcomeId": _out, "specifier": "goalnr=1"}
 
 # EXACT GOALS, match and each half. The ceiling differs per scope - 6+ on the
 # match, 3+ in the first half, 2+ in the second - and it is part of both the
 # specifier and every outcome id.
 for _n, _out in zip(range(7), range(68, 75)):
-    PASSTHROUGH_MAP["EXACT_%d" % _n] = {
-        "marketId": 21, "outcomeId": "sr:exact_goals:6+:%d" % _out,
+    PASSTHROUGH_MAP[f"EXACT_{_n:d}"] = {
+        "marketId": 21, "outcomeId": f"sr:exact_goals:6+:{_out:d}",
         "specifier": _VAR_EXACT6}
 for _n, _out in zip(range(4), range(88, 92)):
-    PASSTHROUGH_MAP["EXACT_FH_%d" % _n] = {
-        "marketId": 71, "outcomeId": "sr:exact_goals:3+:%d" % _out,
+    PASSTHROUGH_MAP[f"EXACT_FH_{_n:d}"] = {
+        "marketId": 71, "outcomeId": f"sr:exact_goals:3+:{_out:d}",
         "specifier": _VAR_EXACT3}
 for _n, _out in zip(range(3), range(85, 88)):
-    PASSTHROUGH_MAP["EXACT_SH_%d" % _n] = {
-        "marketId": 93, "outcomeId": "sr:exact_goals:2+:%d" % _out,
+    PASSTHROUGH_MAP[f"EXACT_SH_{_n:d}"] = {
+        "marketId": 93, "outcomeId": f"sr:exact_goals:2+:{_out:d}",
         "specifier": _VAR_EXACT2}
 
 # ONE SIDE'S EXACT GOALS. Same variant as the first half above, and the same
 # outcome ids - 23 is the home team and 24 the away team.
 for _side, _mkt in (("H", 23), ("A", 24)):
     for _n, _out in zip(range(4), range(88, 92)):
-        PASSTHROUGH_MAP["TEAMGOALS_%s_%d" % (_side, _n)] = {
-            "marketId": _mkt, "outcomeId": "sr:exact_goals:3+:%d" % _out,
+        PASSTHROUGH_MAP[f"TEAMGOALS_{_side}_{_n:d}"] = {
+            "marketId": _mkt, "outcomeId": f"sr:exact_goals:3+:{_out:d}",
             "specifier": _VAR_EXACT3}
 
 # GOAL RANGE - the whole match's goals as a band.
 for _name, _out in (("0_1", 1342), ("2_3", 1343), ("4_6", 1344), ("7", 1345)):
-    PASSTHROUGH_MAP["GOALRANGE_%s" % _name] = {
-        "marketId": 25, "outcomeId": "sr:goal_range:7+:%d" % _out,
+    PASSTHROUGH_MAP[f"GOALRANGE_{_name}"] = {
+        "marketId": 25, "outcomeId": f"sr:goal_range:7+:{_out:d}",
         "specifier": _VAR_RANGE7}
 
 # WINNING MARGIN, including the draw - which is a seventh outcome here rather
 # than a market of its own.
 for _name, _out in (("H1", 113), ("H2", 114), ("H3", 115),
                     ("A1", 116), ("A2", 117), ("A3", 118), ("DRAW", 119)):
-    PASSTHROUGH_MAP["MARGIN_%s" % _name] = {
-        "marketId": 15, "outcomeId": "sr:winning_margin:3+:%d" % _out,
+    PASSTHROUGH_MAP[f"MARGIN_{_name}"] = {
+        "marketId": 15, "outcomeId": f"sr:winning_margin:3+:{_out:d}",
         "specifier": _VAR_MARGIN}
 
 # BOTH HALVES OVER / UNDER 1.5. Two markets, each a plain Yes/No - 74 and 76,
 # the pair the combination markets use.
 for _code, _mkt in (("BOTHHALVES_OV", 58), ("BOTHHALVES_UN", 59)):
     for _sfx, _out in (("Y", 74), ("N", 76)):
-        PASSTHROUGH_MAP["%s_%s" % (_code, _sfx)] = {
+        PASSTHROUGH_MAP[f"{_code}_{_sfx}"] = {
             "marketId": _mkt, "outcomeId": _out, "specifier": "total=1.5"}
 
 # SECOND-HALF GOALS, whole match and per side, and the first half per side.
 # Outcome 12 over and 13 under throughout, the line in the specifier - the
 # same shape as market 18, which is why these need no thought beyond the ids.
 for _line in ("0.5", "1.5", "2.5"):
-    PASSTHROUGH_MAP["SH_OVER_%s" % _line] = {
-        "marketId": 90, "outcomeId": 12, "specifier": "total=%s" % _line}
-    PASSTHROUGH_MAP["SH_UNDER_%s" % _line] = {
-        "marketId": 90, "outcomeId": 13, "specifier": "total=%s" % _line}
+    PASSTHROUGH_MAP[f"SH_OVER_{_line}"] = {
+        "marketId": 90, "outcomeId": 12, "specifier": f"total={_line}"}
+    PASSTHROUGH_MAP[f"SH_UNDER_{_line}"] = {
+        "marketId": 90, "outcomeId": 13, "specifier": f"total={_line}"}
     for _half, _h_mkt, _a_mkt in (("FH", 69, 70), ("SH", 91, 92)):
-        PASSTHROUGH_MAP["%s_HOME_OVER_%s" % (_half, _line)] = {
-            "marketId": _h_mkt, "outcomeId": 12, "specifier": "total=%s" % _line}
-        PASSTHROUGH_MAP["%s_HOME_UNDER_%s" % (_half, _line)] = {
-            "marketId": _h_mkt, "outcomeId": 13, "specifier": "total=%s" % _line}
-        PASSTHROUGH_MAP["%s_AWAY_OVER_%s" % (_half, _line)] = {
-            "marketId": _a_mkt, "outcomeId": 12, "specifier": "total=%s" % _line}
-        PASSTHROUGH_MAP["%s_AWAY_UNDER_%s" % (_half, _line)] = {
-            "marketId": _a_mkt, "outcomeId": 13, "specifier": "total=%s" % _line}
+        PASSTHROUGH_MAP[f"{_half}_HOME_OVER_{_line}"] = {
+            "marketId": _h_mkt, "outcomeId": 12, "specifier": f"total={_line}"}
+        PASSTHROUGH_MAP[f"{_half}_HOME_UNDER_{_line}"] = {
+            "marketId": _h_mkt, "outcomeId": 13, "specifier": f"total={_line}"}
+        PASSTHROUGH_MAP[f"{_half}_AWAY_OVER_{_line}"] = {
+            "marketId": _a_mkt, "outcomeId": 12, "specifier": f"total={_line}"}
+        PASSTHROUGH_MAP[f"{_half}_AWAY_UNDER_{_line}"] = {
+            "marketId": _a_mkt, "outcomeId": 13, "specifier": f"total={_line}"}
 
 # GOALS IN THE FIRST N MINUTES, market 60180, outcome 12 over and 13 under.
 # The specifier carries BOTH numbers - `minsnr=10|total=1.5` is "over 1.5 goals
@@ -449,12 +451,12 @@ for _line in ("0.5", "1.5", "2.5"):
 # The windows SportyBet publishes, read off their own card: 10 minutes at 1.5,
 # 30 at 2.5, 50 at 3.5. A window they do not sell is not one to invent.
 for _mins, _total in (("10", "1.5"), ("30", "2.5"), ("50", "3.5")):
-    PASSTHROUGH_MAP["EARLY_OV_%s_%s" % (_mins, _total)] = {
+    PASSTHROUGH_MAP[f"EARLY_OV_{_mins}_{_total}"] = {
         "marketId": 60180, "outcomeId": 12,
-        "specifier": "minsnr=%s|total=%s" % (_mins, _total)}
-    PASSTHROUGH_MAP["EARLY_UN_%s_%s" % (_mins, _total)] = {
+        "specifier": f"minsnr={_mins}|total={_total}"}
+    PASSTHROUGH_MAP[f"EARLY_UN_{_mins}_{_total}"] = {
         "marketId": 60180, "outcomeId": 13,
-        "specifier": "minsnr=%s|total=%s" % (_mins, _total)}
+        "specifier": f"minsnr={_mins}|total={_total}"}
 
 # WIN EITHER HALF. 50 is the home side and 51 the away side, 74 Yes and 76 No.
 PASSTHROUGH_MAP.update({
@@ -482,7 +484,7 @@ PASSTHROUGH_MAP.update({
 # than featured ones, so this is not a big-league-only family.
 for _hh, _mkt in (("", 52), ("H_", 53), ("A_", 54)):
     for _sfx, _out in (("1", 436), ("2", 438), ("E", 440)):
-        PASSTHROUGH_MAP["HIGHHALF_%s%s" % (_hh, _sfx)] = {
+        PASSTHROUGH_MAP[f"HIGHHALF_{_hh}{_sfx}"] = {
             "marketId": _mkt, "outcomeId": _out, "specifier": ""}
 
 # ASIAN HANDICAP. Market 16, outcome 1714 the home side and 1715 the away side,
@@ -499,10 +501,10 @@ for _hh, _mkt in (("", 52), ("H_", 53), ("A_", 54)):
 _AH_LINES = ["-4.5", "-4", "-3.5", "-3", "-2.5", "-2", "-1.5", "-1", "-0.5",
              "0", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5"]
 for _l in _AH_LINES:
-    PASSTHROUGH_MAP["AH_1_%s" % _l] = {
-        "marketId": 16, "outcomeId": 1714, "specifier": "hcp=%s" % _l}
-    PASSTHROUGH_MAP["AH_2_%s" % _l] = {
-        "marketId": 16, "outcomeId": 1715, "specifier": "hcp=%s" % _l}
+    PASSTHROUGH_MAP[f"AH_1_{_l}"] = {
+        "marketId": 16, "outcomeId": 1714, "specifier": f"hcp={_l}"}
+    PASSTHROUGH_MAP[f"AH_2_{_l}"] = {
+        "marketId": 16, "outcomeId": 1715, "specifier": f"hcp={_l}"}
 # Deliberately NOT merged into MARKET_MAP. That table means "markets we model,
 # and therefore fetch on every sweep", and test_every_mapped_market_is_actually
 # _fetched enforces exactly that. Merging these made six promotion markets look
@@ -555,7 +557,7 @@ if REDIS_URL:
                                 socket_connect_timeout=3, socket_timeout=3)
         _redis.ping()
         log.info("Redis enabled: fixture/live cache shared across workers")
-    except Exception as ex:
+    except Exception as ex:  # noqa: BLE001
         log.warning("REDIS_URL set but Redis unavailable; using in-memory cache: %s", ex)
         _redis = None
 
@@ -567,7 +569,7 @@ def _cache_get(name, mem):
             v = _redis.get("sw:cache:" + name)
             if v:
                 return json.loads(v)
-        except Exception as ex:
+        except Exception as ex:  # noqa: BLE001
             log.warning("redis get %s failed, using local: %s", name, ex)
     return mem if mem.get("data") is not None else None
 
@@ -578,7 +580,7 @@ def _cache_put(name, mem, data):
     if _redis:
         try:
             _redis.set("sw:cache:" + name, json.dumps({"at": mem["at"], "data": data}))
-        except Exception as ex:
+        except Exception as ex:  # noqa: BLE001
             log.warning("redis set %s failed: %s", name, ex)
 
 # Markets pulled for each upcoming fixture, merged by eventId so the frontend
@@ -656,7 +658,7 @@ def generate_sportybet_code(selections_list, region="ng"):
         if data.get("bizCode") == 10000:
             return {"code": data.get("data", {}).get("shareCode")}
         return {"error": data.get("message") or data, "sent": selections_list}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # Deliberately broad: this is a user-facing path and the route relies on
         # always getting a dict back (never a 500). Log so failures are visible.
         log.warning("booking request to SportyBet failed: %s", e)
@@ -693,10 +695,10 @@ def fetch_sportybet_fixtures(region="ng"):
     odds by eventId. Event metadata (teams, kickoff) is taken from whichever
     market first surfaces the event.
 
-    Cost: ~3x the requests, paid only on a cache miss (TTL {}m). Partial failure
-    (one market down) still returns the odds we did get; total failure raises so
-    the caller can serve stale.
-    """.format(_FIXTURES_TTL // 60)
+    Cost: ~3x the requests, paid only on a cache miss (TTL _FIXTURES_TTL).
+    Partial failure (one market down) still returns the odds we did get; total
+    failure raises so the caller can serve stale.
+    """
     headers = _headers(region)
     by_event = {}   # eventId -> merged match dict
     order = []      # preserve first-seen order
@@ -918,7 +920,7 @@ def fetch_live_scores(region="ng"):
                 continue
             # eventId when there is one, otherwise the pairing and its
             # competition - an event with no id must still not arrive twice.
-            key = e.get("eventId") or "%s|%s|%s" % (
+            key = e.get("eventId") or "{}|{}|{}".format(
                 e.get("homeTeamName"), e.get("awayTeamName"), lg)
             if key in seen_ids:
                 continue
@@ -1038,7 +1040,7 @@ def _refresh_fixtures_once():
         _cache_put("fixtures", _FIXTURES_CACHE, matches)
         log.info("fixtures refreshed: %d events", len(matches))
         return True
-    except Exception as ex:
+    except Exception as ex:  # noqa: BLE001
         log.warning("fixtures refresh failed, keeping previous copy: %s", ex)
     return False
 
@@ -1436,10 +1438,10 @@ def api_bet9ja_code():
         return jsonify({"success": False, "error": str(ex)}), 502
 
     def _detail(legs):
-        return dict(
-            bad_legs=len(legs), total_legs=len(picks),
-            markets=", ".join(sorted({str(b["prediction"]) for b in legs})),
-            events=", ".join(sorted({str(b["eventId"]) for b in legs})[:10]))
+        return {
+            "bad_legs": len(legs), "total_legs": len(picks),
+            "markets": ", ".join(sorted({str(b["prediction"]) for b in legs})),
+            "events": ", ".join(sorted({str(b["eventId"]) for b in legs})[:10])}
 
     # Separate messages, because Sentry groups by message. One issue per cause
     # is the whole point: a mapping gap should stand alone in the list instead
@@ -1462,7 +1464,7 @@ def api_bet9ja_code():
         return jsonify({
             "success": False,
             "message": "Bet9ja rejected the slip",
-            "detail": "no market there for %d of %d picks" % (len(bad), len(picks)),
+            "detail": f"no market there for {len(bad):d} of {len(picks):d} picks",
             "unbookable": bad,
         }), 400
 
@@ -1548,8 +1550,7 @@ def api_betking_code():
     # will not open.
     if len(picks) > betking.BETSLIP_MAX:
         return jsonify({"success": False,
-                        "error": "betking takes at most %d selections"
-                                 % betking.BETSLIP_MAX,
+                        "error": f"betking takes at most {betking.BETSLIP_MAX:d} selections",
                         "sent": len(picks)}), 400
 
     resolved = []
@@ -1596,10 +1597,10 @@ def api_betking_code():
         return jsonify({"success": False, "error": str(ex)}), 502
 
     def _detail(legs):
-        return dict(
-            bad_legs=len(legs), total_legs=len(picks),
-            markets=", ".join(sorted({str(b["prediction"]) for b in legs})),
-            events=", ".join(sorted({str(b["eventId"]) for b in legs})[:10]))
+        return {
+            "bad_legs": len(legs), "total_legs": len(picks),
+            "markets": ", ".join(sorted({str(b["prediction"]) for b in legs})),
+            "events": ", ".join(sorted({str(b["eventId"]) for b in legs})[:10])}
 
     # One Sentry issue per cause. A mapping gap is a bug; a market they do not
     # sell on one fixture is not, and grouping them hides the first inside the
@@ -1624,7 +1625,7 @@ def api_betking_code():
         # is a second leg, and the market is priced perfectly well. Say which.
         detail = ("one selection per game is all BetKing takes on a multiple"
                   if same_game and len(same_game) == len(bad)
-                  else "no market there for %d of %d picks" % (len(bad), len(picks)))
+                  else f"no market there for {len(bad):d} of {len(picks):d} picks")
         return jsonify({
             "success": False,
             "message": "BetKing rejected the slip",
@@ -1711,8 +1712,8 @@ def api_betpawa_code():
     # here - see betpawa.BETSLIP_MAX.
     if len(picks) > betpawa.BETSLIP_MAX:
         return jsonify({"success": False,
-                        "error": "betpawa slips are capped at %d selections "
-                                 "here" % betpawa.BETSLIP_MAX,
+                        "error": f"betpawa slips are capped at {betpawa.BETSLIP_MAX:d} selections "
+                                 "here",
                         "sent": len(picks)}), 400
 
     resolved = []
@@ -1750,10 +1751,10 @@ def api_betpawa_code():
         return jsonify({"success": False, "error": str(ex)}), 502
 
     def _detail(legs):
-        return dict(
-            bad_legs=len(legs), total_legs=len(picks),
-            markets=", ".join(sorted({str(b["prediction"]) for b in legs})),
-            events=", ".join(sorted({str(b["eventId"]) for b in legs})[:10]))
+        return {
+            "bad_legs": len(legs), "total_legs": len(picks),
+            "markets": ", ".join(sorted({str(b["prediction"]) for b in legs})),
+            "events": ", ".join(sorted({str(b["eventId"]) for b in legs})[:10])}
 
     if unmapped:
         report("booking: Betpawa market is not mapped", **_detail(unmapped))
@@ -1770,8 +1771,7 @@ def api_betpawa_code():
     if bad:
         detail = ("one selection per game is all Betpawa takes on a multiple"
                   if same_game and len(same_game) == len(bad)
-                  else "no market there for %d of %d picks"
-                       % (len(bad), len(picks)))
+                  else f"no market there for {len(bad)} of {len(picks)} picks")
         return jsonify({
             "success": False,
             "message": "Betpawa rejected the slip",
@@ -1829,8 +1829,8 @@ def _sporty_event_name(event_id, region="ng"):
         return _EVENT_NAME_CACHE[event_id]
     if len(_EVENT_NAME_CACHE) >= _EVENT_NAME_MAX * 40:
         _EVENT_NAME_CACHE.clear()
-    url = ("https://www.sportybet.com/api/%s/factsCenter/event"
-           "?eventId=%s&productId=3" % (region, quote(str(event_id))))
+    url = (f"https://www.sportybet.com/api/{region}/factsCenter/event"
+           f"?eventId={quote(str(event_id))}&productId=3")
     try:
         r = requests.get(url, headers=_headers(region), impersonate="chrome120",
                          timeout=6)
@@ -1865,14 +1865,14 @@ def read_sporty_share(code, region="ng", timeout=12):
     not: a slip with a game we do not carry is a fact the caller has to see,
     not one to hide by dropping the leg.
     """
-    url = "https://www.sportybet.com/api/%s/orders/share/%s" % (region, quote(str(code)))
+    url = f"https://www.sportybet.com/api/{region}/orders/share/{quote(str(code))}"
     try:
         r = requests.get(url, headers=_headers(region), impersonate="chrome120",
                          timeout=timeout)
         body = r.json()
     except Exception as ex:                      # noqa: BLE001 - user-facing
         log.warning("sportybet share read failed: %s", ex)
-        return {"error": "request failed: %s" % ex}
+        return {"error": f"request failed: {ex}"}
 
     if (body or {}).get("bizCode") != 10000:
         return {"error": "not found", "notFound": True}
@@ -1883,6 +1883,20 @@ def read_sporty_share(code, region="ng", timeout=12):
 
     out = []
     ticket = ((body.get("data") or {}).get("ticket") or {})
+    # THEIR PRICE FOR EACH LEG, off the same reply. `outcomes` carries every
+    # event on the ticket with the selected market and its live odds; keyed
+    # the way the ticket names a selection, so the total we quote after a
+    # booking is SportyBet's own and not our cached estimate (owner, 28 Sep:
+    # "the total booked accepted odds should show").
+    live = {}
+    for ev in ((body.get("data") or {}).get("outcomes") or []):
+        for mk in (ev.get("markets") or []):
+            for oc in (mk.get("outcomes") or []):
+                try:
+                    live[(ev.get("eventId"), str(mk.get("id")), str(oc.get("id")),
+                          mk.get("specifier") or "")] = float(oc.get("odds"))
+                except (TypeError, ValueError):
+                    pass
     # THE BOARD DROPS A MATCH AT KICK-OFF, AND A PUNTER'S CODE DOES NOT.
     # SportyBet removes a fixture from its upcoming list the moment it starts,
     # our sweep follows, and a code read an hour later then had legs the cache
@@ -1910,7 +1924,8 @@ def read_sporty_share(code, region="ng", timeout=12):
             "away": fx.get("awayTeam") or "",
             "league": fx.get("league") or "",
             "kickoff": fx.get("startTime") or "",
-            "odds": (fx.get("odds") or {}).get(pred) if pred else None,
+            "odds": live.get((eid,) + key)
+                    or ((fx.get("odds") or {}).get(pred) if pred else None),
             # Only present when the fixture had to be named by asking SportyBet
             # directly, which happens when our board has let it go: H1 / HT /
             # H2 / ENDED says the game is on or over, which is a different
@@ -2026,28 +2041,36 @@ def _verify_sporty_code(code, raw_selections, region="ng"):
     A punter handed that code opens a slip with a game missing from it, and the
     record we file claims a bet they do not hold.
 
-    Returns (ok, missing) where `missing` holds the selections that did not
-    survive. On any failure to read it back - their read endpoint down, a code
-    too fresh to resolve - it answers (True, []): unprovable is not the same as
-    wrong, and refusing a code we cannot check would be worse than the failure
-    this guards.
+    Returns (ok, missing, odds) where `missing` holds the selections that did
+    not survive and `odds` is the product of the legs' prices as the code
+    holds them - None unless every leg carries one. On any failure to read it
+    back - their read endpoint down, a code too fresh to resolve - it answers
+    (True, [], None): unprovable is not the same as wrong, and refusing a code
+    we cannot check would be worse than the failure this guards.
     """
     try:
         got = read_sporty_share(code)
     except Exception as ex:                      # noqa: BLE001 - user-facing
         log.warning("sporty read-back failed for %s: %s", code, ex)
-        return True, []
+        return True, [], None
     if not isinstance(got, dict) or got.get("error"):
-        return True, []
+        return True, [], None
     legs = got.get("legs") or []
     if not legs:
-        return True, []
+        return True, [], None
     held = {str(l.get("eventId")) for l in legs if l.get("eventId")}
     if not held:
-        return True, []
+        return True, [], None
     missing = [it for it in raw_selections
                if str(it.get("eventId")) not in held]
-    return (not missing), missing
+    prices = [l.get("odds") for l in legs]
+    odds = None
+    if prices and all(isinstance(o, (int, float)) and o > 1 for o in prices):
+        odds = 1.0
+        for o in prices:
+            odds *= o
+        odds = round(odds, 2)
+    return (not missing), missing, odds
 
 
 # BISECTION, BECAUSE THEIR REFUSAL NAMES NOTHING AND OUR CACHE IS A GUESS.
@@ -2192,8 +2215,8 @@ def _event_markets(event_id, region="ng"):
     hit = _LIVE_CACHE.get(event_id)
     if hit and time.time() - hit[0] < LIVE_TTL:
         return hit[1]
-    url = ("https://www.sportybet.com/api/%s/factsCenter/event"
-           "?eventId=%s&productId=3" % (region, quote(str(event_id))))
+    url = (f"https://www.sportybet.com/api/{region}/factsCenter/event"
+           f"?eventId={quote(str(event_id))}&productId=3")
     out = None
     try:
         r = requests.get(url, headers=_headers(region), impersonate="chrome120",
@@ -2448,7 +2471,7 @@ def api_generate_code():
         return jsonify({
             "success": False,
             "message": "SportyBet rejected the slip",
-            "detail": "no market there for %d of %d picks" % (len(unmapped), len(raw_selections)),
+            "detail": f"no market there for {len(unmapped):d} of {len(raw_selections):d} picks",
             "unbookable": unmapped,
         }), 400
 
@@ -2493,9 +2516,10 @@ def api_generate_code():
         # code for a slip they only partly understood - see
         # _verify_sporty_code - and the reader would open it to find a game
         # missing with nothing anywhere saying so.
-        ok, missing = _verify_sporty_code(result["code"], raw_selections)
+        ok, missing, odds = _verify_sporty_code(result["code"], raw_selections)
         if ok:
-            return jsonify({"success": True, "booking_code": result["code"]})
+            return jsonify({"success": True, "booking_code": result["code"],
+                            "odds": odds})
         report("booking: SportyBet dropped legs from the code it returned",
                legs=len(raw_selections), lost=len(missing),
                code=result["code"],
@@ -2506,8 +2530,8 @@ def api_generate_code():
         return jsonify({
             "success": False,
             "message": "SportyBet rejected the slip",
-            "detail": "SportyBet returned a code holding %d of %d games"
-                      % (len(raw_selections) - len(missing), len(raw_selections)),
+            "detail": "SportyBet returned a code holding "
+                      f"{len(raw_selections) - len(missing)} of {len(raw_selections)} games",
             "unbookable": [{"eventId": m.get("eventId"),
                             "prediction": m.get("prediction"),
                             "reason": "dropped_by_book"} for m in missing],
@@ -2628,7 +2652,7 @@ def home():
         try:
             _redis.ping()
             redis_ok = True
-        except Exception:
+        except Exception:  # noqa: BLE001
             redis_ok = False
     return jsonify({
         "status": "SoccerWizard API is running successfully!",

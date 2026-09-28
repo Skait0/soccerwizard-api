@@ -3,7 +3,12 @@ integrity, and the optional Redis cache layer. Zero external deps (stdlib unitte
 
 Run:  python -m unittest test_server -v
 """
-import os, re, json, tempfile, unittest
+import os
+import re
+import runpy
+import unittest
+from typing import ClassVar
+
 os.environ.pop("SENTRY_DSN", None)          # keep Sentry a no-op
 
 import server
@@ -40,7 +45,7 @@ class MarketMapIntegrity(unittest.TestCase):
         need = {str(m["marketId"]) for m in server.MARKET_MAP.values()}
         missing = need - set(server.FIXTURE_MARKET_IDS)
         self.assertEqual(missing, set(),
-                         "mapped but never fetched: %s" % sorted(missing))
+                         f"mapped but never fetched: {sorted(missing)}")
 
 
 class ExtractOdds(unittest.TestCase):
@@ -319,7 +324,7 @@ class LiveFeedDoesNotRepeatItself(unittest.TestCase):
 
     def test_real_paging_would_still_be_followed(self):
         t = LiveScoreIsNotTheFirstHalf()
-        pages = [self._page("sr:match:%d" % i) for i in range(1, 4)]
+        pages = [self._page(f"sr:match:{i:d}") for i in range(1, 4)]
         pages.append({"bizCode": 10000, "data": []})
         out, _ = t._fetch(None, pages=pages)
         self.assertEqual(len(out), 3, "distinct pages must all be kept")
@@ -880,7 +885,7 @@ class Bet9jaTellsTheBugFromTheBookmaker(unittest.TestCase):
         # else is 2.00, which is a market that is open and worth booking.
         server.bet9ja.fetch_event = lambda eid: (
             {"eventId": eid,
-             "raw": {c: (prices or {}).get("%s|%s" % (eid, c), "2.00")
+             "raw": {c: (prices or {}).get(f"{eid}|{c}", "2.00")
                      for c in priced.get(str(eid), [])}}
             if str(eid) in priced else None)
         server.bet9ja.generate_code = lambda sels: {"code": "B9CODE", "legs": len(sels)}
@@ -920,7 +925,7 @@ class Bet9jaTellsTheBugFromTheBookmaker(unittest.TestCase):
     def test_the_unmapped_warning_names_the_market_so_it_can_be_added(self):
         seen = []
         self._run([{"eventId": "1", "code": "NOT_A_REAL_MARKET"}], {}, seen)
-        ctx = [c for m, _l, c in seen if m == "booking: Bet9ja market is not mapped"][0]
+        ctx = next(c for m, _l, c in seen if m == "booking: Bet9ja market is not mapped")
         self.assertIn("NOT_A_REAL_MARKET", ctx["markets"])
 
     # A market Bet9ja simply does not price is not a fault.
@@ -998,7 +1003,7 @@ class Bet9jaTellsTheBugFromTheBookmaker(unittest.TestCase):
             sorted(b["reason"] for b in body["unbookable"]),
             ["event_gone", "not_mapped", "not_priced"])
         # Three separate Sentry issues, not one mixed bag.
-        self.assertEqual(len(set(m for m, _l, _c in seen)), 3)
+        self.assertEqual(len({m for m, _l, _c in seen}), 3)
 
     def test_the_retry_contract_survives_the_split(self):
         """dropUnbookable keys on eventId + "|" + prediction. If the split had
@@ -1041,10 +1046,7 @@ class TheServerMustNotMultiplyTheSweeps(unittest.TestCase):
 
     def _conf(self):
         path = os.path.join(os.path.dirname(__file__), "gunicorn.conf.py")
-        ns = {}
-        with open(path, encoding="utf-8") as f:
-            exec(f.read(), ns)
-        return ns
+        return runpy.run_path(path)
 
     def test_exactly_one_worker(self):
         self.assertEqual(self._conf()["workers"], 1,
@@ -1068,8 +1070,9 @@ class TheServerMustNotMultiplyTheSweeps(unittest.TestCase):
         """The premise of the one-worker rule. If these ever move behind a
         guard that runs once per deploy rather than once per process, the rule
         can be revisited - and this test should be what says so."""
-        src = open(os.path.join(os.path.dirname(__file__), "server.py"),
-                   encoding="utf-8").read()
+        with open(os.path.join(os.path.dirname(__file__), "server.py"),
+                  encoding="utf-8") as f:
+            src = f.read()
         for call in ("_start_fixtures_thread()", "_start_bet9ja_thread()"):
             self.assertRegex(src, r"(?m)^" + re.escape(call),
                              call + " must be at module level for this rule to hold")
@@ -1095,7 +1098,7 @@ class ReadASlipBack(unittest.TestCase):
     is the part that can quietly lie - a leg dropped here is a game the punter
     had on their slip and will not see on ours."""
 
-    SPORTY_OK = {"bizCode": 10000, "data": {"ticket": {"selections": [
+    SPORTY_OK: ClassVar = {"bizCode": 10000, "data": {"ticket": {"selections": [
         {"eventId": "sr:match:1", "marketId": "18", "outcomeId": "12",
          "specifier": "total=1.5"},
         {"eventId": "sr:match:9", "marketId": "18", "outcomeId": "12",
@@ -1266,7 +1269,7 @@ class ThePreflightOnlyJudgesWhatItCanSee(unittest.TestCase):
             server._FIXTURES_CACHE.clear()
             server._FIXTURES_CACHE.update(real)
 
-    CACHE = [{"eventId": "e1", "odds": {"OVER_1.5": 1.3}}]
+    CACHE: ClassVar = [{"eventId": "e1", "odds": {"OVER_1.5": 1.3}}]
 
     def test_a_pass_through_market_is_never_refused_here(self):
         for code in ("AH_1_0.5", "CORNERS_OV_8.5", "UP2_1", "CARD_H_3", "MIXGG_1"):
@@ -1356,7 +1359,7 @@ class PassThroughParity(unittest.TestCase):
     """
 
     # SportyBet quotes it, Bet9ja does not.
-    SPORTY_ONLY = {
+    SPORTY_ONLY: ClassVar = {
         # Whole Over/Under lines. Their card carries 0.5 to 5.5 in halves and
         # nothing whole; converting one changes the bet, which the site offers
         # out loud rather than doing quietly.
@@ -1374,7 +1377,7 @@ class PassThroughParity(unittest.TestCase):
     }
 
     # Bet9ja quotes it, SportyBet does not.
-    BET9JA_ONLY = {
+    BET9JA_ONLY: ClassVar = {
         # Quarter handicaps. Measured across 355 SportyBet events: halves and
         # wholes only, no quarter line anywhere on their card.
         "AH_1_-2.75", "AH_1_-2.25", "AH_1_-1.75", "AH_1_-1.25", "AH_1_-0.75",
@@ -1404,7 +1407,7 @@ class PassThroughParity(unittest.TestCase):
     }
 
     # SportyBet quotes it, Bet9ja does not - added 14 Sep from a real code.
-    SPORTY_ONLY_14SEP = {
+    SPORTY_ONLY_14SEP: ClassVar = {
         # Double chance with the 1UP promotion. Bet9ja runs 1UP on 1X2 only.
         "DC1UP_1X", "DC1UP_12", "DC1UP_X2",
         # One side's corners USED to be here ("Bet9ja sells team corners
@@ -1436,7 +1439,7 @@ class PassThroughParity(unittest.TestCase):
     # dictionary and then checking the 1,531 priced keys on a real event
     # crossed 34 of these codes; what stayed is below, each with the reason it
     # stayed.
-    SPORTY_ONLY_CATALOGUE = {
+    SPORTY_ONLY_CATALOGUE: ClassVar = {
         # The top rung of every exact-goals family. SportyBet's is "or more",
         # Bet9ja's is that number exactly, so these two look like a pair and
         # are not the same bet. Converting would narrow somebody's bet
@@ -1478,7 +1481,7 @@ class PassThroughParity(unittest.TestCase):
     # events, so all of it reads and splits rather than converting. The one
     # sibling that DOES cross - first-half 1X2 & over/under - is absent from
     # this list for exactly that reason.
-    SPORTY_ONLY_SIBLINGS = {
+    SPORTY_ONLY_SIBLINGS: ClassVar = {
         # European handicap, the match and each half. Bet9ja names one
         # (S_1X2HND1T/2T) and prices it on none of five events.
         "EH_0_1_1", "EH_0_1_2", "EH_0_1_X", "EH_0_2_1", "EH_0_2_2",
@@ -1535,13 +1538,13 @@ class PassThroughParity(unittest.TestCase):
         """
         for code in ("EXACT_6", "EXACT_FH_3"):
             self.assertIn(code, server.PASSTHROUGH_MAP,
-                          "%s should still be bookable on SportyBet" % code)
+                          f"{code} should still be bookable on SportyBet")
             self.assertIsNone(server.bet9ja.market_for(code),
-                              "%s must not cross: their top rung is exact, "
-                              "ours is 'or more'" % code)
+                              f"{code} must not cross: their top rung is exact, "
+                              "ours is 'or more'")
         for code in ("EXACT_1", "EXACT_5", "EXACT_FH_0", "EXACT_FH_2"):
             self.assertIsNotNone(server.bet9ja.market_for(code),
-                                 "%s is the same bet on both books" % code)
+                                 f"{code} is the same bet on both books")
 
     def test_a_team_total_of_three_does_cross_because_both_mean_three_plus(self):
         """The same shape as above, with the opposite answer.
@@ -1553,7 +1556,7 @@ class PassThroughParity(unittest.TestCase):
         """
         for side in ("H", "A"):
             for n in ("0", "1", "2", "3"):
-                code = "TEAMGOALS_%s_%s" % (side, n)
+                code = f"TEAMGOALS_{side}_{n}"
                 self.assertIsNotNone(server.bet9ja.market_for(code), code)
         self.assertEqual(server.bet9ja.market_for("TEAMGOALS_H_3")[0], "S_GOALSHOME_3+")
 
@@ -1685,7 +1688,7 @@ class ACodeFromARealPunter(unittest.TestCase):
             ("900300/30/total=3.5", "CORNERS_H_OV_3.5"),
         ):
             m = server.PASSTHROUGH_MAP[code]
-            got = "%s/%s/%s" % (m["marketId"], m["outcomeId"], m["specifier"])
+            got = "{}/{}/{}".format(m["marketId"], m["outcomeId"], m["specifier"])
             self.assertEqual(got, raw, code)
 
 
@@ -1699,7 +1702,7 @@ class ACodeFromARealPunter(unittest.TestCase):
             ("450003/23/", "BOUNDS_A_23"),       # away side score two to three+
         ):
             m = server.PASSTHROUGH_MAP[code]
-            got = "%s/%s/%s" % (m["marketId"], m["outcomeId"], m["specifier"])
+            got = "{}/{}/{}".format(m["marketId"], m["outcomeId"], m["specifier"])
             self.assertEqual(got, raw, code)
 
     def test_goal_bounds_ids_are_ranges_not_counts(self):
@@ -1752,8 +1755,9 @@ class ACodeFromARealPunter(unittest.TestCase):
     def test_the_lookup_is_capped_and_cached(self):
         """One request per unnamed leg, and never the same leg twice - a code
         can carry forty of them."""
-        src = open(os.path.join(os.path.dirname(__file__), "server.py"),
-                   encoding="utf-8").read()
+        with open(os.path.join(os.path.dirname(__file__), "server.py"),
+                  encoding="utf-8") as f:
+            src = f.read()
         self.assertIn("_EVENT_NAME_CACHE", src)
         self.assertIn("_EVENT_NAME_MAX", src)
         body = src[src.index("def _sporty_event_name("):]
@@ -1891,7 +1895,7 @@ class ReadingABetKingCodeThroughTheRoute(unittest.TestCase):
     read against SportyBet and answered as though it were SportyBet's.
     """
 
-    LEGS = [{"eventId": 1005309147, "prediction": "OVER_2.5",
+    LEGS: ClassVar = [{"eventId": 1005309147, "prediction": "OVER_2.5",
              "home": "Leeds", "away": "Newcastle", "league": "Premier League",
              "kickoff": "2026-09-14T21:00:00+02:00", "odds": 1.71}]
 
@@ -1904,7 +1908,7 @@ class ReadingABetKingCodeThroughTheRoute(unittest.TestCase):
             sporty_out if sporty_out is not None else {"legs": []})
         try:
             with server.app.test_client() as c:
-                r = c.get("/api/slip?book=%s&code=FR2D84" % book)
+                r = c.get(f"/api/slip?book={book}&code=FR2D84")
                 return r.status_code, r.get_json()
         finally:
             server.betking.read_coupon = real_bk
@@ -2001,7 +2005,7 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
 
     @staticmethod
     def _legs(n):
-        return [{"eventId": "sr:match:%d" % i, "marketId": "1",
+        return [{"eventId": f"sr:match:{i:d}", "marketId": "1",
                  "outcomeId": "1", "specifier": ""} for i in range(n)]
 
     def _run(self, bad_ix, legs=8):
@@ -2014,7 +2018,7 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
             ids = {x["eventId"] for x in subset}
             if any(picks[i]["eventId"] in ids for i in bad_ix):
                 return {"error": "invalid event data, no market there"}
-            return {"code": "OK%d" % len(sent)}
+            return {"code": f"OK{len(sent):d}"}
 
         old = server.generate_sportybet_code
         server.generate_sportybet_code = fake
@@ -2024,14 +2028,14 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
             server.generate_sportybet_code = old
 
     def test_one_bad_leg_among_eight_is_named(self):
-        picks, (found, how), sent = self._run([5])
+        _picks, (found, how), _sent = self._run([5])
         self.assertEqual(found, [5])
         self.assertFalse(how["ran_out"])
         # Bisection, not a sweep: eight legs must not cost eight calls.
         self.assertLess(how["calls"], 8, "this is walking the slip, not halving it")
 
     def test_two_bad_legs_are_both_named(self):
-        picks, (found, how), sent = self._run([1, 6])
+        _picks, (found, _how), _sent = self._run([1, 6])
         self.assertEqual(sorted(found), [1, 6])
 
     def test_a_slip_that_is_fine_leg_by_leg_names_nothing(self):
@@ -2070,7 +2074,7 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
         old = server.generate_sportybet_code
         server.generate_sportybet_code = fake
         try:
-            found, how = server._probe_refusal(picks)
+            _found, how = server._probe_refusal(picks)
         finally:
             server.generate_sportybet_code = old
         self.assertLessEqual(how["calls"], server.PROBE_MAX_CALLS)
@@ -2080,7 +2084,7 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
         """The 24 Sep report, at its real size. Twelve calls ran out on this
         and named nothing, so the reader was sent round on a guess."""
         for bad in ([4, 10], [0, 28], [13, 14], [2, 17]):
-            picks, (found, how), sent = self._run(bad, legs=29)
+            _picks, (found, how), sent = self._run(bad, legs=29)
             self.assertEqual(sorted(found), bad, bad)
             self.assertFalse(how["ran_out"], bad)
             self.assertNotIn(29, sent, "the whole slip is already known refused")
@@ -2101,7 +2105,7 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
             picks = self._legs(n)
             ix = {p["eventId"]: i for i, p in enumerate(picks)}
 
-            def refused(subset):
+            def refused(subset, ix=ix, singles=singles, pairs=pairs):
                 s = {ix[x["eventId"]] for x in subset}
                 return bool(s & singles) or any(a in s and b in s for a, b in pairs)
 
@@ -2118,9 +2122,9 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
                 found, how = server._probe_refusal(picks)
             finally:
                 server.generate_sportybet_code = old
-            case = "n=%d singles=%s pairs=%s" % (n, sorted(singles), pairs)
+            case = f"n={n:d} singles={sorted(singles)} pairs={pairs}"
             for i in found:
-                self.assertTrue(refused([picks[i]]), "named leg %d books alone: %s" % (i, case))
+                self.assertTrue(refused([picks[i]]), f"named leg {i:d} books alone: {case}")
             if not how["ran_out"]:
                 self.assertEqual(sorted(found), sorted(singles), case)
         self.assertGreater(checked, 300)
@@ -2142,7 +2146,7 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
             old = server.generate_sportybet_code
             server.generate_sportybet_code = fake
             try:
-                found, how = server._probe_refusal(picks, first=first)
+                found, _how = server._probe_refusal(picks, first=first)
             finally:
                 server.generate_sportybet_code = old
             return sorted(found), n["c"]
@@ -2156,7 +2160,7 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
     def test_the_route_names_both_legs_of_a_29_leg_slip(self):
         """End to end through the route: the refusal comes back naming exactly
         the two legs SportyBet will not take, as `refused_alone`."""
-        legs = [{"eventId": "sr:match:%d" % i, "prediction": "1X"} for i in range(29)]
+        legs = [{"eventId": f"sr:match:{i:d}", "prediction": "1X"} for i in range(29)]
         legs[4]["prediction"] = "OVER_1.5"
         legs[10]["prediction"] = "AWAY_OVER_0.5"
         bad = {("sr:match:4", server.market_for("OVER_1.5")["marketId"]),
@@ -2169,7 +2173,7 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
 
         old_gen, old_ver = server.generate_sportybet_code, server._verify_sporty_code
         server.generate_sportybet_code = fake
-        server._verify_sporty_code = lambda code, sel: (True, [])
+        server._verify_sporty_code = lambda code, sel: (True, [], None)
         server._FIXTURES_CACHE.clear()
         try:
             with server.app.test_client() as c:
@@ -2192,7 +2196,7 @@ class TheCodeSportyBetHandsBackIsReadBack(unittest.TestCase):
     this site was built around and the only one whose codes were never checked.
     """
 
-    SENT = [{"eventId": "sr:match:1", "prediction": "1X"},
+    SENT: ClassVar = [{"eventId": "sr:match:1", "prediction": "1X"},
             {"eventId": "sr:match:2", "prediction": "1X"},
             {"eventId": "sr:match:3", "prediction": "OVER_1.5"}]
 
@@ -2205,24 +2209,36 @@ class TheCodeSportyBetHandsBackIsReadBack(unittest.TestCase):
             server.read_sporty_share = old
 
     def test_a_short_code_names_the_leg_that_vanished(self):
-        ok, missing = self._with_read({"legs": [
+        ok, missing, _ = self._with_read({"legs": [
             {"eventId": "sr:match:1"}, {"eventId": "sr:match:2"}]})
         self.assertFalse(ok)
         self.assertEqual([m["eventId"] for m in missing], ["sr:match:3"])
 
     def test_a_complete_code_passes(self):
-        ok, missing = self._with_read({"legs": [
+        ok, missing, _ = self._with_read({"legs": [
             {"eventId": "sr:match:1"}, {"eventId": "sr:match:2"},
             {"eventId": "sr:match:3"}]})
         self.assertTrue(ok)
         self.assertEqual(missing, [])
+
+    def test_the_total_is_theirs_and_only_when_every_leg_is_priced(self):
+        """The booking reply quotes SportyBet's own total for the code (owner,
+        28 Sep 2026: "the total booked accepted odds should show"). A leg with
+        no price makes any product a number the ticket does not pay, so then
+        there is no total at all."""
+        legs = [{"eventId": "sr:match:1", "odds": 1.5},
+                {"eventId": "sr:match:2", "odds": 2.0},
+                {"eventId": "sr:match:3", "odds": 1.1}]
+        self.assertEqual(self._with_read({"legs": legs})[2], 3.3)
+        legs[2]["odds"] = None
+        self.assertIsNone(self._with_read({"legs": legs})[2])
 
     def test_a_code_we_cannot_read_is_not_called_wrong(self):
         """Unprovable is not the same as wrong. Their read endpoint being down,
         or a code too fresh to resolve, must not refuse a booking that may be
         perfectly good - that would be worse than the failure this guards."""
         for reply in ({"error": "not found"}, {"legs": []}, None, "junk"):
-            ok, missing = self._with_read(reply)
+            ok, missing, _ = self._with_read(reply)
             self.assertTrue(ok, repr(reply))
             self.assertEqual(missing, [])
 
@@ -2234,7 +2250,7 @@ class TheCodeSportyBetHandsBackIsReadBack(unittest.TestCase):
 
         server.read_sporty_share = boom
         try:
-            ok, missing = server._verify_sporty_code("ABC123", self.SENT)
+            ok, missing, _ = server._verify_sporty_code("ABC123", self.SENT)
         finally:
             server.read_sporty_share = old
         self.assertTrue(ok)
@@ -2260,7 +2276,7 @@ class EveryMarketTheBuilderOffersCarriesARealPrice(unittest.TestCase):
 
     # What the builder can put on a slip. A new chip here means a new id in
     # FIXTURE_MARKET_IDS, and this test is where that is remembered.
-    BUILDER_MARKETS = [
+    BUILDER_MARKETS: ClassVar = [
         "1", "X", "2", "1X", "X2", "12",
         "OVER_1.5", "OVER_2.5", "OVER_3.5", "GG", "NG", "FH_OVER_0.5",
         "HOME_OVER_0.5", "HOME_OVER_1.5", "AWAY_OVER_0.5", "AWAY_OVER_1.5",
@@ -2281,7 +2297,7 @@ class EveryMarketTheBuilderOffersCarriesARealPrice(unittest.TestCase):
         nothing, silently."""
         for line in ("7.5", "8.5", "9.5", "10.5"):
             for side in ("OV", "UN"):
-                code = "CORNERS_%s_%s" % (side, line)
+                code = f"CORNERS_{side}_{line}"
                 ids = server.market_for(code)
                 key = (str(ids["marketId"]), str(ids["outcomeId"]), ids.get("specifier", "") or "")
                 self.assertEqual(server._ODDS_LOOKUP.get(key), code)
@@ -2290,9 +2306,9 @@ class EveryMarketTheBuilderOffersCarriesARealPrice(unittest.TestCase):
         missing = []
         for code in self.BUILDER_MARKETS:
             ids = server.market_for(code)
-            self.assertIsNotNone(ids, "%s is offered but maps to nothing" % code)
+            self.assertIsNotNone(ids, f"{code} is offered but maps to nothing")
             if str(ids["marketId"]) not in server.FIXTURE_MARKET_IDS:
-                missing.append("%s (market %s)" % (code, ids["marketId"]))
+                missing.append("{} (market {})".format(code, ids["marketId"]))
         self.assertEqual(missing, [],
                          "offered with no real price, so priced off the model: "
                          + ", ".join(missing))
@@ -2306,7 +2322,7 @@ class EveryMarketTheBuilderOffersCarriesARealPrice(unittest.TestCase):
             ids = server.market_for(code)
             key = (str(ids["marketId"]), str(ids["outcomeId"]), ids.get("specifier", "") or "")
             self.assertEqual(server._ODDS_LOOKUP.get(key), code,
-                             "a fetched %s outcome would be dropped on the floor" % code)
+                             f"a fetched {code} outcome would be dropped on the floor")
 
     def test_win_a_half_is_a_known_gap(self):
         """WIN A HALF IS STILL ESTIMATED, and this is the record of it rather
@@ -2328,9 +2344,9 @@ class TeamCornersBuildable(unittest.TestCase):
     def test_sporty_uses_30_31_not_the_totals_12_13(self):
         for side, mid in (("H", 900300), ("A", 900301)):
             for line in ("1.5", "2.5", "3.5", "4.5", "5.5", "6.5"):
-                ov = server.PASSTHROUGH_MAP["CORNERS_%s_OV_%s" % (side, line)]
-                un = server.PASSTHROUGH_MAP["CORNERS_%s_UN_%s" % (side, line)]
-                self.assertEqual((ov["marketId"], ov["outcomeId"], ov["specifier"]), (mid, 30, "total=%s" % line))
+                ov = server.PASSTHROUGH_MAP[f"CORNERS_{side}_OV_{line}"]
+                un = server.PASSTHROUGH_MAP[f"CORNERS_{side}_UN_{line}"]
+                self.assertEqual((ov["marketId"], ov["outcomeId"], ov["specifier"]), (mid, 30, f"total={line}"))
                 self.assertEqual((un["marketId"], un["outcomeId"]), (mid, 31))
 
     def test_bet9ja_keys_name_the_side(self):
@@ -2354,7 +2370,7 @@ class LiveCardAfterRefusal(unittest.TestCase):
     """_live_verdicts: after SportyBet refuses, their live card names the dead
     legs - and silence is never a verdict."""
 
-    CARD = {"status": 0, "markets": {
+    CARD: ClassVar = {"status": 0, "markets": {
         ("18", "12", "total=2.5"): (0, 1),                   # goals over 2.5 open
         ("900394", "12", "total=27.5"): (0, 1),              # shots re-lined to 27.5
         ("900394", "12", "total=28.5"): (0, 1),
@@ -2440,7 +2456,7 @@ class LiveCardAfterRefusal(unittest.TestCase):
         try:
             with server.app.test_client() as c:
                 c.post("/api/sporty/live-check", json={"selections": [
-                    {"eventId": "ev:%d" % i, "prediction": "CORNERS_OV_9.5"} for i in range(12)]})
+                    {"eventId": f"ev:{i:d}", "prediction": "CORNERS_OV_9.5"} for i in range(12)]})
         finally:
             server._event_markets = real
         self.assertEqual(len(seen), server.LINE_CHECK_EVENTS)
