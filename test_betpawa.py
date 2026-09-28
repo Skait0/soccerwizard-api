@@ -7,6 +7,7 @@ Run:  python -m unittest test_betpawa -v
 """
 import json
 import unittest
+from typing import ClassVar
 from unittest import mock
 
 import betpawa
@@ -107,7 +108,9 @@ class MarketTable(unittest.TestCase):
     def test_every_modelled_market_the_other_books_carry_is_carried_here(self):
         # A fourth book that cannot price what the board publishes is a book
         # the builder has to special-case. All four carry the same 24.
-        import server, bet9ja, betking
+        import bet9ja
+        import betking
+        import server
         modelled = set(server.MARKET_MAP) | set(bet9ja.MARKET_MAP) | \
             set(betking.MARKET_MAP)
         missing = sorted(modelled - set(betpawa.MARKET_MAP))
@@ -341,7 +344,7 @@ class TheReadBack(unittest.TestCase):
             "odds": {"price": 2.15},
         }]}
 
-    TOTAL_LEG = [{
+    TOTAL_LEG: ClassVar = [{
         "market": {"typeId": "5000", "name": "Total Score Over/Under - FT",
                    "specifier": {"total": "2.5"}},
         "selectionInfo": {"id": "1547925885", "name": "Over", "typeId": "5001",
@@ -439,7 +442,9 @@ class TheAsymmetryIsAccountedFor(unittest.TestCase):
 
     @staticmethod
     def _vocabulary():
-        import server, bet9ja, betking
+        import bet9ja
+        import betking
+        import server
         return sorted(set(server.PASSTHROUGH_MAP) | set(bet9ja.PASSTHROUGH_MAP) |
                       set(betking.PASSTHROUGH_MAP) | set(server.MARKET_MAP) |
                       set(bet9ja.MARKET_MAP) | set(betking.MARKET_MAP))
@@ -472,7 +477,7 @@ class TheAsymmetryIsAccountedFor(unittest.TestCase):
         for prefix, why in betpawa.NOT_CARRIED.items():
             self.assertTrue(
                 why.startswith(("verified absent", "not read yet", "carried")),
-                "%s: a reason has to say which of the two it is" % prefix)
+                f"{prefix}: a reason has to say which of the two it is")
 
     def test_the_whole_ball_asian_reason_names_the_trap(self):
         # The one entry where the tempting fix ships a different bet: their
@@ -553,7 +558,7 @@ class TheContainerCanActuallyRunThis(unittest.TestCase):
         with open("requirements.txt", encoding="utf-8") as fh:
             declared = fh.read().lower()
         for name in ("curl_cffi",):
-            if "import %s" % name in src or "from %s" % name in src:
+            if f"import {name}" in src or f"from {name}" in src:
                 self.assertIn(name, declared, name)
 
 

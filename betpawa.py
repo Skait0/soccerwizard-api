@@ -24,6 +24,7 @@ import logging
 import time
 
 from curl_cffi import requests
+
 from srid import sr_id
 
 log = logging.getLogger(__name__)
@@ -724,7 +725,7 @@ def build_selection(event, code):
     """
     sel = (event.get("sel") or {}).get(code)
     if sel is None:
-        raise KeyError("no %s on event %s" % (code, event.get("eventId")))
+        raise KeyError("no {} on event {}".format(code, event.get("eventId")))
     return int(sel["priceId"])
 
 
@@ -742,10 +743,10 @@ def read_coupon(code, timeout=20):
     from the forward table, so the read and the write cannot drift apart.
     """
     try:
-        body = _get_json("%s/%s" % (BOOKING_URL, code), timeout=timeout)
+        body = _get_json(f"{BOOKING_URL}/{code}", timeout=timeout)
     except Exception as ex:                      # noqa: BLE001 - user-facing
         log.warning("betpawa coupon read failed: %s", ex)
-        return {"error": "request failed: %s" % ex}
+        return {"error": f"request failed: {ex}"}
 
     if not isinstance(body, dict) or body.get("error"):
         # BOOKING_CODE_NOT_FOUND is their answer for a code that never
@@ -781,7 +782,7 @@ def read_coupon(code, timeout=20):
                 "prediction": _BY_TRIPLE.get(triple),
                 # Their own words, kept whether or not we mapped it: an
                 # unmapped leg still has to be nameable on screen.
-                "raw": "%s/%s" % (market.get("name") or "", _outcome(got, line)),
+                "raw": "{}/{}".format(market.get("name") or "", _outcome(got, line)),
                 "home": names[0] if names else "",
                 "away": names[1] if len(names) > 1 else "",
                 "league": (info.get("competition") or {}).get("name") or "",
@@ -824,8 +825,8 @@ def generate_code(selections, timeout=30, verify=True):
     if not selections:
         return {"error": "no selections"}
     if len(selections) > BETSLIP_MAX:
-        return {"error": "betpawa slips are capped at %d selections here"
-                         % BETSLIP_MAX, "sent": len(selections)}
+        return {"error": f"betpawa slips are capped at {BETSLIP_MAX:d} selections here",
+                "sent": len(selections)}
 
     # TWO LEGS FROM ONE MATCH ARE REFUSED, AND REFUSED LOUDLY - a multiple
     # carrying both answers 400 SPORTSBOOK_WRONG_SELECTION with no indication
@@ -839,14 +840,13 @@ def generate_code(selections, timeout=30, verify=True):
         seen.add(eid)
     if dupes:
         return {"error": "betpawa will not put two selections from one game "
-                         "on a multiple (%s)"
-                         % ", ".join(str(d) for d in dupes),
+                         "on a multiple ({})".format(", ".join(str(d) for d in dupes)),
                 "sent": len(selections)}
 
     try:
         ids = [build_selection(s["event"], s["code"]) for s in selections]
     except (KeyError, TypeError, ValueError) as ex:
-        return {"error": "could not build selection: %s" % ex}
+        return {"error": f"could not build selection: {ex}"}
 
     odds_total = 1.0
     for sel in selections:
@@ -863,7 +863,7 @@ def generate_code(selections, timeout=30, verify=True):
         body = r.json()
     except Exception as ex:                      # noqa: BLE001 - upstream
         log.warning("betpawa booking failed: %s", ex)
-        return {"error": "request failed: %s" % ex}
+        return {"error": f"request failed: {ex}"}
 
     code = (body or {}).get("code")
     if not code:
@@ -878,7 +878,7 @@ def generate_code(selections, timeout=30, verify=True):
                     "legs": len(ids), "verified": False}
         if len(legs) != len(ids):
             return {"error": "betpawa accepted the slip and returned a code "
-                             "holding %d of %d legs" % (len(legs), len(ids)),
+                             f"holding {len(legs)} of {len(ids)} legs",
                     "code": code, "sent": len(ids), "available": booked}
         return {"code": code, "odds": round(odds_total, 2), "legs": len(ids),
                 "verified": True}

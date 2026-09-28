@@ -56,6 +56,7 @@ import time
 # about how it answers Railway - that difference is exactly what took the other
 # two integrations down. IMPERSONATE goes on every call.
 from curl_cffi import requests
+
 from srid import sr_id
 
 log = logging.getLogger(__name__)
@@ -555,12 +556,12 @@ def _get_json(url, timeout=20, attempts=3):
                              impersonate=IMPERSONATE)
             if r.status_code == 200:
                 return r.json()
-            last = "HTTP %s" % r.status_code
+            last = f"HTTP {r.status_code}"
         except Exception as ex:                  # noqa: BLE001 - upstream
             last = str(ex)
         if i + 1 < attempts:
             time.sleep(1.5 * (i + 1))
-    raise RuntimeError("betking GET failed: %s (%s)" % (url, last))
+    raise RuntimeError(f"betking GET failed: {url} ({last})")
 
 
 _GLOBALS = {"at": 0.0, "data": None}
@@ -719,8 +720,7 @@ def fetch_day(date, timeout=30):
     Tuesday apart from a throttled sweep. An empty dict on failure, because a
     bookmaker being unreachable must not take a page down.
     """
-    url = "%s/api/feeds/prematch/GetEvents/%s/%s/0/0/%d" % (
-        FEED, LANG, date, SOCCER)
+    url = f"{FEED}/api/feeds/prematch/GetEvents/{LANG}/{date}/0/0/{SOCCER:d}"
     try:
         payload = _get_json(url, timeout)
     except Exception as ex:                      # noqa: BLE001 - upstream
@@ -784,7 +784,7 @@ def all_fixtures(days=30, pause=0.45, today=None):
     instead of storing it and quietly shrinking the board.
     """
     import datetime
-    base = today or datetime.date.today()
+    base = today or datetime.datetime.now(datetime.timezone.utc).date()
     out, listed, failed = {}, 0, []
     # ONE DAY PAST THE WINDOW, BECAUSE THEIR PAGES ARE UTC+2. A match at 23:30
     # UTC sits on their NEXT day's page, so a sweep that stops on the last day
@@ -812,7 +812,7 @@ def fetch_event(event_id, timeout=30):
     day feed does not carry them for any competition. The response repeats the
     match once per market group, which _items and _absorb fold back together.
     """
-    url = "%s/api/feeds/prematch/event/%s/1/%s/0" % (FEED, LANG, event_id)
+    url = f"{FEED}/api/feeds/prematch/event/{LANG}/1/{event_id}/0"
     try:
         payload = _get_json(url, timeout)
     except Exception as ex:                      # noqa: BLE001 - upstream
@@ -845,10 +845,10 @@ def build_selection(event, code):
     """
     sel = (event.get("sel") or {}).get(code)
     if sel is None:
-        raise KeyError("no %s on event %s" % (code, event.get("eventId")))
+        raise KeyError("no {} on event {}".format(code, event.get("eventId")))
     fields = event.get("event")
     if not fields:
-        raise KeyError("event %s was not fetched deeply" % event.get("eventId"))
+        raise KeyError("event {} was not fetched deeply".format(event.get("eventId")))
     leg = dict(fields)
     leg.update(sel)
     # Not a banker, and compatible with the rest of the slip unless their own
@@ -892,7 +892,7 @@ def _transaction_id():
     returns the same code either way.
     """
     import random
-    return "%s%d" % (str(int(time.time() * 1000))[3:], random.randint(1, 99))
+    return str(int(time.time() * 1000))[3:] + str(random.randint(1, 99))
 
 
 def _read_body(code, timeout=20):
@@ -902,7 +902,7 @@ def _read_body(code, timeout=20):
     it just minted, and read_coupon wants the rest of it. Parsing the response
     in both places is how the two would come to disagree about the same code.
     """
-    return _get_json("%s/%s/%s" % (READ_URL, code, LANG), timeout)
+    return _get_json(f"{READ_URL}/{code}/{LANG}", timeout)
 
 
 def read_code(code, timeout=20):
@@ -940,7 +940,7 @@ def read_coupon(code, timeout=20):
         body = _read_body(code, timeout)
     except Exception as ex:                      # noqa: BLE001 - user-facing
         log.warning("betking coupon read failed: %s", ex)
-        return {"error": "request failed: %s" % ex}
+        return {"error": f"request failed: {ex}"}
 
     coupon = (body or {}).get("BookedCoupon") or {}
     rows = coupon.get("Odds") or []
@@ -984,7 +984,7 @@ def read_coupon(code, timeout=20):
             # What they called it, kept whether or not we mapped it: an
             # unmapped leg still has to be nameable on screen, and their own
             # words are better than a triple nobody can read.
-            "raw": "%s/%s" % (leg.get("MarketName") or "",
+            "raw": "{}/{}".format(leg.get("MarketName") or "",
                               leg.get("SelectionName") or ""),
             "home": names[0].strip() if names else "",
             "away": names[1].strip() if len(names) > 1 else "",
@@ -1010,7 +1010,7 @@ def generate_code(selections, timeout=30, verify=True):
     if not selections:
         return {"error": "no selections"}
     if len(selections) > BETSLIP_MAX:
-        return {"error": "betking takes at most %d selections" % BETSLIP_MAX,
+        return {"error": f"betking takes at most {BETSLIP_MAX:d} selections",
                 "sent": len(selections)}
     # TWO LEGS ON ONE MATCH IS NOT A MULTIPLE HERE. Their client only combines
     # two selections from the same event when the first one's CompatibleMarkets
@@ -1031,13 +1031,13 @@ def generate_code(selections, timeout=30, verify=True):
         seen.add(match)
     if dupes:
         return {"error": "betking will not put two selections from one game on "
-                         "a multiple (%s)" % ", ".join(str(d) for d in dupes),
+                         "a multiple ({})".format(", ".join(str(d) for d in dupes)),
                 "sent": len(selections)}
 
     try:
         legs = [build_selection(s["event"], s["code"]) for s in selections]
     except (KeyError, TypeError, ValueError) as ex:
-        return {"error": "could not build selection: %s" % ex}
+        return {"error": f"could not build selection: {ex}"}
 
     odds_total = 1.0
     for leg in legs:
@@ -1046,9 +1046,9 @@ def generate_code(selections, timeout=30, verify=True):
     try:
         gvars = global_variables(timeout)
     except Exception as ex:                      # noqa: BLE001 - upstream
-        return {"error": "could not read betking settings: %s" % ex}
+        return {"error": f"could not read betking settings: {ex}"}
 
-    url = "%s/%s" % (BOOK_URL, _transaction_id())
+    url = f"{BOOK_URL}/{_transaction_id()}"
     try:
         r = requests.post(
             url, data=json.dumps(_coupon(legs, gvars)),
@@ -1057,7 +1057,7 @@ def generate_code(selections, timeout=30, verify=True):
         body = r.json()
     except Exception as ex:                      # noqa: BLE001 - upstream
         log.warning("betking booking failed: %s", ex)
-        return {"error": "request failed: %s" % ex}
+        return {"error": f"request failed: {ex}"}
 
     # 1 is their success. Anything else is a refusal, and their enum names it.
     if body.get("ResponseStatus") != 1 or not body.get("BookedCouponCode"):
@@ -1074,8 +1074,7 @@ def generate_code(selections, timeout=30, verify=True):
                     "legs": len(legs), "verified": False}
         if len(rows) != len(legs):
             return {"error": "betking accepted the slip and returned an empty "
-                             "code (%d of %d legs resolved)"
-                             % (len(rows), len(legs)),
+                             f"code ({len(rows)} of {len(legs)} legs resolved)",
                     "code": code, "sent": len(legs), "available": available}
         return {"code": code, "odds": round(odds_total, 2), "legs": len(legs),
                 "verified": True}

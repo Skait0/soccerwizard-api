@@ -6,6 +6,7 @@ Run:  python -m unittest test_bet9ja -v
 import json
 import re
 import unittest
+from typing import ClassVar
 from unittest import mock
 
 import bet9ja
@@ -64,7 +65,7 @@ class MarketMap(unittest.TestCase):
 
     def test_groups_are_derived_not_restated(self):
         # Adding a market in a new group must not leave that group unfetched.
-        for _code, (_key, group) in bet9ja.MARKET_MAP.items():
+        for (_key, group) in bet9ja.MARKET_MAP.values():
             self.assertIn(group, bet9ja.MARKET_GROUPS)
 
     def test_home_away_markets_are_in_the_home_away_group(self):
@@ -97,7 +98,7 @@ class FetchEvents(unittest.TestCase):
 
     def test_decodes_the_markets_we_offer(self):
         out = self._run(_feed({"0": _event()}))
-        row = list(out.values())[0]
+        row = next(iter(out.values()))
         self.assertEqual(row["teams"], "Ipswich Town - Liverpool")
         self.assertEqual(row["kickoff"], "2026-09-04T19:00:00Z")
         self.assertEqual(row["odds"], {"1X": 2.40, "OVER_1.5": 1.16})
@@ -112,7 +113,7 @@ class FetchEvents(unittest.TestCase):
     def test_markets_we_do_not_offer_are_ignored(self):
         out = self._run(_feed({"0": _event(odds={"S_CORNERS_O": "1.5",
                                                  "S_DC_1X": "2.40"})}))
-        self.assertEqual(list(out.values())[0]["odds"], {"1X": 2.40})
+        self.assertEqual(next(iter(out.values()))["odds"], {"1X": 2.40})
 
     def test_suspended_prices_are_skipped_not_crashed_on(self):
         # A suspended market comes back as "-" or "".
@@ -155,7 +156,7 @@ class FetchLeagueMerges(unittest.TestCase):
             out = bet9ja.fetch_league(492, by_group=False)
 
         self.assertEqual(len(calls), len(bet9ja.MARKET_GROUPS))
-        row = list(out.values())[0]
+        row = next(iter(out.values()))
         self.assertEqual(row["odds"],
                          {"1X": 2.40, "HOME_OVER_0.5": 1.38, "AWAY_OVER_0.5": 1.07})
 
@@ -176,7 +177,7 @@ class FetchLeagueMerges(unittest.TestCase):
             return r
 
         with mock.patch.object(bet9ja.requests, "get", side_effect=fake_get):
-            row = list(bet9ja.fetch_league(492, by_group=False).values())[0]
+            row = next(iter(bet9ja.fetch_league(492, by_group=False).values()))
         self.assertEqual(set(row["raw"]), set(row["odds"]),
                          "every priced market must also have its wire value")
         self.assertEqual(row["raw"]["HOME_OVER_0.5"], "1.38")
@@ -257,7 +258,7 @@ class BuildSelection(unittest.TestCase):
     def setUp(self):
         r = mock.Mock(); r.json.return_value = _feed({"7": _event()})
         with mock.patch.object(bet9ja.requests, "get", return_value=r):
-            self.ev = list(bet9ja.fetch_events(492).values())[0]
+            self.ev = next(iter(bet9ja.fetch_events(492).values()))
 
     def test_carries_the_fields_their_slip_wants(self):
         """Matched field by field against a real booking, not inferred.
@@ -306,7 +307,7 @@ class GenerateCode(unittest.TestCase):
     def setUp(self):
         r = mock.Mock(); r.json.return_value = _feed({"7": _event()})
         with mock.patch.object(bet9ja.requests, "get", return_value=r):
-            self.ev = list(bet9ja.fetch_events(492).values())[0]
+            self.ev = next(iter(bet9ja.fetch_events(492).values()))
         self.picks = [{"event": self.ev, "code": "1X"}]
 
     def _posted(self, response):
@@ -436,7 +437,7 @@ class TheGidRouteIgnoresMkey(unittest.TestCase):
 
 
 class AllFixtures(unittest.TestCase):
-    CAT = {"1": {"league": "Allsvenskan", "country": "Sweden", "events": 2},
+    CAT: ClassVar = {"1": {"league": "Allsvenskan", "country": "Sweden", "events": 2},
            "2": {"league": "Liga MX", "country": "Mexico", "events": 1}}
 
     def test_it_reports_their_count_beside_ours(self):
@@ -500,16 +501,16 @@ class RetryTransport(unittest.TestCase):
             r = mock.Mock(); r.json.return_value = {"ok": True}
             return r
 
-        with mock.patch.object(bet9ja.requests, "get", side_effect=flaky):
-            with mock.patch.object(bet9ja.time, "sleep"):
-                self.assertEqual(bet9ja._get_json("u"), {"ok": True})
+        with mock.patch.object(bet9ja.requests, "get", side_effect=flaky), \
+                mock.patch.object(bet9ja.time, "sleep"):
+            self.assertEqual(bet9ja._get_json("u"), {"ok": True})
         self.assertEqual(len(tries), 3)
 
     def test_it_gives_up_rather_than_retrying_for_ever(self):
-        with mock.patch.object(bet9ja.requests, "get", side_effect=OSError("down")):
-            with mock.patch.object(bet9ja.time, "sleep"):
-                with self.assertRaises(OSError):
-                    bet9ja._get_json("u", attempts=2)
+        with mock.patch.object(bet9ja.requests, "get", side_effect=OSError("down")), \
+                mock.patch.object(bet9ja.time, "sleep"), \
+                self.assertRaises(OSError):
+            bet9ja._get_json("u", attempts=2)
 
     def test_a_block_page_is_not_retried(self):
         """A reply that arrives and will not parse is a block page. Asking
@@ -521,9 +522,9 @@ class RetryTransport(unittest.TestCase):
             r = mock.Mock(); r.json.side_effect = ValueError("not json")
             return r
 
-        with mock.patch.object(bet9ja.requests, "get", side_effect=blocked):
-            with self.assertRaises(ValueError):
-                bet9ja._get_json("u")
+        with mock.patch.object(bet9ja.requests, "get", side_effect=blocked), \
+                self.assertRaises(ValueError):
+            bet9ja._get_json("u")
         self.assertEqual(len(calls), 1)
 
 
@@ -556,7 +557,7 @@ class TheContainerCanActuallyRunThis(unittest.TestCase):
         return out
 
     def test_every_third_party_import_is_declared(self):
-        import sys, os
+        import sys
         with open("requirements.txt", encoding="utf8") as fh:
             declared = {re.split(r"[\[<>=!;\s]", ln.strip())[0].lower().replace("-", "_")
                         for ln in fh if ln.strip() and not ln.startswith("#")}
@@ -573,9 +574,9 @@ class TheContainerCanActuallyRunThis(unittest.TestCase):
                     continue
                 self.assertIn(
                     name.lower(), declared,
-                    "%s imports %r and requirements.txt does not list it - "
+                    f"{mod} imports {name!r} and requirements.txt does not list it - "
                     "the container will fail to boot even though every test "
-                    "here passes" % (mod, name))
+                    "here passes")
 
     def test_bet9ja_does_not_use_plain_requests(self):
         with open("bet9ja.py", encoding="utf8") as fh:
@@ -594,8 +595,7 @@ class TheContainerCanActuallyRunThis(unittest.TestCase):
         calls = len(re.findall(r"\brequests\.(?:get|post)\(", src))
         marked = len(re.findall(r"\bimpersonate=IMPERSONATE\b", src))
         self.assertEqual(calls, marked,
-                         "%d outbound calls but %d carry impersonate=" %
-                         (calls, marked))
+                         f"{calls:d} outbound calls but {marked:d} carry impersonate=")
 
 
 if __name__ == "__main__":

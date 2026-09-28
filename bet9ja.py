@@ -23,6 +23,7 @@ that produces a rejected payload with nothing to explain it.
 import json
 import logging
 import time
+from urllib.parse import quote
 
 # curl_cffi, not requests, and the reason is not style.
 #
@@ -36,7 +37,7 @@ import time
 # IMPERSONATE goes on every call. Sending it only on the ones that seemed to
 # need it is how you end up debugging this twice.
 from curl_cffi import requests
-from urllib.parse import quote
+
 from srid import sr_id
 
 log = logging.getLogger(__name__)
@@ -170,8 +171,8 @@ _MIX_SIGNS = (("MIX_1_OV", "1orOv"), ("MIX_1_UN", "1orUn"),
               ("MIX_2_OV", "2orOv"), ("MIX_2_UN", "2orUn"))
 for _line in ("1.5", "3.5"):
     for _code, _sign in _MIX_SIGNS:
-        PASSTHROUGH_MAP["%s_%s" % (_code, _line)] = (
-            "S_CHANCEMIXOU@%s_%s" % (_line, _sign), 1)
+        PASSTHROUGH_MAP[f"{_code}_{_line}"] = (
+            f"S_CHANCEMIXOU@{_line}_{_sign}", 1)
 
 # THE 2.5 LINE IS A DIFFERENT MARKET ENTIRELY, and missing it is what made this
 # family look unconvertible. There are four chance-mix families here, not one:
@@ -184,23 +185,23 @@ for _line in ("1.5", "3.5"):
 # 2.5 is exactly what SportyBet sells on 854-859, so those legs cross with
 # nothing changed at all.
 for _code, _sign in _MIX_SIGNS:
-    PASSTHROUGH_MAP["%s_2.5" % _code] = ("S_CHANCEMIXGGOU@2.5_%s" % _sign, 1)
+    PASSTHROUGH_MAP[f"{_code}_2.5"] = (f"S_CHANCEMIXGGOU@2.5_{_sign}", 1)
 
 # 1X2 or GG/NG - SportyBet's 860-862 against their S_CHANCEMIX. No line on
 # either side, so nothing to reconcile.
 for _code, _sign in (("MIXGG_1", "1orGG"), ("MIXGG_X", "XorGG"),
                      ("MIXGG_2", "2orGG"), ("MIXNG_1", "1orNG"),
                      ("MIXNG_X", "XorNG"), ("MIXNG_2", "2orNG")):
-    PASSTHROUGH_MAP[_code] = ("S_CHANCEMIX_%s" % _sign, 1)
+    PASSTHROUGH_MAP[_code] = (f"S_CHANCEMIX_{_sign}", 1)
 
 # Team cards, against SportyBet's 800060. "N or more" there is "over N-0.5"
 # here, which is the same bet said two ways. Their home side runs to 3.5 and
 # the away side stops at 2.5, so anything above that has no pair and is left
 # named rather than guessed at.
 for _n, _line in ((1, "0.5"), (2, "1.5"), (3, "2.5"), (4, "3.5")):
-    PASSTHROUGH_MAP["CARD_H_%d" % _n] = ("S_OUBOOKHOME@%s_O" % _line, 1)
+    PASSTHROUGH_MAP[f"CARD_H_{_n:d}"] = (f"S_OUBOOKHOME@{_line}_O", 1)
 for _n, _line in ((1, "0.5"), (2, "1.5"), (3, "2.5")):
-    PASSTHROUGH_MAP["CARD_A_%d" % _n] = ("S_OUBOOKAWAY@%s_O" % _line, 1)
+    PASSTHROUGH_MAP[f"CARD_A_{_n:d}"] = (f"S_OUBOOKAWAY@{_line}_O", 1)
 
 # Corners for the match, against SportyBet's 166. Their card runs 7.5 to 14.5
 # and SportyBet's 6.5 to 12.5, so the shared middle is mapped and the ends are
@@ -209,12 +210,12 @@ for _n, _line in ((1, "0.5"), (2, "1.5"), (3, "2.5")):
 # 23 Sep 2026 (Norway v Denmark: S_OUSHOTS@24.5_O .. @27.5_O). Same lines as
 # SportyBet's, which is what lets one chip serve both.
 for _line in ("19.5", "20.5", "21.5", "22.5", "23.5", "24.5", "25.5", "26.5", "27.5", "28.5", "29.5", "30.5", "31.5"):
-    PASSTHROUGH_MAP["SHOTS_OV_%s" % _line] = ("S_OUSHOTS@%s_O" % _line, 1)
-    PASSTHROUGH_MAP["SHOTS_UN_%s" % _line] = ("S_OUSHOTS@%s_U" % _line, 1)
+    PASSTHROUGH_MAP[f"SHOTS_OV_{_line}"] = (f"S_OUSHOTS@{_line}_O", 1)
+    PASSTHROUGH_MAP[f"SHOTS_UN_{_line}"] = (f"S_OUSHOTS@{_line}_U", 1)
 
 for _line in ("7.5", "8.5", "9.5", "10.5", "11.5", "12.5", "13.5", "14.5"):
-    PASSTHROUGH_MAP["CORNERS_OV_%s" % _line] = ("S_OUCORNERS@%s_O" % _line, 1)
-    PASSTHROUGH_MAP["CORNERS_UN_%s" % _line] = ("S_OUCORNERS@%s_U" % _line, 1)
+    PASSTHROUGH_MAP[f"CORNERS_OV_{_line}"] = (f"S_OUCORNERS@{_line}_O", 1)
+    PASSTHROUGH_MAP[f"CORNERS_UN_{_line}"] = (f"S_OUCORNERS@{_line}_U", 1)
 
 # Corners per team, against SportyBet's 900300/900301. Read off the priced card
 # on 25 Sep 2026 (San Jose v Portland and four more MLS games): home keys
@@ -224,10 +225,10 @@ for _line in ("7.5", "8.5", "9.5", "10.5", "11.5", "12.5", "13.5", "14.5"):
 # half line SportyBet maps is mapped here too; one this card does not carry is
 # simply never priced.
 for _line in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5", "6.5", "7.5", "8.5", "9.5"):
-    PASSTHROUGH_MAP["CORNERS_H_OV_%s" % _line] = ("S_CORNERSHOMEOU@%s_HCO" % _line, 1)
-    PASSTHROUGH_MAP["CORNERS_H_UN_%s" % _line] = ("S_CORNERSHOMEOU@%s_HCU" % _line, 1)
-    PASSTHROUGH_MAP["CORNERS_A_OV_%s" % _line] = ("S_CORNERSAWAYOU@%s_ACO" % _line, 1)
-    PASSTHROUGH_MAP["CORNERS_A_UN_%s" % _line] = ("S_CORNERSAWAYOU@%s_ACU" % _line, 1)
+    PASSTHROUGH_MAP[f"CORNERS_H_OV_{_line}"] = (f"S_CORNERSHOMEOU@{_line}_HCO", 1)
+    PASSTHROUGH_MAP[f"CORNERS_H_UN_{_line}"] = (f"S_CORNERSHOMEOU@{_line}_HCU", 1)
+    PASSTHROUGH_MAP[f"CORNERS_A_OV_{_line}"] = (f"S_CORNERSAWAYOU@{_line}_ACO", 1)
+    PASSTHROUGH_MAP[f"CORNERS_A_UN_{_line}"] = (f"S_CORNERSAWAYOU@{_line}_ACU", 1)
 
 # The four families SportyBet already had and this side did not, found by
 # reading their card rather than guessing at names: win either half is spelled
@@ -283,8 +284,8 @@ PASSTHROUGH_MAP.update({
 for _l in ("-3", "-2.75", "-2.5", "-2.25", "-2", "-1.75", "-1.5", "-1.25",
            "-1", "-0.75", "-0.5", "-0.25", "0", "0.25", "0.5", "0.75",
            "1", "1.25", "1.5", "1.75", "2", "2.25", "2.5", "2.75", "3"):
-    PASSTHROUGH_MAP["AH_1_%s" % _l] = ("S_AH@%s_1" % _l, 1)
-    PASSTHROUGH_MAP["AH_2_%s" % _l] = ("S_AH@%s_2" % _l, 1)
+    PASSTHROUGH_MAP[f"AH_1_{_l}"] = (f"S_AH@{_l}_1", 1)
+    PASSTHROUGH_MAP[f"AH_2_{_l}"] = (f"S_AH@{_l}_2", 1)
 # ---------------------------------------------------------------------------
 # THE OTHER DIRECTION. Everything above was added so a Bet9ja code could reach
 # SportyBet. Mapping SportyBet's catalogue on 14 Sep left 158 codes this book
@@ -302,22 +303,22 @@ for _l in ("-3", "-2.75", "-2.5", "-2.25", "-2", "-1.75", "-1.5", "-1.25",
 for _o, _c in (("1", "1"), ("2", "2"), ("X", "N")):
     # Their X on this market is no-goal, not a draw - there is no draw in a
     # question about who scores first.
-    PASSTHROUGH_MAP["FIRSTGOAL_%s" % _c] = ("S_1STGOAL_%s" % _o, 1)
+    PASSTHROUGH_MAP[f"FIRSTGOAL_{_c}"] = (f"S_1STGOAL_{_o}", 1)
 for _o, _c in (("HT1", "H1"), ("HT2", "H2"), ("HT>2", "H3"),
                ("AT1", "A1"), ("AT2", "A2"), ("AT>2", "A3"), ("X", "DRAW")):
-    PASSTHROUGH_MAP["MARGIN_%s" % _c] = ("S_WINMARGIN_%s" % _o, 1)
+    PASSTHROUGH_MAP[f"MARGIN_{_c}"] = (f"S_WINMARGIN_{_o}", 1)
 for _side, _key in (("H", "S_GOALSHOME"), ("A", "S_GOALSAWAY")):
     # "3+" on both sides, so the top rung crosses here where it does not for
     # the match-total family above.
     for _o, _c in (("0", "0"), ("1", "1"), ("2", "2"), ("3+", "3")):
-        PASSTHROUGH_MAP["TEAMGOALS_%s_%s" % (_side, _c)] = ("%s_%s" % (_key, _o), 1)
+        PASSTHROUGH_MAP[f"TEAMGOALS_{_side}_{_c}"] = (f"{_key}_{_o}", 1)
 for _n in ("1", "2", "3", "4", "5"):
-    PASSTHROUGH_MAP["EXACT_%s" % _n] = ("S_EXACTGOAL_%s" % _n, 1)
+    PASSTHROUGH_MAP[f"EXACT_{_n}"] = (f"S_EXACTGOAL_{_n}", 1)
 for _n in ("0", "1", "2"):
-    PASSTHROUGH_MAP["EXACT_FH_%s" % _n] = ("S_EG1_%s" % _n, 1)
+    PASSTHROUGH_MAP[f"EXACT_FH_{_n}"] = (f"S_EG1_{_n}", 1)
 for _l in ("0.5", "1.5", "2.5"):
-    PASSTHROUGH_MAP["SH_OVER_%s" % _l] = ("S_OU2T@%s_O" % _l, 1)
-    PASSTHROUGH_MAP["SH_UNDER_%s" % _l] = ("S_OU2T@%s_U" % _l, 1)
+    PASSTHROUGH_MAP[f"SH_OVER_{_l}"] = (f"S_OU2T@{_l}_O", 1)
+    PASSTHROUGH_MAP[f"SH_UNDER_{_l}"] = (f"S_OU2T@{_l}_U", 1)
 # Both halves over (or under) 1.5. SportyBet asks it as a Yes/No; Bet9ja sells
 # the two halves as one combined outcome, so the YES crosses and the NO has no
 # single counterpart to cross to - "not both" is four of their outcomes, not
@@ -332,8 +333,8 @@ PASSTHROUGH_MAP["BOTHHALVES_UN_Y"] = ("S_UO121_U15U15", 1)
 for _sign, _out in (("1_OV", "1O1T"), ("1_UN", "1U1T"), ("X_OV", "XO1T"),
                     ("X_UN", "XU1T"), ("2_OV", "2O1T"), ("2_UN", "2U1T")):
     _s, _d = _sign.split("_")
-    PASSTHROUGH_MAP["FH_MIX_%s_%s_1.5" % (_s, _d)] = (
-        "S_1X2HTOU@1.5_%s" % _out, 1)
+    PASSTHROUGH_MAP[f"FH_MIX_{_s}_{_d}_1.5"] = (
+        f"S_1X2HTOU@1.5_{_out}", 1)
 
 # LEFT UNMAPPED ON PURPOSE, having been looked for and not found priced:
 #   The rest of the sibling tranche. Their dictionary names a European
@@ -379,7 +380,7 @@ def parse_odds_key(key):
     """
     parts = key.split("_")
     if len(parts) < 3:
-        raise ValueError("not a Bet9ja odds key: %r" % (key,))
+        raise ValueError(f"not a Bet9ja odds key: {key!r}")
     market, aux = parts[1], None
     if "@" in market:
         market, aux = market.split("@", 1)
@@ -430,14 +431,12 @@ def fetch_events(league_id, group=POPULAR, timeout=15, by_group=True):
     and a bookmaker being unreachable is not a reason to return a 500.
     """
     if by_group:
-        url = ("%s/GetEventsInGroup?GROUPID=%s&DISP=0&MKEY=%s"
-               % (BASE, league_id, group))
+        url = (f"{BASE}/GetEventsInGroup?GROUPID={league_id}&DISP=0&MKEY={group}")
     else:
-        url = ("%s/GetEventsInCouponV2?SCHID=%s&DISP=0&MKEY=%s"
-               % (BASE, league_id, group))
+        url = (f"{BASE}/GetEventsInCouponV2?SCHID={league_id}&DISP=0&MKEY={group}")
     try:
         data = _get_json(url, timeout)
-    except Exception as ex:
+    except Exception as ex:  # noqa: BLE001
         log.warning("bet9ja events %s/%s failed: %s", league_id, group, ex)
         return {}
 
@@ -504,9 +503,9 @@ def leagues(timeout=20):
     started without spending a request to find that out.
     """
     try:
-        pal = (_get_json("%s/GetSports?SPORTID=1&DISP=0" % BASE, timeout)
+        pal = (_get_json(f"{BASE}/GetSports?SPORTID=1&DISP=0", timeout)
                .get("D", {}).get("PAL", {}))
-    except Exception as ex:
+    except Exception as ex:  # noqa: BLE001
         log.warning("bet9ja league list failed: %s", ex)
         return {}
 
@@ -624,7 +623,7 @@ def selection_id(event_id, odds_key):
     API accepted the format and then answered 500 with an empty body: the slip
     was well-formed and referred to selections that did not resolve.
     """
-    return "%s$%s" % (event_id, odds_key)
+    return f"{event_id}${odds_key}"
 
 
 def fetch_event(event_id, timeout=15):
@@ -639,10 +638,10 @@ def fetch_event(event_id, timeout=15):
     So: list fixtures cheaply per league, and pull the full book only for the
     handful actually going on a slip.
     """
-    url = "%s/GetEvent?EVENTID=%s&DISP=0" % (BASE, event_id)
+    url = f"{BASE}/GetEvent?EVENTID={event_id}&DISP=0"
     try:
         ev = _get_json(url, timeout).get("D") or {}
-    except Exception as ex:
+    except Exception as ex:  # noqa: BLE001
         log.warning("bet9ja event %s failed: %s", event_id, ex)
         return None
     if not ev.get("ID"):
@@ -688,7 +687,7 @@ def build_selection(event, code):
     _sid_unused, sign, aux = parse_odds_key(key)
     raw = (event.get("raw") or {}).get(code)
     if raw is None:
-        raise KeyError("no %s on event %s" % (code, event.get("eventId")))
+        raise KeyError("no {} on event {}".format(code, event.get("eventId")))
     market = key.split("_")[1].split("@")[0]
     return {
         "id": selection_id(event["eventId"], key),
@@ -726,7 +725,7 @@ def generate_code(selections, timeout=15):
             evs[leg["id"]] = leg
             odds_total *= float(leg["oddValue"])
     except (KeyError, ValueError) as ex:
-        return {"error": "could not build selection: %s" % ex}
+        return {"error": f"could not build selection: {ex}"}
 
     n = len(evs)
     # ODDS maps selection id -> the odd as a STRING, keyed identically to EVS.
@@ -764,9 +763,9 @@ def generate_code(selections, timeout=15):
                               "Content-Type": "application/x-www-form-urlencoded"}),
                           timeout=timeout, impersonate=IMPERSONATE)
         body = r.json()
-    except Exception as ex:
+    except Exception as ex:  # noqa: BLE001
         log.warning("bet9ja booking failed: %s", ex)
-        return {"error": "request failed: %s" % ex}
+        return {"error": f"request failed: {ex}"}
 
     code = _find_code(body)
     if code:
@@ -836,7 +835,7 @@ def read_coupon(code, timeout=15):
         body = r.json()
     except Exception as ex:                      # noqa: BLE001 - user-facing
         log.warning("bet9ja coupon read failed: %s", ex)
-        return {"error": "request failed: %s" % ex}
+        return {"error": f"request failed: {ex}"}
 
     if (body or {}).get("R") != "OK":
         # Their answer for a code that does not exist is a 200 with R=ERROR.

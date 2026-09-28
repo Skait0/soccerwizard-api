@@ -5,6 +5,7 @@ did not understand. Zero external deps (stdlib unittest), no network.
 Run:  python -m unittest test_betking -v
 """
 import unittest
+from typing import ClassVar
 from unittest import mock
 
 import betking
@@ -349,7 +350,7 @@ class ReadingACodeBack(unittest.TestCase):
     triple the feed does, so the decode is the derived reverse table rather
     than a second map that could drift from the forward one."""
 
-    ROWS = [{
+    ROWS: ClassVar = [{
         "MatchId": 1005309147, "MatchName": "Leeds - Newcastle",
         "MarketTypeId": 160, "Spread": 2.5, "IDSelectionType": 12,
         "MarketName": "Total Goals 2.5", "SelectionName": "Over (2.50)",
@@ -464,7 +465,8 @@ class TheAsymmetryIsAccountedFor(unittest.TestCase):
 
     @staticmethod
     def _vocabulary():
-        import server, bet9ja
+        import bet9ja
+        import server
         return sorted(set(server.PASSTHROUGH_MAP) | set(bet9ja.PASSTHROUGH_MAP) |
                       set(server.MARKET_MAP) | set(bet9ja.MARKET_MAP))
 
@@ -492,7 +494,7 @@ class TheAsymmetryIsAccountedFor(unittest.TestCase):
         for prefix, why in betking.NOT_CARRIED.items():
             self.assertTrue(
                 why.startswith(("verified absent", "not read yet", "carried")),
-                "%s: a reason has to say which of the two it is" % prefix)
+                f"{prefix}: a reason has to say which of the two it is")
 
     def test_the_whole_ball_asian_reason_names_the_trap(self):
         # The one entry where the tempting fix ships a different bet. If this
@@ -549,7 +551,7 @@ class TheContainerCanActuallyRunThis(unittest.TestCase):
         with open("requirements.txt", encoding="utf-8") as fh:
             declared = fh.read().lower()
         for name in ("curl_cffi",):
-            if "import %s" % name in src or "from %s" % name in src:
+            if f"import {name}" in src or f"from {name}" in src:
                 self.assertIn(name, declared, name)
 
 

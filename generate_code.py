@@ -1,5 +1,6 @@
 from curl_cffi import requests
 
+
 def generate_sportybet_code(selections_list, region="ng"):
     url = f"https://www.sportybet.com/api/{region}/orders/share"
     
@@ -34,7 +35,7 @@ def generate_sportybet_code(selections_list, region="ng"):
             print(f"[SportyBet API Response]: {data.get('message')}")
             return None
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"[Error]: {e}")
         return None
 
