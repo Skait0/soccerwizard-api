@@ -281,7 +281,7 @@ PASSTHROUGH_MAP = {
     "SH_HOME_UNDER_0.5": ("4982", "0.5", "4984"),
     "SH_HOME_UNDER_1.5": ("4982", "1.5", "4984"),
     "SH_HOME_UNDER_2.5": ("4982", "2.5", "4984"),
-    # --- 1X2-or-total, first half (6) ---
+    # --- 1X2-and-total, first half (6) - an AND bet on both sides ---
     "FH_MIX_1_OV_1.5": ("25451913", "1.5", "25451914"),
     "FH_MIX_1_UN_1.5": ("25451913", "1.5", "25451917"),
     "FH_MIX_2_OV_1.5": ("25451913", "1.5", "25451916"),
@@ -310,32 +310,6 @@ PASSTHROUGH_MAP = {
     "MARGIN_H1": ("28000209", None, "28000210"),
     "MARGIN_H2": ("28000209", None, "28000211"),
     "MARGIN_H3": ("28000209", None, "28000212"),
-    # --- 1X2-or-both-score (6) ---
-    "MIXGG_1": ("3591790", None, "3591791"),
-    "MIXGG_2": ("3591790", None, "3591793"),
-    "MIXGG_X": ("3591790", None, "3591795"),
-    "MIXNG_1": ("3591790", None, "3591792"),
-    "MIXNG_2": ("3591790", None, "3591794"),
-    "MIXNG_X": ("3591790", None, "3591796"),
-    # --- 1X2-or-total (18) ---
-    "MIX_1_OV_1.5": ("1096755", "1.5", "1099337"),
-    "MIX_1_OV_2.5": ("1096755", "2.5", "1099337"),
-    "MIX_1_OV_3.5": ("1096755", "3.5", "1099337"),
-    "MIX_1_UN_1.5": ("1096755", "1.5", "1099340"),
-    "MIX_1_UN_2.5": ("1096755", "2.5", "1099340"),
-    "MIX_1_UN_3.5": ("1096755", "3.5", "1099340"),
-    "MIX_2_OV_1.5": ("1096755", "1.5", "1099339"),
-    "MIX_2_OV_2.5": ("1096755", "2.5", "1099339"),
-    "MIX_2_OV_3.5": ("1096755", "3.5", "1099339"),
-    "MIX_2_UN_1.5": ("1096755", "1.5", "1099342"),
-    "MIX_2_UN_2.5": ("1096755", "2.5", "1099342"),
-    "MIX_2_UN_3.5": ("1096755", "3.5", "1099342"),
-    "MIX_X_OV_1.5": ("1096755", "1.5", "1099338"),
-    "MIX_X_OV_2.5": ("1096755", "2.5", "1099338"),
-    "MIX_X_OV_3.5": ("1096755", "3.5", "1099338"),
-    "MIX_X_UN_1.5": ("1096755", "1.5", "1099341"),
-    "MIX_X_UN_2.5": ("1096755", "2.5", "1099341"),
-    "MIX_X_UN_3.5": ("1096755", "3.5", "1099341"),
     # --- second-half goals (6) ---
     "SH_OVER_0.5": ("4976", "0.5", "4977"),
     "SH_OVER_1.5": ("4976", "1.5", "4977"),
@@ -383,6 +357,17 @@ SWEEP_MARKETS = sorted({m for m, _line, _out in MARKET_MAP.values()})
 # Longest prefix wins, which matters: AH_ is half carried (the half balls) and
 # FH_CARD_ must not inherit FH_'s answer.
 NOT_CARRIED = {
+    # OR IS NOT AND (29 Sep 2026). These were mapped onto "1X2 and Totals" and
+    # "1X2 and BTTS" until the 1xBet work read the prices: Betpawa's are ABOVE
+    # both parts on every event checked, so they are AND bets, while ours are
+    # OR bets ("home OR over 1.5"). A reader asking for the safer bet was being
+    # booked the narrower one. See test_betpawa.OrBetsAreNotAndBets.
+    "MIX_": "verified absent: ours is an OR bet (\"home OR over 1.5\"); Betpawa's "
+            "\"1X2 and Totals\" is the AND bet - priced above both parts on every "
+            "event checked, 29 Sep 2026. Never map one onto the other.",
+    "MIXGG_": "verified absent: ours is an OR bet (\"draw OR both score\"); Betpawa's "
+              "\"1X2 and BTTS\" is the AND bet (priced above both parts).",
+    "MIXNG_": "verified absent: ours is an OR bet; Betpawa sells only the AND bet.",
     "AH_": "verified absent: their Asian card is half balls only, -5.5 to "
            "+5.5 in whole steps of one (checked on eight deep cards). Quarter "
            "balls are not sold at all, and whole balls exist ONLY on the "

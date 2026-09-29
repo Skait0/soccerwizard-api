@@ -564,3 +564,25 @@ class TheContainerCanActuallyRunThis(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OrBetsAreNotAndBets(unittest.TestCase):
+    """THE SEMANTIC TRAP, LIVE ON THIS BOOK UNTIL 29 SEP 2026.
+
+    Our full-time MIX_x_OV_n, MIXGG_x and MIXNG_x are OR bets - the site says
+    "Home or over 1.5", "Draw or both score"; SportyBet prices them that way
+    (928 of 928 fixtures cheaper than both parts), and Bet9ja
+    (S_CHANCEMIX_1orGG) and BetKing ("chance mix 1x2 or") sell the same.
+    Betpawa's "1X2 and Totals" / "1X2 and BTTS" are AND bets: on every event
+    checked their price was ABOVE both parts (home 1.19, over 1.5 1.10, their
+    "1 - Over" 1.28). Mapped together, a reader who asked for the safer OR bet
+    was booked the narrower AND bet. First-half FH_MIX_ is an AND bet on our
+    side too, so it stays."""
+
+    def test_or_codes_are_not_carried(self):
+        for code in ("MIX_1_OV_1.5", "MIX_X_OV_1.5", "MIX_2_UN_2.5", "MIXGG_1", "MIXNG_X"):
+            self.assertIsNone(betpawa.market_for(code), code)
+            self.assertIn(" OR ", betpawa.reason_uncarried(code), code)
+
+    def test_first_half_and_bets_stay(self):
+        self.assertIsNotNone(betpawa.market_for("FH_MIX_1_OV_1.5"))
