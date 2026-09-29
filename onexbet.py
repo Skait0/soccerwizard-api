@@ -18,6 +18,7 @@ NO SPORTRADAR ID. Nothing on their card carries one, so the site pairs 1xBet
 fixtures by names and kickoff only.
 """
 
+import collections
 import json
 import logging
 import re
@@ -491,19 +492,28 @@ def _periods_needed():
     return sorted({v[0] for v in list(MARKET_MAP.values()) + list(PASSTHROUGH_MAP.values())} - {""})
 
 
-def fetch_event(event_id):
-    """Every market we carry on one fixture, read fresh for booking.
+def periods_for(codes):
+    """The periods a set of our codes lives on, full time first."""
+    got = {(market_for(c) or ("",))[0] for c in codes} - {""}
+    return [""] + sorted(got)
 
-    The main card plus each subgame a carried market lives on. The leg is
-    (game, type, param) rather than a price id, but the line list moves, so
-    booking reads the card again rather than trusting the sweep.
+
+def fetch_event(event_id, periods=None):
+    """The markets we carry on one fixture, read fresh for booking.
+
+    ONLY THE PERIODS ASKED FOR. Reading all three subgames with a pause
+    before each cost ~2.2s a game, and past six legs the site's 15s proxy
+    timed out while a code was minted behind it (review, 29 Sep 2026). A
+    full-time slip reads the main card and nothing else; `None` still means
+    every period we carry, for tools/xbverify.py.
     """
     card = fetch_card(event_id)
     if not card:
         return None
     row = _row(card)
     _absorb(row, card)
-    for period in _periods_needed():
+    wanted = _periods_needed() if periods is None else [p for p in periods if p]
+    for period in wanted:
         gid = row["sub"].get(period)
         if not gid:
             continue
@@ -630,10 +640,23 @@ def generate_code(selections):
     # READ IT BACK, ALWAYS. A bogus type mints a code that reads back empty, and
     # 30 legs came back as 29 with no error (29 Sep 2026).
     legs = read_coupon(code).get("legs") or []
-    if len(legs) != len(events):
+    # EVERY LEG, NOT JUST THE COUNT. A leg booked against the wrong game, or
+    # one they re-lined, keeps the count and is still a different slip. Each
+    # leg read back must decode to the code sent on the event it was sent for;
+    # the ones that do not are named so the client drops exactly those.
+    sent = [(str(s["event"].get("eventId")), s["code"]) for s in selections]
+    back = collections.Counter((str(l["eventId"]), l["prediction"]) for l in legs)
+    missing = []
+    for key in sent:
+        if back[key] > 0:
+            back[key] -= 1
+        else:
+            missing.append({"eventId": key[0], "prediction": key[1]})
+    if missing or len(legs) != len(events):
         return {"error": f"1xbet accepted the slip and returned a code holding "
-                         f"{len(legs)} of {len(events)} legs",
-                "code": code, "sent": len(events), "available": len(legs)}
+                         f"{len(events) - len(missing)} of {len(events)} legs as sent",
+                "code": code, "sent": len(events), "available": len(legs),
+                "missing": missing}
     total = 1.0
     for leg in legs:
         total *= leg["odds"] or 1.0

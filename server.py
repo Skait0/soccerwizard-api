@@ -1871,6 +1871,16 @@ def api_onexbet_code():
         return jsonify({"success": False, "sent": len(picks),
                         "error": f"1xbet slips hold at most {onexbet.BETSLIP_MAX:d} selections"}), 400
     resolved, bad, cache, booked = [], [], {}, set()
+    # FAST ENOUGH FOR THE PROXIES (review C1, 29 Sep 2026). A full-time leg the
+    # sweep already priced is booked off the swept card: 1xBet does not check
+    # the price sent (the read-back reprices it) and the read-back below
+    # names any leg that has since gone. Only a game whose legs need a half or
+    # corners card, or that the sweep lacks, is read live - and only for the
+    # periods those legs live on.
+    swept = (_cache_get("onexbet", _ONEXBET_CACHE) or {}).get("data") or {}
+    codes_by_event = {}
+    for p in picks:
+        codes_by_event.setdefault(p.get("eventId"), []).append(p.get("code"))
     try:
         for p in picks:
             code, event_id = p.get("code"), p.get("eventId")
@@ -1882,7 +1892,12 @@ def api_onexbet_code():
                 bad.append(dict(leg, reason="same_game"))
                 continue
             if event_id not in cache:
-                cache[event_id] = onexbet.fetch_event(event_id)
+                row = swept.get(str(event_id))
+                periods = onexbet.periods_for(codes_by_event[event_id])
+                if row and periods == [""] and code in (row.get("odds") or {}):
+                    cache[event_id] = row
+                else:
+                    cache[event_id] = onexbet.fetch_event(event_id, periods=periods)
             ev = cache[event_id]
             if not ev:
                 bad.append(dict(leg, reason="event_gone"))
@@ -1905,6 +1920,12 @@ def api_onexbet_code():
     out = onexbet.generate_code(resolved)
     if out.get("code") and not out.get("error"):
         return jsonify({"success": True, **out})
+    if out.get("missing"):
+        # Named by the read-back, so the client drops exactly these and books
+        # the rest - the same answer as a leg refused before minting.
+        return jsonify({"success": False, "message": "1xBet rejected the slip",
+                        "detail": f"1xBet would not keep {len(out['missing'])} of {len(picks)} picks",
+                        "unbookable": [dict(m, reason="not_priced") for m in out["missing"]]}), 400
     report("1xbet booking refused", legs=len(resolved),
            detail=str(out.get("error"))[:300], empty_code=out.get("code"))
     return jsonify({"success": False, **out}), 502

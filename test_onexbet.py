@@ -316,5 +316,67 @@ class TheAsymmetryIsAccountedFor(unittest.TestCase):
             self.assertEqual(onexbet.code_for(*key), code)
 
 
+class BookingIsFast(unittest.TestCase):
+    """THE BOOKING PATH MUST FIT INSIDE THE PROXIES' TIMEOUTS (review C1).
+
+    The site's proxy gives up at 15s and the bot's converter at 8s. Reading
+    three subgame cards with a pause before each, for every game, cost ~2.2s a
+    leg - past six legs the reader got a timeout while a code was minted
+    behind it. So an event is read only for the periods its legs need."""
+
+    def test_full_time_legs_read_the_main_card_only(self):
+        seen = []
+
+        def fake(gid):
+            seen.append(int(gid))
+            return REC["card"] if int(gid) == REC["card"]["I"] else REC["half"]
+        with mock.patch.object(onexbet, "fetch_card", side_effect=fake), mock.patch("time.sleep"):
+            row = onexbet.fetch_event(str(REC["card"]["I"]), periods=[""])
+        self.assertEqual(seen, [REC["card"]["I"]])
+        self.assertIn("1", row["odds"])
+
+    def test_a_first_half_leg_reads_the_half_card_too(self):
+        seen = []
+
+        def fake(gid):
+            seen.append(int(gid))
+            return REC["card"] if int(gid) == REC["card"]["I"] else REC["half"]
+        with mock.patch.object(onexbet, "fetch_card", side_effect=fake), mock.patch("time.sleep"):
+            row = onexbet.fetch_event(str(REC["card"]["I"]), periods=["", "1st half"])
+        self.assertEqual(len(seen), 2)
+        self.assertIn("FH_OVER_0.5", row["odds"])
+
+    def test_periods_for_codes(self):
+        self.assertEqual(onexbet.periods_for(["1", "OVER_2.5"]), [""])
+        self.assertEqual(onexbet.periods_for(["1", "FH_OVER_0.5"]), ["", "1st half"])
+
+
+class TheReadBackChecksEveryLeg(unittest.TestCase):
+    """A matching COUNT is not a matching slip (review I1): a leg booked
+    against the wrong game or re-lined by them keeps the count. Each leg read
+    back must decode to the code that was sent, on the event it was sent for,
+    and the ones that do not are named so the client can drop exactly them."""
+
+    def test_a_leg_that_reads_back_as_a_different_bet_is_named(self):
+        read = json.loads(json.dumps(COUPON["read"]))
+        read["Value"]["Events"] = read["Value"]["Events"][:1]
+        read["Value"]["Events"][0]["Type"] = 3          # sent home win, reads back away win
+        calls = iter([{"Value": "ABCDE", "Success": True}, read])
+        with mock.patch.object(onexbet, "_post", side_effect=lambda *a, **k: next(calls)):
+            out = onexbet.generate_code([{"event": _event(), "code": "1"}])
+        self.assertIn("error", out)
+        self.assertEqual(out["missing"], [{"eventId": str(REC["card"]["I"]), "prediction": "1"}])
+
+    def test_a_dropped_leg_is_named(self):
+        ev = _event()
+        other = dict(ev, eventId="1", sel={"X": dict(ev["sel"]["X"], gameId=1)})
+        read = json.loads(json.dumps(COUPON["read"]))
+        read["Value"]["Events"] = read["Value"]["Events"][:1]
+        calls = iter([{"Value": "ABCDE", "Success": True}, read])
+        with mock.patch.object(onexbet, "_post", side_effect=lambda *a, **k: next(calls)):
+            out = onexbet.generate_code([{"event": ev, "code": "1"}, {"event": other, "code": "X"}])
+        self.assertEqual(out["missing"], [{"eventId": "1", "prediction": "X"}])
+
+
 if __name__ == "__main__":
     unittest.main()

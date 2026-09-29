@@ -2516,6 +2516,29 @@ class OnexbetRoutes(unittest.TestCase):
         self.assertEqual(r.status_code, 502)
         self.assertFalse(r.get_json()["success"])
 
+    def test_full_time_legs_use_the_swept_card_without_reading_1xbet(self):
+        # Review C1: a full-time leg already priced by the sweep needs no card.
+        cached = {"data": {"7": {"eventId": "7", "odds": {"1": 1.5}, "sel": {}, "sub": {}}}, "at": 0}
+        ok = {"code": "ABCDE", "odds": 1.5, "legs": 1, "verified": True}
+        with self.mock.patch.object(server, "_cache_get", return_value=cached),              self.mock.patch.object(server.onexbet, "fetch_event") as fe,              self.mock.patch.object(server.onexbet, "generate_code", return_value=ok):
+            with server.app.test_client() as c:
+                r = c.post("/api/onexbet/booking-code",
+                           json={"selections": [{"eventId": "7", "code": "1"}]})
+        fe.assert_not_called()
+        self.assertEqual(r.status_code, 200)
+
+    def test_legs_the_read_back_disowns_come_back_named(self):
+        # Review I1: the client drops exactly the named legs and retries.
+        ev = {"eventId": "7", "odds": {"1": 1.5}, "sel": {}, "sub": {}}
+        bad = {"error": "1xbet booked 0 of 1 legs as sent", "code": "ABCDE",
+               "missing": [{"eventId": "7", "prediction": "1"}]}
+        with self.mock.patch.object(server, "_cache_get", return_value=None),              self.mock.patch.object(server.onexbet, "fetch_event", return_value=ev),              self.mock.patch.object(server.onexbet, "generate_code", return_value=bad):
+            with server.app.test_client() as c:
+                r = c.post("/api/onexbet/booking-code",
+                           json={"selections": [{"eventId": "7", "code": "1"}]})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["unbookable"], [{"eventId": "7", "prediction": "1", "reason": "not_priced"}])
+
     def test_slip_reads_onexbet(self):
         legs = {"legs": [{"eventId": "7", "prediction": "1"}], "available": 1, "booked": 1}
         with self.mock.patch.object(server.onexbet, "read_coupon", return_value=legs):
