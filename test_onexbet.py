@@ -118,5 +118,44 @@ class TheSweep(unittest.TestCase):
         self.assertEqual(len(out) + stats["skipped"], 5)
 
 
+class MarketTable(unittest.TestCase):
+    def test_modelled_codes_are_all_here(self):
+        # The dozen the model prices plus their unders, same list as betpawa.MARKET_MAP.
+        import betpawa
+        self.assertEqual(set(onexbet.MARKET_MAP), set(betpawa.MARKET_MAP))
+
+    def test_never_a_default(self):
+        self.assertIsNone(onexbet.market_for("NOT_A_MARKET"))
+        self.assertIsNone(onexbet.market_for(None))
+
+    def test_their_ids_for_the_ones_that_bite(self):
+        # 5 is 12 and 6 is 2X on their card - NOT the 1X/X2/12 order.
+        self.assertEqual(onexbet.market_for("12"), ("", "5", None))
+        self.assertEqual(onexbet.market_for("X2"), ("", "6", None))
+        # First half is its own game, so its period is part of the key.
+        self.assertEqual(onexbet.market_for("FH_OVER_0.5"), ("1st half", "9", "0.5"))
+        self.assertEqual(onexbet.market_for("AWAY_OVER_1.5"), ("", "13", "1.5"))
+
+    def test_reverse_is_derived(self):
+        for code, key in onexbet.MARKET_MAP.items():
+            self.assertEqual(onexbet.code_for(*key), code)
+
+    def test_one_key_one_code(self):
+        keys = [onexbet._key(*v) for v in list(onexbet.MARKET_MAP.values()) +
+                list(onexbet.PASSTHROUGH_MAP.values())]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_card_prices_the_modelled_set(self):
+        row = onexbet._row(REC["card"])
+        onexbet._absorb(row, REC["card"])
+        for code in ("1", "X", "2", "1X", "12", "X2", "OVER_2.5", "UNDER_2.5", "GG", "NG",
+                     "HOME_OVER_0.5", "AWAY_OVER_0.5"):
+            self.assertIn(code, row["odds"], code)
+        half = onexbet._row(REC["card"])
+        onexbet._absorb(half, REC["half"], period="1st half")
+        self.assertIn("FH_OVER_0.5", half["odds"])
+        self.assertEqual(half["sel"]["FH_OVER_0.5"]["gameId"], REC["half"]["I"])
+
+
 if __name__ == "__main__":
     unittest.main()

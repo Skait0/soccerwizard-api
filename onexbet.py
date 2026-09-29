@@ -35,9 +35,38 @@ PAUSE = 0.45
 # coupon cannot exceed 50" (29 Sep 2026).
 BETSLIP_MAX = 50
 
-# Replaced by the real table in the next task.
-MARKET_MAP = {"1": ("", "1", None), "X": ("", "2", None), "2": ("", "3", None)}
+# --- the markets we model ---------------------------------------------------
+# code -> (period, T, P), all strings. Read off their card and named by their
+# own coupon read-back (tools/xbharvest.py, 29 Sep 2026): G1 "1x2" W1/X/W2 is
+# T1/2/3; G8 "Double Chance" is T4 1X, T5 12, T6 2X - NOT the order the names
+# imply; G17 "Total" over/under is T9/T10 with the line in P; G15 "Total 1" is
+# the home side's total (T11/12) and G62 "Total 2" the away side's (T13/14);
+# G19 is both-teams-to-score, T180 yes / T181 no. First half is the "1st half"
+# subgame, so FH_OVER_0.5 is that game's T9 at 0.5.
+MARKET_MAP = {
+    "1": ("", "1", None), "X": ("", "2", None), "2": ("", "3", None),
+    "1X": ("", "4", None), "12": ("", "5", None), "X2": ("", "6", None),
+    "OVER_1.5": ("", "9", "1.5"), "OVER_2.5": ("", "9", "2.5"), "OVER_3.5": ("", "9", "3.5"),
+    "GG": ("", "180", None),
+    "FH_OVER_0.5": ("1st half", "9", "0.5"),
+    "HOME_OVER_0.5": ("", "11", "0.5"), "HOME_OVER_1.5": ("", "11", "1.5"),
+    "AWAY_OVER_0.5": ("", "13", "0.5"), "AWAY_OVER_1.5": ("", "13", "1.5"),
+    # The unders, to de-vig - the builders never offer these.
+    "UNDER_1.5": ("", "10", "1.5"), "UNDER_2.5": ("", "10", "2.5"), "UNDER_3.5": ("", "10", "3.5"),
+    "NG": ("", "181", None),
+    "FH_UNDER_0.5": ("1st half", "10", "0.5"),
+    "HOME_UNDER_0.5": ("", "12", "0.5"), "HOME_UNDER_1.5": ("", "12", "1.5"),
+    "AWAY_UNDER_0.5": ("", "14", "0.5"), "AWAY_UNDER_1.5": ("", "14", "1.5"),
+}
+
 PASSTHROUGH_MAP = {}
+
+# The sweep reads the main card only. First-half prices come from the event
+# fetch at booking time - a second card per fixture would double an 18 minute
+# sweep for one market.
+SWEEP_PERIODS = ("",)
+
+NOT_CARRIED = {}
 
 
 def _p(v):
@@ -55,6 +84,32 @@ def _by_key():
     # Derived, never typed: the modelled table last so its names win.
     return {_key(*v): code
             for code, v in list(PASSTHROUGH_MAP.items()) + list(MARKET_MAP.items())}
+
+
+def market_for(code):
+    """The one place that answers "do we carry this market on 1xBet?".
+
+    NEVER a default: an unmapped market that falls back to something plausible
+    books a bet nobody asked for, and the book answers success.
+    """
+    if not code:
+        return None
+    return MARKET_MAP.get(code) or PASSTHROUGH_MAP.get(code)
+
+
+def code_for(period, t, p):
+    return _by_key().get(_key(period, t, p))
+
+
+def reason_uncarried(code):
+    """Why 1xBet does not carry one of our codes, or None if it does. Longest prefix wins."""
+    if market_for(code):
+        return None
+    best = None
+    for prefix, why in NOT_CARRIED.items():
+        if code.startswith(prefix) and (best is None or len(prefix) > len(best[0])):
+            best = (prefix, why)
+    return best[1] if best else None
 
 
 _session_obj = None
