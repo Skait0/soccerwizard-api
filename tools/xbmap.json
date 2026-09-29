@@ -630,96 +630,6 @@
    "2809",
    null
   ],
-  "MIXGG_1": [
-   "",
-   "15770",
-   null
-  ],
-  "MIXGG_2": [
-   "",
-   "15771",
-   null
-  ],
-  "MIXGG_X": [
-   "",
-   "15772",
-   null
-  ],
-  "MIXNG_1": [
-   "",
-   "15773",
-   null
-  ],
-  "MIXNG_2": [
-   "",
-   "15774",
-   null
-  ],
-  "MIXNG_X": [
-   "",
-   "15775",
-   null
-  ],
-  "MIX_1_OV_1.5": [
-   "",
-   "197",
-   "1.5"
-  ],
-  "MIX_1_OV_2.5": [
-   "",
-   "197",
-   "2.5"
-  ],
-  "MIX_1_OV_3.5": [
-   "",
-   "197",
-   "3.5"
-  ],
-  "MIX_1_UN_1.5": [
-   "",
-   "196",
-   "1.5"
-  ],
-  "MIX_1_UN_2.5": [
-   "",
-   "196",
-   "2.5"
-  ],
-  "MIX_1_UN_3.5": [
-   "",
-   "196",
-   "3.5"
-  ],
-  "MIX_2_OV_1.5": [
-   "",
-   "192",
-   "1.5"
-  ],
-  "MIX_2_OV_2.5": [
-   "",
-   "192",
-   "2.5"
-  ],
-  "MIX_2_OV_3.5": [
-   "",
-   "192",
-   "3.5"
-  ],
-  "MIX_2_UN_1.5": [
-   "",
-   "191",
-   "1.5"
-  ],
-  "MIX_2_UN_2.5": [
-   "",
-   "191",
-   "2.5"
-  ],
-  "MIX_2_UN_3.5": [
-   "",
-   "191",
-   "3.5"
-  ],
   "OVER_2": [
    "",
    "9",
@@ -1225,12 +1135,32 @@
    "MARGIN_H2",
    "MARGIN_H3"
   ],
-  "verified absent: no 'Draw + Total' outcome like 'Draw And Total > \\\\(.*\\\\) - Yes' in full time": [
+  "verified absent: ours is an OR bet (\"draw OR both score\"); 1xBet sells only \"X And Both Teams To Score\", the AND bet.": [
+   "MIXGG_1",
+   "MIXGG_2",
+   "MIXGG_X"
+  ],
+  "verified absent: ours is an OR bet (\"draw OR not both score\"); 1xBet sells only the AND bet.": [
+   "MIXNG_1",
+   "MIXNG_2",
+   "MIXNG_X"
+  ],
+  "verified absent: ours is an OR bet (\"home OR over 1.5\"); 1xBet sells only \"Team 1 To Win And Total >\", the AND bet, which is narrower. Never map one onto the other.": [
+   "MIX_1_OV_1.5",
+   "MIX_1_OV_2.5",
+   "MIX_1_OV_3.5",
+   "MIX_1_UN_1.5",
+   "MIX_1_UN_2.5",
+   "MIX_1_UN_3.5",
+   "MIX_2_OV_1.5",
+   "MIX_2_OV_2.5",
+   "MIX_2_OV_3.5",
+   "MIX_2_UN_1.5",
+   "MIX_2_UN_2.5",
+   "MIX_2_UN_3.5",
    "MIX_X_OV_1.5",
    "MIX_X_OV_2.5",
-   "MIX_X_OV_3.5"
-  ],
-  "verified absent: no 'Draw + Total' outcome like 'Draw And Total < \\\\(.*\\\\) - Yes' in full time": [
+   "MIX_X_OV_3.5",
    "MIX_X_UN_1.5",
    "MIX_X_UN_2.5",
    "MIX_X_UN_3.5"

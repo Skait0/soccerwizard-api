@@ -107,18 +107,17 @@ def propose(code):
         n = "1" if m[1] == "H" else "2"
         return find("Corners", f"Total {n}",
                     rf"Individual Total {n} {'Over' if m[2] == 'OV' else 'Under'} \(.*\)", f(m[3]))
-    m = re.fullmatch(r"(FH_)?MIX_([12X])_(OV|UN)_([\d.]+)", code)
+    # FIRST HALF ONLY. Our full-time MIX_ is an OR bet ("home or over 1.5");
+    # FH_MIX_ is an AND bet ("draw and over 1.5 in the first half"), which is
+    # what 1xBet sells. See REFUSED["MIX_"].
+    m = re.fullmatch(r"(FH_)MIX_([12X])_(OV|UN)_([\d.]+)", code)
     if m:
-        per = PER[m[1] or ""]
+        per = PER[m[1]]
         op = ">" if m[3] == "OV" else "<"
         if m[2] == "X":
             return find(per, "Draw + Total", rf"Draw And Total {op} \(.*\) - Yes", f(m[4]))
         return find(per, f"{m[2]}, Result + Total",
                     rf"Team {m[2]} To Win And Total {op} \(.*\) - Yes", f(m[4]))
-    m = re.fullmatch(r"MIX(GG|NG)_([12X])", code)
-    if m:
-        return find("", "1X2 + Each Team To Score",
-                    rf"{SIDE[m[2]]} And Both Teams To Score - {'Yes' if m[1] == 'GG' else 'No'}", None)
     m = re.fullmatch(r"UP2_([12X])", code)
     if m:
         # Their 2UP draw is named plain "X"; the two wins carry "(2UP)".
@@ -164,6 +163,12 @@ def propose(code):
 
 
 REFUSED = {
+    "MIX_": "verified absent: ours is an OR bet (\"home OR over 1.5\"); 1xBet sells only "
+            "\"Team 1 To Win And Total >\", the AND bet, which is narrower. Never map one onto the other.",
+    "MIXGG_": "verified absent: ours is an OR bet (\"draw OR both score\"); 1xBet sells only "
+              "\"X And Both Teams To Score\", the AND bet.",
+    "MIXNG_": "verified absent: ours is an OR bet (\"draw OR not both score\"); 1xBet sells only "
+              "the AND bet.",
     "DNB_": "verified absent: no draw-no-bet market, and no handicap line at 0 on a full-time "
             "card (their 0 lines exist on corners only).",
     "DC1UP_": "verified absent: 1xBet runs 2UP on the 1X2 (1X2 (2UP)), not 1UP on double chance.",

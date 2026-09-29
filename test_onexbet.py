@@ -300,6 +300,17 @@ class TheAsymmetryIsAccountedFor(unittest.TestCase):
             self.assertIn("tools/xbgen.py", fh.read())
         self.assertGreater(len(onexbet.PASSTHROUGH_MAP), 150)
 
+    def test_or_markets_are_not_mapped_onto_and_markets(self):
+        # THE SEMANTIC TRAP. Our full-time MIX_x_OV_n, MIXGG_x and MIXNG_x are
+        # "x OR ..." bets (the site labels them "Home or over 1.5", "Draw or
+        # both score"); 1xBet sells only "W1 And Total >" / "W1 And Both Teams
+        # To Score" - a narrower bet. Caught reading index.html's labels, 29 Sep.
+        for code in ("MIX_1_OV_1.5", "MIX_2_UN_2.5", "MIXGG_1", "MIXGG_X", "MIXNG_2"):
+            self.assertIsNone(onexbet.market_for(code), code)
+            self.assertIn(" OR ", onexbet.reason_uncarried(code), code)
+        # The first-half family IS an "and" bet on our side, so it stays.
+        self.assertIsNotNone(onexbet.market_for("FH_MIX_1_OV_1.5"))
+
     def test_decoding_a_passthrough_leg_gives_the_code_back(self):
         for code, key in onexbet.PASSTHROUGH_MAP.items():
             self.assertEqual(onexbet.code_for(*key), code)
