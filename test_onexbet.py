@@ -242,5 +242,50 @@ class GeneratingACode(unittest.TestCase):
         self.assertNotIn("code", out)
 
 
+def _vocabulary():
+    import bet9ja
+    import betking
+    import betpawa
+    import server
+    v = set()
+    for m in (server, bet9ja, betking, betpawa):
+        v |= set(m.MARKET_MAP) | set(m.PASSTHROUGH_MAP)
+    return sorted(v)
+
+
+class TheAsymmetryIsAccountedFor(unittest.TestCase):
+    """Every code any other book carries, 1xBet either carries or has a reason
+    not to - so a code quietly added elsewhere forces a decision here."""
+
+    def test_every_code_is_mapped_or_excused(self):
+        orphans = [c for c in _vocabulary()
+                   if not onexbet.market_for(c) and not onexbet.reason_uncarried(c)]
+        self.assertEqual(orphans, [])
+
+    def test_absent_and_unread_are_not_the_same_word(self):
+        for prefix, why in onexbet.NOT_CARRIED.items():
+            self.assertRegex(why, r"^(verified absent|not read yet|carried)", prefix)
+
+    def test_a_carried_code_never_also_claims_a_reason(self):
+        for code in list(onexbet.MARKET_MAP) + list(onexbet.PASSTHROUGH_MAP):
+            self.assertIsNone(onexbet.reason_uncarried(code), code)
+
+    def test_generated_keys_are_priced_in_the_evidence(self):
+        cat = json.load(open(os.path.join(HERE, "tools", "xbcat.json"), encoding="utf8"))
+        priced = {onexbet._key(per, T, P if P not in (None, 0) else None)
+                  for _c, _g, per, _G, T, P, _C in cat["rows"]}
+        for code, key in onexbet.PASSTHROUGH_MAP.items():
+            self.assertIn(onexbet._key(*key), priced, code)
+
+    def test_the_tail_was_generated(self):
+        with open(os.path.join(HERE, "onexbet.py"), encoding="utf-8") as fh:
+            self.assertIn("tools/xbgen.py", fh.read())
+        self.assertGreater(len(onexbet.PASSTHROUGH_MAP), 150)
+
+    def test_decoding_a_passthrough_leg_gives_the_code_back(self):
+        for code, key in onexbet.PASSTHROUGH_MAP.items():
+            self.assertEqual(onexbet.code_for(*key), code)
+
+
 if __name__ == "__main__":
     unittest.main()
