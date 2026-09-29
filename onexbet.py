@@ -18,6 +18,7 @@ NO SPORTRADAR ID. Nothing on their card carries one, so the site pairs 1xBet
 fixtures by names and kickoff only.
 """
 
+import json
 import logging
 import re
 import time
@@ -263,3 +264,156 @@ def all_fixtures(deadline_s=2100):
     log.info("1xbet swept %d fixtures (%d cards read, %d skipped at the deadline)",
              len(out), read, skipped)
     return out, {"listed": len(listing), "read": read, "skipped": skipped}
+
+
+# --- booking ----------------------------------------------------------------
+
+def _post(path, body, timeout=30):
+    r = _session().post(API + path, data=json.dumps(body), timeout=timeout, headers={
+        "Content-Type": "application/json", "Origin": SITE,
+        "Referer": SITE + "/en/line/football"})
+    return r.json()
+
+
+def _periods_needed():
+    return sorted({v[0] for v in list(MARKET_MAP.values()) + list(PASSTHROUGH_MAP.values())} - {""})
+
+
+def fetch_event(event_id):
+    """Every market we carry on one fixture, read fresh for booking.
+
+    The main card plus each subgame a carried market lives on. The leg is
+    (game, type, param) rather than a price id, but the line list moves, so
+    booking reads the card again rather than trusting the sweep.
+    """
+    card = fetch_card(event_id)
+    if not card:
+        return None
+    row = _row(card)
+    _absorb(row, card)
+    for period in _periods_needed():
+        gid = row["sub"].get(period)
+        if not gid:
+            continue
+        time.sleep(PAUSE)
+        sub = fetch_card(gid)
+        if sub:
+            _absorb(row, sub, period=period)
+    return row if row["odds"] else None
+
+
+def build_selection(event, code):
+    """One leg, in their Events shape. The game id is the SUBGAME's for a half
+    or corners market - booking it against the main game is a different bet."""
+    sel = (event.get("sel") or {}).get(code)
+    if sel is None:
+        raise KeyError("no {} on event {}".format(code, event.get("eventId")))
+    p = sel.get("P")
+    return {"GameId": int(sel["gameId"]), "Type": int(sel["T"]), "Coef": float(sel["coef"]),
+            "Param": float(p) if p is not None else 0, "PV": None, "PlayerId": 0,
+            "Kind": 3, "InstrumentId": 0, "Seconds": 0, "Price": 0, "Expired": 0,
+            "PlayersDuel": []}
+
+
+def _period_of(ev):
+    """The subgame a read-back leg belongs to, in the same words as the card's SG.
+    Read-back carries it as GameType ("Corners") and PeriodName ("1st half"),
+    seen on code XXXGS, 29 Sep 2026."""
+    return "|".join(x for x in (ev.get("GameType") or "", ev.get("PeriodName") or "") if x)
+
+
+def read_coupon(code):
+    """The legs behind a 1xBet booking code, in OUR vocabulary - the contract
+    bet9ja/betking/betpawa.read_coupon answer on, so /api/slip needs no fifth dialect.
+
+    `eventId` is the MAIN game, so a first-half leg pairs with the same board
+    fixture as a full-time one. `odds` is their LIVE price: the read-back
+    reprices every leg whatever was sent.
+    """
+    try:
+        body = _post("/LiveBet/Open/GetCoupon", {"Guid": code, "Lng": "en", "partner": 159})
+    except Exception as ex:                      # noqa: BLE001 - user-facing
+        log.warning("1xbet coupon read failed: %s", ex)
+        return {"error": f"request failed: {ex}"}
+    if not isinstance(body, dict) or not body.get("Success"):
+        # 100849 "Incorrect code"; 159271 "events ... have finished". Either
+        # way there is no slip to show.
+        return {"error": "not found", "notFound": True}
+    out = []
+    for e in (body.get("Value") or {}).get("Events") or []:
+        try:
+            odds = float(e.get("Coef"))
+        except (TypeError, ValueError):
+            odds = None
+        start = e.get("Start")
+        out.append({
+            "eventId": str(e.get("MainGameId") or e.get("GameId")),
+            # A single-row market reads back Param 0, where the table keys it None.
+            "prediction": code_for(_period_of(e), e.get("Type"), e.get("Param") or None),
+            "raw": "{}/{}".format(e.get("GroupName") or "", e.get("MarketName") or ""),
+            "home": e.get("Opp1Eng") or e.get("Opp1") or "",
+            "away": e.get("Opp2Eng") or e.get("Opp2") or "",
+            "league": e.get("ChampNameEng") or e.get("Liga") or "",
+            "kickoff": _iso(start) if start else "",
+            "odds": odds,
+        })
+    if not out:
+        return {"error": "not found", "notFound": True}
+    return {"legs": out, "available": len(out), "removed": [], "booked": len(out)}
+
+
+def read_code(code):
+    got = read_coupon(code)
+    if got.get("error"):
+        return 0, []
+    return got["available"], got["legs"]
+
+
+def generate_code(selections):
+    """Turn [{event, code}] into a 1xBet booking code, and check it."""
+    if not selections:
+        return {"error": "no selections"}
+    if len(selections) > BETSLIP_MAX:
+        return {"error": f"1xbet slips hold at most {BETSLIP_MAX:d} selections",
+                "sent": len(selections)}
+    # ONE LEG PER GAME, keyed on the MAIN game. Their save accepts a same-game
+    # pair, but their betslip marks both legs "Incompatible event" and the
+    # punter cannot place it (seen in the browser, 29 Sep 2026). A first-half
+    # leg is on the same game as a full-time one.
+    seen, dupes = set(), []
+    for s in selections:
+        eid = str((s.get("event") or {}).get("eventId") or "")
+        if eid in seen:
+            dupes.append(s.get("code"))
+        seen.add(eid)
+    if dupes:
+        return {"error": "1xbet takes one selection per game on a multiple ({})".format(
+                    ", ".join(str(d) for d in dupes)), "sent": len(selections)}
+    try:
+        events = [build_selection(s["event"], s["code"]) for s in selections]
+    except (KeyError, TypeError, ValueError) as ex:
+        return {"error": f"could not build selection: {ex}"}
+
+    body = {"notWait": True, "CheckCf": 1, "partner": 159, "AntiExpressCoef": 1,
+            "Summ": 0, "Vid": 1, "Events": events}
+    try:
+        saved = _post("/LiveBet/Open/SaveCoupon", body)
+    except Exception as ex:                      # noqa: BLE001 - upstream
+        return {"error": f"request failed: {ex}"}
+    saved = saved if isinstance(saved, dict) else {}
+    code = saved.get("Value") if saved.get("Success") else None
+    if not code:
+        return {"error": str(saved.get("Error") or saved)[:400],
+                "errorCode": saved.get("ErrorCode"), "sent": len(events)}
+
+    # READ IT BACK, ALWAYS. A bogus type mints a code that reads back empty, and
+    # 30 legs came back as 29 with no error (29 Sep 2026).
+    legs = read_coupon(code).get("legs") or []
+    if len(legs) != len(events):
+        return {"error": f"1xbet accepted the slip and returned a code holding "
+                         f"{len(legs)} of {len(events)} legs",
+                "code": code, "sent": len(events), "available": len(legs)}
+    total = 1.0
+    for leg in legs:
+        total *= leg["odds"] or 1.0
+    return {"code": code, "odds": round(total, 2), "legs": len(events), "verified": True}

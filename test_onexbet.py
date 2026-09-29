@@ -157,5 +157,90 @@ class MarketTable(unittest.TestCase):
         self.assertEqual(half["sel"]["FH_OVER_0.5"]["gameId"], REC["half"]["I"])
 
 
+COUPON = json.load(open(os.path.join(HERE, "fixtures", "onexbet_coupon.json"), encoding="utf8"))
+
+
+def _event():
+    row = onexbet._row(REC["card"])
+    onexbet._absorb(row, REC["card"])
+    onexbet._absorb(row, REC["half"], period="1st half")
+    return row
+
+
+class BuildingTheSlip(unittest.TestCase):
+    def test_full_time_leg_uses_the_main_game(self):
+        sel = onexbet.build_selection(_event(), "1")
+        self.assertEqual(sel["GameId"], REC["card"]["I"])
+        self.assertEqual((sel["Type"], sel["Kind"]), (1, 3))
+
+    def test_first_half_leg_uses_the_half_game(self):
+        sel = onexbet.build_selection(_event(), "FH_OVER_0.5")
+        self.assertEqual(sel["GameId"], REC["half"]["I"])
+        self.assertEqual((sel["Type"], sel["Param"]), (9, 0.5))
+
+    def test_unpriced_leg_is_a_key_error(self):
+        with self.assertRaises(KeyError):
+            onexbet.build_selection(_event(), "OVER_9.5")
+
+
+class TheReadBack(unittest.TestCase):
+    def test_decodes_both_legs_to_our_codes(self):
+        with mock.patch.object(onexbet, "_post", return_value=COUPON["read"]):
+            got = onexbet.read_coupon(COUPON["code"])
+        self.assertEqual([l["prediction"] for l in got["legs"]], ["1", "FH_OVER_0.5"])
+        # A half leg reports the MAIN fixture as its event, so it pairs with the board.
+        self.assertEqual({l["eventId"] for l in got["legs"]}, {str(REC["card"]["I"])})
+
+    def test_bad_code_is_not_found(self):
+        bad = {"Success": False, "Error": "Incorrect code", "ErrorCode": 100849}
+        with mock.patch.object(onexbet, "_post", return_value=bad):
+            self.assertTrue(onexbet.read_coupon("ZZZZZ").get("notFound"))
+
+
+class GeneratingACode(unittest.TestCase):
+    def _gen(self, sels, saved, read):
+        calls = iter([saved, read])
+        with mock.patch.object(onexbet, "_post", side_effect=lambda *a, **k: next(calls)):
+            return onexbet.generate_code(sels)
+
+    def _read(self, n):
+        read = json.loads(json.dumps(COUPON["read"]))
+        read["Value"]["Events"] = read["Value"]["Events"][:n]
+        return read
+
+    def test_cap_is_theirs(self):
+        ev = _event()
+        out = onexbet.generate_code([{"event": ev, "code": "1"}] * 51)
+        self.assertIn("50", out["error"])
+
+    def test_half_and_full_time_on_one_fixture_is_one_game(self):
+        ev = _event()
+        out = onexbet.generate_code([{"event": ev, "code": "1"}, {"event": ev, "code": "FH_OVER_0.5"}])
+        self.assertIn("one selection per game", out["error"])
+        self.assertIn("FH_OVER_0.5", out["error"])
+
+    def test_silently_dropped_leg_is_an_error(self):
+        # 30 sent, 29 read back, no error from them (29 Sep 2026).
+        ev = _event()
+        other = dict(ev, eventId="1", sel={"X": dict(ev["sel"]["X"], gameId=1)})
+        out = self._gen([{"event": ev, "code": "1"}, {"event": other, "code": "X"}],
+                        {"Value": "ABCDE", "Success": True}, self._read(1))
+        self.assertEqual(out["code"], "ABCDE")
+        self.assertIn("1 of 2", out["error"])
+
+    def test_clean_code_is_verified(self):
+        out = self._gen([{"event": _event(), "code": "1"}],
+                        {"Value": "ABCDE", "Success": True}, self._read(1))
+        self.assertTrue(out["verified"])
+        self.assertEqual((out["code"], out["legs"]), ("ABCDE", 1))
+
+    def test_their_refusal_is_passed_on(self):
+        refused = {"Success": False, "Error": "limit", "ErrorCode": 157972}
+        with mock.patch.object(onexbet, "_post", return_value=refused):
+            out = onexbet.generate_code([{"event": _event(), "code": "1"}])
+        self.assertEqual(out["errorCode"], 157972)
+        self.assertNotIn("code", out)
+
+
 if __name__ == "__main__":
     unittest.main()
