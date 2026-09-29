@@ -35,6 +35,7 @@ PAUSE = 0.45
 # THEIRS: 51 selections answers ErrorCode 157972, "the number of events in a
 # coupon cannot exceed 50" (29 Sep 2026).
 BETSLIP_MAX = 50
+THROTTLED = 161627
 
 # --- the markets we model ---------------------------------------------------
 # code -> (period, T, P), all strings. Read off their card and named by their
@@ -275,7 +276,7 @@ NOT_CARRIED = {
     'DC2_': 'verified absent: no 2UP on double chance.',
     'DNB_': 'verified absent: no draw-no-bet market, and no handicap line at 0 on a full-time card (their 0 lines exist on corners only).',
     'EARLY_': "verified absent: their early market is 'Goal In First 5 Minutes', a different window from ours.",
-    'EH_': 'carried at a head start of one or two goals; verified absent at three or more on eight deep cards.',
+    'EH_': 'carried at a head start of one or two goals. Three and more are not read yet: none appeared on the eight harvested cards, but a lopsided fixture sells them (Arsenal-Leeds carried -3 on 29 Sep) - re-harvest with one before mapping them.',
     'EXACT_': 'carried from 2 to 6+ through their 3-way total; verified absent: exactly 0 or exactly 1 at full time.',
     'EXGOALS_': 'verified absent: a bet on the total being anything but n is not sold.',
     'FH_AH_': 'carried, except: their first-half handicaps are +-1, +-1.5 and the quarters +-0.25, +-0.75 only - verified absent: +-0.5, 0 and +-2.',
@@ -623,11 +624,20 @@ def generate_code(selections):
 
     body = {"notWait": True, "CheckCf": 1, "partner": 159, "AntiExpressCoef": 1,
             "Summ": 0, "Vid": 1, "Events": events}
-    try:
-        saved = _post("/LiveBet/Open/SaveCoupon", body)
-    except Exception as ex:                      # noqa: BLE001 - upstream
-        return {"error": f"request failed: {ex}"}
-    saved = saved if isinstance(saved, dict) else {}
+    # THEIR THROTTLE ANSWERS 161627, "call failed, try later". 12 of 155
+    # back-to-back one-leg mints got it on 29 Sep and 11 of those booked
+    # cleanly four seconds later - so it is waited out, twice, with a long
+    # backoff. (The same code also answers a bogus game id, which a retry
+    # cannot fix; that one comes back as the error after the last try.)
+    for attempt in range(3):
+        try:
+            saved = _post("/LiveBet/Open/SaveCoupon", body)
+        except Exception as ex:                  # noqa: BLE001 - upstream
+            return {"error": f"request failed: {ex}"}
+        saved = saved if isinstance(saved, dict) else {}
+        if saved.get("ErrorCode") != THROTTLED or attempt == 2:
+            break
+        time.sleep(4 * (attempt + 1))
     code = saved.get("Value") if saved.get("Success") else None
     if not code:
         return {"error": str(saved.get("Error") or saved)[:400],

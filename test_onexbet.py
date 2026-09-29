@@ -234,6 +234,24 @@ class GeneratingACode(unittest.TestCase):
         self.assertTrue(out["verified"])
         self.assertEqual((out["code"], out["legs"]), ("ABCDE", 1))
 
+    def test_a_throttled_save_is_retried(self):
+        # 161627 "call failed, try later": 12 of 155 back-to-back mints on
+        # 29 Sep, and 11 of the 12 booked fine four seconds later.
+        throttled = {"Success": False, "Error": "Сбой вызова, попробуйте позже.", "ErrorCode": 161627}
+        calls = iter([throttled, {"Value": "ABCDE", "Success": True}, self._read(1)])
+        with mock.patch.object(onexbet, "_post", side_effect=lambda *a, **k: next(calls)), \
+             mock.patch("time.sleep") as slept:
+            out = onexbet.generate_code([{"event": _event(), "code": "1"}])
+        self.assertEqual(out.get("code"), "ABCDE")
+        self.assertTrue(out.get("verified"))
+        self.assertTrue(slept.called)
+
+    def test_a_throttle_that_persists_is_reported(self):
+        throttled = {"Success": False, "Error": "try later", "ErrorCode": 161627}
+        with mock.patch.object(onexbet, "_post", return_value=throttled), mock.patch("time.sleep"):
+            out = onexbet.generate_code([{"event": _event(), "code": "1"}])
+        self.assertEqual(out["errorCode"], 161627)
+
     def test_their_refusal_is_passed_on(self):
         refused = {"Success": False, "Error": "limit", "ErrorCode": 157972}
         with mock.patch.object(onexbet, "_post", return_value=refused):
