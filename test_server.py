@@ -2460,3 +2460,93 @@ class LiveCardAfterRefusal(unittest.TestCase):
         finally:
             server._event_markets = real
         self.assertEqual(len(seen), server.LINE_CHECK_EVENTS)
+
+
+class OnexbetRoutes(unittest.TestCase):
+    """The fifth book answers on the same three-way contract as the other four:
+    each refused leg is named with a reason rather than the first killing the
+    request, and the slip reader speaks the shared dialect."""
+
+    def setUp(self):
+        from unittest import mock
+        self.mock = mock
+
+    def test_fixtures_503_until_loaded(self):
+        with self.mock.patch.object(server, "_cache_get", return_value=None):
+            with server.app.test_client() as c:
+                r = c.get("/api/onexbet/fixtures")
+        self.assertEqual(r.status_code, 503)
+        self.assertFalse(r.get_json()["success"])
+
+    def test_same_fixture_twice_is_named_same_game(self):
+        ev = {"eventId": "7", "odds": {"1": 1.5, "OVER_2.5": 1.8}, "sel": {}, "sub": {}}
+        with self.mock.patch.object(server.onexbet, "fetch_event", return_value=ev):
+            with server.app.test_client() as c:
+                r = c.post("/api/onexbet/booking-code", json={"selections": [
+                    {"eventId": "7", "code": "1"}, {"eventId": "7", "code": "OVER_2.5"}]})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual([b["reason"] for b in r.get_json()["unbookable"]], ["same_game"])
+
+    def test_unmapped_is_named_before_any_request(self):
+        with self.mock.patch.object(server.onexbet, "fetch_event") as fe:
+            with server.app.test_client() as c:
+                r = c.post("/api/onexbet/booking-code",
+                           json={"selections": [{"eventId": "7", "code": "NOPE"}]})
+        fe.assert_not_called()
+        self.assertEqual(r.get_json()["unbookable"][0]["reason"], "not_mapped")
+
+    def test_over_their_cap_is_refused_before_any_request(self):
+        picks = [{"eventId": str(i), "code": "1"} for i in range(51)]
+        with self.mock.patch.object(server.onexbet, "fetch_event") as fe:
+            with server.app.test_client() as c:
+                r = c.post("/api/onexbet/booking-code", json={"selections": picks})
+        fe.assert_not_called()
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("50", r.get_json()["error"])
+
+    def test_a_code_holding_fewer_legs_is_not_a_success(self):
+        ev = {"eventId": "7", "odds": {"1": 1.5}, "sel": {}, "sub": {}}
+        short = {"error": "1xbet accepted the slip and returned a code holding 0 of 1 legs",
+                 "code": "ABCDE", "sent": 1, "available": 0}
+        with self.mock.patch.object(server.onexbet, "fetch_event", return_value=ev), \
+             self.mock.patch.object(server.onexbet, "generate_code", return_value=short):
+            with server.app.test_client() as c:
+                r = c.post("/api/onexbet/booking-code",
+                           json={"selections": [{"eventId": "7", "code": "1"}]})
+        self.assertEqual(r.status_code, 502)
+        self.assertFalse(r.get_json()["success"])
+
+    def test_full_time_legs_use_the_swept_card_without_reading_1xbet(self):
+        # Review C1: a full-time leg already priced by the sweep needs no card.
+        cached = {"data": {"7": {"eventId": "7", "odds": {"1": 1.5}, "sel": {}, "sub": {}}}, "at": 0}
+        ok = {"code": "ABCDE", "odds": 1.5, "legs": 1, "verified": True}
+        with self.mock.patch.object(server, "_cache_get", return_value=cached),              self.mock.patch.object(server.onexbet, "fetch_event") as fe,              self.mock.patch.object(server.onexbet, "generate_code", return_value=ok):
+            with server.app.test_client() as c:
+                r = c.post("/api/onexbet/booking-code",
+                           json={"selections": [{"eventId": "7", "code": "1"}]})
+        fe.assert_not_called()
+        self.assertEqual(r.status_code, 200)
+
+    def test_legs_the_read_back_disowns_come_back_named(self):
+        # Review I1: the client drops exactly the named legs and retries.
+        ev = {"eventId": "7", "odds": {"1": 1.5}, "sel": {}, "sub": {}}
+        bad = {"error": "1xbet booked 0 of 1 legs as sent", "code": "ABCDE",
+               "missing": [{"eventId": "7", "prediction": "1"}]}
+        with self.mock.patch.object(server, "_cache_get", return_value=None),              self.mock.patch.object(server.onexbet, "fetch_event", return_value=ev),              self.mock.patch.object(server.onexbet, "generate_code", return_value=bad):
+            with server.app.test_client() as c:
+                r = c.post("/api/onexbet/booking-code",
+                           json={"selections": [{"eventId": "7", "code": "1"}]})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["unbookable"], [{"eventId": "7", "prediction": "1", "reason": "not_priced"}])
+
+    def test_slip_reads_onexbet(self):
+        legs = {"legs": [{"eventId": "7", "prediction": "1"}], "available": 1, "booked": 1}
+        with self.mock.patch.object(server.onexbet, "read_coupon", return_value=legs):
+            with server.app.test_client() as c:
+                r = c.get("/api/slip?book=onexbet&code=ABCDE")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["book"], "onexbet")
+
+    def test_the_sweep_starts_at_import_like_the_others(self):
+        with open(os.path.join(os.path.dirname(__file__), "server.py"), encoding="utf-8") as f:
+            self.assertRegex(f.read(), r"(?m)^_start_onexbet_thread\(\)")

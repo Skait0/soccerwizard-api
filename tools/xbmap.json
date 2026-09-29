@@ -1,0 +1,1246 @@
+{
+ "map": {
+  "AH_1_-0.25": [
+   "",
+   "3829",
+   "-0.25"
+  ],
+  "AH_1_-0.75": [
+   "",
+   "3829",
+   "-0.75"
+  ],
+  "AH_1_-1": [
+   "",
+   "7",
+   "-1"
+  ],
+  "AH_1_-1.25": [
+   "",
+   "3829",
+   "-1.25"
+  ],
+  "AH_1_-1.5": [
+   "",
+   "7",
+   "-1.5"
+  ],
+  "AH_1_-1.75": [
+   "",
+   "3829",
+   "-1.75"
+  ],
+  "AH_1_-2": [
+   "",
+   "7",
+   "-2"
+  ],
+  "AH_1_-2.25": [
+   "",
+   "3829",
+   "-2.25"
+  ],
+  "AH_1_-2.5": [
+   "",
+   "7",
+   "-2.5"
+  ],
+  "AH_1_-3": [
+   "",
+   "7",
+   "-3"
+  ],
+  "AH_1_-3.5": [
+   "",
+   "7",
+   "-3.5"
+  ],
+  "AH_1_0.25": [
+   "",
+   "3829",
+   "0.25"
+  ],
+  "AH_1_0.75": [
+   "",
+   "3829",
+   "0.75"
+  ],
+  "AH_1_1": [
+   "",
+   "7",
+   "1"
+  ],
+  "AH_1_1.25": [
+   "",
+   "3829",
+   "1.25"
+  ],
+  "AH_1_1.5": [
+   "",
+   "7",
+   "1.5"
+  ],
+  "AH_1_1.75": [
+   "",
+   "3829",
+   "1.75"
+  ],
+  "AH_1_2": [
+   "",
+   "7",
+   "2"
+  ],
+  "AH_1_2.25": [
+   "",
+   "3829",
+   "2.25"
+  ],
+  "AH_1_2.5": [
+   "",
+   "7",
+   "2.5"
+  ],
+  "AH_1_3": [
+   "",
+   "7",
+   "3"
+  ],
+  "AH_1_3.5": [
+   "",
+   "7",
+   "3.5"
+  ],
+  "AH_2_-0.25": [
+   "",
+   "3830",
+   "-0.25"
+  ],
+  "AH_2_-0.75": [
+   "",
+   "3830",
+   "-0.75"
+  ],
+  "AH_2_-1": [
+   "",
+   "8",
+   "-1"
+  ],
+  "AH_2_-1.25": [
+   "",
+   "3830",
+   "-1.25"
+  ],
+  "AH_2_-1.5": [
+   "",
+   "8",
+   "-1.5"
+  ],
+  "AH_2_-1.75": [
+   "",
+   "3830",
+   "-1.75"
+  ],
+  "AH_2_-2": [
+   "",
+   "8",
+   "-2"
+  ],
+  "AH_2_-2.25": [
+   "",
+   "3830",
+   "-2.25"
+  ],
+  "AH_2_-2.5": [
+   "",
+   "8",
+   "-2.5"
+  ],
+  "AH_2_-3": [
+   "",
+   "8",
+   "-3"
+  ],
+  "AH_2_-3.5": [
+   "",
+   "8",
+   "-3.5"
+  ],
+  "AH_2_0.25": [
+   "",
+   "3830",
+   "0.25"
+  ],
+  "AH_2_0.75": [
+   "",
+   "3830",
+   "0.75"
+  ],
+  "AH_2_1": [
+   "",
+   "8",
+   "1"
+  ],
+  "AH_2_1.25": [
+   "",
+   "3830",
+   "1.25"
+  ],
+  "AH_2_1.5": [
+   "",
+   "8",
+   "1.5"
+  ],
+  "AH_2_1.75": [
+   "",
+   "3830",
+   "1.75"
+  ],
+  "AH_2_2": [
+   "",
+   "8",
+   "2"
+  ],
+  "AH_2_2.25": [
+   "",
+   "3830",
+   "2.25"
+  ],
+  "AH_2_2.5": [
+   "",
+   "8",
+   "2.5"
+  ],
+  "AH_2_3": [
+   "",
+   "8",
+   "3"
+  ],
+  "AH_2_3.5": [
+   "",
+   "8",
+   "3.5"
+  ],
+  "CORNERS_A_OV_4.5": [
+   "Corners",
+   "13",
+   "4.5"
+  ],
+  "CORNERS_A_OV_5.5": [
+   "Corners",
+   "13",
+   "5.5"
+  ],
+  "CORNERS_A_UN_4.5": [
+   "Corners",
+   "14",
+   "4.5"
+  ],
+  "CORNERS_A_UN_5.5": [
+   "Corners",
+   "14",
+   "5.5"
+  ],
+  "CORNERS_H_OV_4.5": [
+   "Corners",
+   "11",
+   "4.5"
+  ],
+  "CORNERS_H_OV_5.5": [
+   "Corners",
+   "11",
+   "5.5"
+  ],
+  "CORNERS_H_UN_4.5": [
+   "Corners",
+   "12",
+   "4.5"
+  ],
+  "CORNERS_H_UN_5.5": [
+   "Corners",
+   "12",
+   "5.5"
+  ],
+  "CORNERS_OV_10.5": [
+   "Corners",
+   "9",
+   "10.5"
+  ],
+  "CORNERS_OV_11.5": [
+   "Corners",
+   "9",
+   "11.5"
+  ],
+  "CORNERS_OV_8.5": [
+   "Corners",
+   "9",
+   "8.5"
+  ],
+  "CORNERS_OV_9.5": [
+   "Corners",
+   "9",
+   "9.5"
+  ],
+  "CORNERS_UN_10.5": [
+   "Corners",
+   "10",
+   "10.5"
+  ],
+  "CORNERS_UN_11.5": [
+   "Corners",
+   "10",
+   "11.5"
+  ],
+  "CORNERS_UN_8.5": [
+   "Corners",
+   "10",
+   "8.5"
+  ],
+  "CORNERS_UN_9.5": [
+   "Corners",
+   "10",
+   "9.5"
+  ],
+  "EH_0_1_1": [
+   "",
+   "424",
+   "-1"
+  ],
+  "EH_0_1_2": [
+   "",
+   "426",
+   "-1"
+  ],
+  "EH_0_1_X": [
+   "",
+   "425",
+   "-1"
+  ],
+  "EH_0_2_1": [
+   "",
+   "424",
+   "-2"
+  ],
+  "EH_0_2_2": [
+   "",
+   "426",
+   "-2"
+  ],
+  "EH_0_2_X": [
+   "",
+   "425",
+   "-2"
+  ],
+  "EH_1_0_1": [
+   "",
+   "424",
+   "1"
+  ],
+  "EH_1_0_2": [
+   "",
+   "426",
+   "1"
+  ],
+  "EH_1_0_X": [
+   "",
+   "425",
+   "1"
+  ],
+  "EH_2_0_1": [
+   "",
+   "424",
+   "2"
+  ],
+  "EH_2_0_2": [
+   "",
+   "426",
+   "2"
+  ],
+  "EH_2_0_X": [
+   "",
+   "425",
+   "2"
+  ],
+  "EXACT_2": [
+   "",
+   "741",
+   "2"
+  ],
+  "EXACT_3": [
+   "",
+   "741",
+   "3"
+  ],
+  "EXACT_4": [
+   "",
+   "741",
+   "4"
+  ],
+  "EXACT_5": [
+   "",
+   "741",
+   "5"
+  ],
+  "EXACT_6": [
+   "",
+   "739",
+   "5"
+  ],
+  "EXACT_FH_0": [
+   "1st half",
+   "4548",
+   null
+  ],
+  "EXACT_FH_1": [
+   "1st half",
+   "741",
+   "1"
+  ],
+  "EXACT_FH_2": [
+   "1st half",
+   "741",
+   "2"
+  ],
+  "EXACT_FH_3": [
+   "1st half",
+   "739",
+   "2"
+  ],
+  "EXACT_SH_0": [
+   "2nd half",
+   "4548",
+   null
+  ],
+  "EXACT_SH_1": [
+   "2nd half",
+   "741",
+   "1"
+  ],
+  "EXACT_SH_2": [
+   "2nd half",
+   "739",
+   "1"
+  ],
+  "FH_AH_1_-1": [
+   "1st half",
+   "7",
+   "-1"
+  ],
+  "FH_AH_1_-1.5": [
+   "1st half",
+   "7",
+   "-1.5"
+  ],
+  "FH_AH_2_-1": [
+   "1st half",
+   "8",
+   "-1"
+  ],
+  "FH_AH_2_-1.5": [
+   "1st half",
+   "8",
+   "-1.5"
+  ],
+  "FH_AWAY_OVER_0.5": [
+   "1st half",
+   "13",
+   "0.5"
+  ],
+  "FH_AWAY_OVER_1.5": [
+   "1st half",
+   "13",
+   "1.5"
+  ],
+  "FH_AWAY_UNDER_0.5": [
+   "1st half",
+   "14",
+   "0.5"
+  ],
+  "FH_AWAY_UNDER_1.5": [
+   "1st half",
+   "14",
+   "1.5"
+  ],
+  "FH_EH_0_1_1": [
+   "1st half",
+   "424",
+   "-1"
+  ],
+  "FH_EH_0_1_2": [
+   "1st half",
+   "426",
+   "-1"
+  ],
+  "FH_EH_0_1_X": [
+   "1st half",
+   "425",
+   "-1"
+  ],
+  "FH_EH_1_0_1": [
+   "1st half",
+   "424",
+   "1"
+  ],
+  "FH_EH_1_0_2": [
+   "1st half",
+   "426",
+   "1"
+  ],
+  "FH_EH_1_0_X": [
+   "1st half",
+   "425",
+   "1"
+  ],
+  "FH_HOME_OVER_0.5": [
+   "1st half",
+   "11",
+   "0.5"
+  ],
+  "FH_HOME_OVER_1.5": [
+   "1st half",
+   "11",
+   "1.5"
+  ],
+  "FH_HOME_UNDER_0.5": [
+   "1st half",
+   "12",
+   "0.5"
+  ],
+  "FH_HOME_UNDER_1.5": [
+   "1st half",
+   "12",
+   "1.5"
+  ],
+  "FH_MIX_1_OV_1.5": [
+   "1st half",
+   "197",
+   "1.5"
+  ],
+  "FH_MIX_1_UN_1.5": [
+   "1st half",
+   "196",
+   "1.5"
+  ],
+  "FH_MIX_2_OV_1.5": [
+   "1st half",
+   "192",
+   "1.5"
+  ],
+  "FH_MIX_2_UN_1.5": [
+   "1st half",
+   "191",
+   "1.5"
+  ],
+  "FH_MIX_X_OV_1.5": [
+   "1st half",
+   "203",
+   "1.5"
+  ],
+  "FH_MIX_X_UN_1.5": [
+   "1st half",
+   "201",
+   "1.5"
+  ],
+  "FIRSTGOAL_1": [
+   "",
+   "388",
+   "1"
+  ],
+  "FIRSTGOAL_2": [
+   "",
+   "389",
+   "1"
+  ],
+  "FIRSTGOAL_FH_1": [
+   "1st half",
+   "388",
+   "1"
+  ],
+  "FIRSTGOAL_FH_2": [
+   "1st half",
+   "389",
+   "1"
+  ],
+  "FIRSTGOAL_FH_N": [
+   "1st half",
+   "390",
+   "1"
+  ],
+  "FIRSTGOAL_N": [
+   "",
+   "390",
+   "1"
+  ],
+  "FIRSTGOAL_SH_1": [
+   "2nd half",
+   "388",
+   "1"
+  ],
+  "FIRSTGOAL_SH_2": [
+   "2nd half",
+   "389",
+   "1"
+  ],
+  "FIRSTGOAL_SH_N": [
+   "2nd half",
+   "390",
+   "1"
+  ],
+  "HIGHHALF_1": [
+   "",
+   "188",
+   null
+  ],
+  "HIGHHALF_2": [
+   "",
+   "190",
+   null
+  ],
+  "HIGHHALF_A_1": [
+   "",
+   "2811",
+   null
+  ],
+  "HIGHHALF_A_2": [
+   "",
+   "2813",
+   null
+  ],
+  "HIGHHALF_A_E": [
+   "",
+   "2812",
+   null
+  ],
+  "HIGHHALF_E": [
+   "",
+   "189",
+   null
+  ],
+  "HIGHHALF_H_1": [
+   "",
+   "2808",
+   null
+  ],
+  "HIGHHALF_H_2": [
+   "",
+   "2810",
+   null
+  ],
+  "HIGHHALF_H_E": [
+   "",
+   "2809",
+   null
+  ],
+  "OVER_2": [
+   "",
+   "9",
+   "2"
+  ],
+  "OVER_3": [
+   "",
+   "9",
+   "3"
+  ],
+  "SH_AH_1_-1": [
+   "2nd half",
+   "7",
+   "-1"
+  ],
+  "SH_AH_1_-1.5": [
+   "2nd half",
+   "7",
+   "-1.5"
+  ],
+  "SH_AH_2_-1": [
+   "2nd half",
+   "8",
+   "-1"
+  ],
+  "SH_AH_2_-1.5": [
+   "2nd half",
+   "8",
+   "-1.5"
+  ],
+  "SH_AWAY_OVER_0.5": [
+   "2nd half",
+   "13",
+   "0.5"
+  ],
+  "SH_AWAY_OVER_1.5": [
+   "2nd half",
+   "13",
+   "1.5"
+  ],
+  "SH_AWAY_OVER_2.5": [
+   "2nd half",
+   "13",
+   "2.5"
+  ],
+  "SH_AWAY_UNDER_0.5": [
+   "2nd half",
+   "14",
+   "0.5"
+  ],
+  "SH_AWAY_UNDER_1.5": [
+   "2nd half",
+   "14",
+   "1.5"
+  ],
+  "SH_AWAY_UNDER_2.5": [
+   "2nd half",
+   "14",
+   "2.5"
+  ],
+  "SH_EH_0_1_1": [
+   "2nd half",
+   "424",
+   "-1"
+  ],
+  "SH_EH_0_1_2": [
+   "2nd half",
+   "426",
+   "-1"
+  ],
+  "SH_EH_0_1_X": [
+   "2nd half",
+   "425",
+   "-1"
+  ],
+  "SH_EH_0_2_X": [
+   "2nd half",
+   "425",
+   "-2"
+  ],
+  "SH_EH_1_0_1": [
+   "2nd half",
+   "424",
+   "1"
+  ],
+  "SH_EH_1_0_2": [
+   "2nd half",
+   "426",
+   "1"
+  ],
+  "SH_EH_1_0_X": [
+   "2nd half",
+   "425",
+   "1"
+  ],
+  "SH_HOME_OVER_0.5": [
+   "2nd half",
+   "11",
+   "0.5"
+  ],
+  "SH_HOME_OVER_1.5": [
+   "2nd half",
+   "11",
+   "1.5"
+  ],
+  "SH_HOME_OVER_2.5": [
+   "2nd half",
+   "11",
+   "2.5"
+  ],
+  "SH_HOME_UNDER_0.5": [
+   "2nd half",
+   "12",
+   "0.5"
+  ],
+  "SH_HOME_UNDER_1.5": [
+   "2nd half",
+   "12",
+   "1.5"
+  ],
+  "SH_HOME_UNDER_2.5": [
+   "2nd half",
+   "12",
+   "2.5"
+  ],
+  "SH_OVER_0.5": [
+   "2nd half",
+   "9",
+   "0.5"
+  ],
+  "SH_OVER_1.5": [
+   "2nd half",
+   "9",
+   "1.5"
+  ],
+  "SH_OVER_2.5": [
+   "2nd half",
+   "9",
+   "2.5"
+  ],
+  "SH_UNDER_0.5": [
+   "2nd half",
+   "10",
+   "0.5"
+  ],
+  "SH_UNDER_1.5": [
+   "2nd half",
+   "10",
+   "1.5"
+  ],
+  "SH_UNDER_2.5": [
+   "2nd half",
+   "10",
+   "2.5"
+  ],
+  "UNDER_2": [
+   "",
+   "10",
+   "2"
+  ],
+  "UNDER_3": [
+   "",
+   "10",
+   "3"
+  ],
+  "UP2_1": [
+   "",
+   "16684",
+   null
+  ],
+  "UP2_2": [
+   "",
+   "16686",
+   null
+  ],
+  "UP2_X": [
+   "",
+   "16685",
+   null
+  ],
+  "WINHALF_A_N": [
+   "",
+   "507",
+   null
+  ],
+  "WINHALF_A_Y": [
+   "",
+   "506",
+   null
+  ],
+  "WINHALF_H_N": [
+   "",
+   "505",
+   null
+  ],
+  "WINHALF_H_Y": [
+   "",
+   "504",
+   null
+  ]
+ },
+ "rejects": {
+  "verified absent: 'Handicap' in full time sells lines -3.5 -3 -2.5 -2 -1.5 -1 1 1.5 2 2.5 3 3.5, not -0.5": [
+   "AH_1_-0.5",
+   "AH_2_-0.5"
+  ],
+  "verified absent: 'Asian Handicap' in full time sells lines -2.25 -1.75 -1.25 -0.75 -0.25 0.25 0.75 1.25 1.75 2.25, not -2.75": [
+   "AH_1_-2.75",
+   "AH_2_-2.75"
+  ],
+  "verified absent: 'Handicap' in full time sells lines -3.5 -3 -2.5 -2 -1.5 -1 1 1.5 2 2.5 3 3.5, not -4": [
+   "AH_1_-4",
+   "AH_2_-4"
+  ],
+  "verified absent: 'Handicap' in full time sells lines -3.5 -3 -2.5 -2 -1.5 -1 1 1.5 2 2.5 3 3.5, not -4.5": [
+   "AH_1_-4.5",
+   "AH_2_-4.5"
+  ],
+  "verified absent: 'Handicap' in full time sells lines -3.5 -3 -2.5 -2 -1.5 -1 1 1.5 2 2.5 3 3.5, not 0": [
+   "AH_1_0",
+   "AH_2_0"
+  ],
+  "verified absent: 'Handicap' in full time sells lines -3.5 -3 -2.5 -2 -1.5 -1 1 1.5 2 2.5 3 3.5, not 0.5": [
+   "AH_1_0.5",
+   "AH_2_0.5"
+  ],
+  "verified absent: 'Asian Handicap' in full time sells lines -2.25 -1.75 -1.25 -0.75 -0.25 0.25 0.75 1.25 1.75 2.25, not 2.75": [
+   "AH_1_2.75",
+   "AH_2_2.75"
+  ],
+  "verified absent: 'Handicap' in full time sells lines -3.5 -3 -2.5 -2 -1.5 -1 1 1.5 2 2.5 3 3.5, not 4": [
+   "AH_1_4",
+   "AH_2_4"
+  ],
+  "verified absent: 'Handicap' in full time sells lines -3.5 -3 -2.5 -2 -1.5 -1 1 1.5 2 2.5 3 3.5, not 4.5": [
+   "AH_1_4.5",
+   "AH_2_4.5"
+  ],
+  "verified absent: 'Handicap' in full time sells lines -3.5 -3 -2.5 -2 -1.5 -1 1 1.5 2 2.5 3 3.5, not 5": [
+   "AH_1_5",
+   "AH_2_5"
+  ],
+  "verified absent: 'Goals Scored In Both Halves' is about any goal in each half, not each half clearing a line.": [
+   "BOTHHALVES_OV_N",
+   "BOTHHALVES_OV_Y",
+   "BOTHHALVES_UN_N",
+   "BOTHHALVES_UN_Y"
+  ],
+  "verified absent: per-team goal bounds are not sold at full time.": [
+   "BOUNDS_A_0",
+   "BOUNDS_A_1",
+   "BOUNDS_A_11",
+   "BOUNDS_A_12",
+   "BOUNDS_A_13",
+   "BOUNDS_A_2",
+   "BOUNDS_A_22",
+   "BOUNDS_A_23",
+   "BOUNDS_A_33",
+   "BOUNDS_H_0",
+   "BOUNDS_H_1",
+   "BOUNDS_H_11",
+   "BOUNDS_H_12",
+   "BOUNDS_H_13",
+   "BOUNDS_H_2",
+   "BOUNDS_H_22",
+   "BOUNDS_H_23",
+   "BOUNDS_H_33"
+  ],
+  "verified absent: no bookings market on any of eight deep cards.": [
+   "CARD_A_1",
+   "CARD_A_2",
+   "CARD_A_3",
+   "CARD_A_4",
+   "CARD_A_5",
+   "CARD_A_6",
+   "CARD_H_1",
+   "CARD_H_2",
+   "CARD_H_3",
+   "CARD_H_4",
+   "CARD_H_5",
+   "CARD_H_6"
+  ],
+  "verified absent: 'Total 2' in Corners sells lines 4.5 5 5.5, not 0.5": [
+   "CORNERS_A_OV_0.5",
+   "CORNERS_A_UN_0.5"
+  ],
+  "verified absent: 'Total 2' in Corners sells lines 4.5 5 5.5, not 1.5": [
+   "CORNERS_A_OV_1.5",
+   "CORNERS_A_UN_1.5"
+  ],
+  "verified absent: 'Total 2' in Corners sells lines 4.5 5 5.5, not 2.5": [
+   "CORNERS_A_OV_2.5",
+   "CORNERS_A_UN_2.5"
+  ],
+  "verified absent: 'Total 2' in Corners sells lines 4.5 5 5.5, not 3.5": [
+   "CORNERS_A_OV_3.5",
+   "CORNERS_A_UN_3.5"
+  ],
+  "verified absent: 'Total 2' in Corners sells lines 4.5 5 5.5, not 6.5": [
+   "CORNERS_A_OV_6.5",
+   "CORNERS_A_UN_6.5"
+  ],
+  "verified absent: 'Total 2' in Corners sells lines 4.5 5 5.5, not 7.5": [
+   "CORNERS_A_OV_7.5",
+   "CORNERS_A_UN_7.5"
+  ],
+  "verified absent: 'Total 2' in Corners sells lines 4.5 5 5.5, not 8.5": [
+   "CORNERS_A_OV_8.5",
+   "CORNERS_A_UN_8.5"
+  ],
+  "verified absent: 'Total 2' in Corners sells lines 4.5 5 5.5, not 9.5": [
+   "CORNERS_A_OV_9.5",
+   "CORNERS_A_UN_9.5"
+  ],
+  "verified absent: 'Total 1' in Corners sells lines 4.5 5 5.5, not 0.5": [
+   "CORNERS_H_OV_0.5",
+   "CORNERS_H_UN_0.5"
+  ],
+  "verified absent: 'Total 1' in Corners sells lines 4.5 5 5.5, not 1.5": [
+   "CORNERS_H_OV_1.5",
+   "CORNERS_H_UN_1.5"
+  ],
+  "verified absent: 'Total 1' in Corners sells lines 4.5 5 5.5, not 2.5": [
+   "CORNERS_H_OV_2.5",
+   "CORNERS_H_UN_2.5"
+  ],
+  "verified absent: 'Total 1' in Corners sells lines 4.5 5 5.5, not 3.5": [
+   "CORNERS_H_OV_3.5",
+   "CORNERS_H_UN_3.5"
+  ],
+  "verified absent: 'Total 1' in Corners sells lines 4.5 5 5.5, not 6.5": [
+   "CORNERS_H_OV_6.5",
+   "CORNERS_H_UN_6.5"
+  ],
+  "verified absent: 'Total 1' in Corners sells lines 4.5 5 5.5, not 7.5": [
+   "CORNERS_H_OV_7.5",
+   "CORNERS_H_UN_7.5"
+  ],
+  "verified absent: 'Total 1' in Corners sells lines 4.5 5 5.5, not 8.5": [
+   "CORNERS_H_OV_8.5",
+   "CORNERS_H_UN_8.5"
+  ],
+  "verified absent: 'Total 1' in Corners sells lines 4.5 5 5.5, not 9.5": [
+   "CORNERS_H_OV_9.5",
+   "CORNERS_H_UN_9.5"
+  ],
+  "verified absent: 'Total' in Corners sells lines 8.5 9 9.5 10 10.5 11 11.5, not 12.5": [
+   "CORNERS_OV_12.5",
+   "CORNERS_UN_12.5"
+  ],
+  "verified absent: 'Total' in Corners sells lines 8.5 9 9.5 10 10.5 11 11.5, not 13.5": [
+   "CORNERS_OV_13.5",
+   "CORNERS_UN_13.5"
+  ],
+  "verified absent: 'Total' in Corners sells lines 8.5 9 9.5 10 10.5 11 11.5, not 14.5": [
+   "CORNERS_OV_14.5",
+   "CORNERS_UN_14.5"
+  ],
+  "verified absent: 'Total' in Corners sells lines 8.5 9 9.5 10 10.5 11 11.5, not 6.5": [
+   "CORNERS_OV_6.5",
+   "CORNERS_UN_6.5"
+  ],
+  "verified absent: 'Total' in Corners sells lines 8.5 9 9.5 10 10.5 11 11.5, not 7.5": [
+   "CORNERS_OV_7.5",
+   "CORNERS_UN_7.5"
+  ],
+  "verified absent: corner totals are over/under lines only, never ranges.": [
+   "CORNRANGE_0_8",
+   "CORNRANGE_12",
+   "CORNRANGE_9_11",
+   "CORNRANGE_A_0_2",
+   "CORNRANGE_A_3_4",
+   "CORNRANGE_A_5_6",
+   "CORNRANGE_A_7",
+   "CORNRANGE_H_0_2",
+   "CORNRANGE_H_3_4",
+   "CORNRANGE_H_5_6",
+   "CORNRANGE_H_7"
+  ],
+  "verified absent: 1xBet runs 2UP on the 1X2 (1X2 (2UP)), not 1UP on double chance.": [
+   "DC1UP_12",
+   "DC1UP_1X",
+   "DC1UP_X2"
+  ],
+  "verified absent: no 2UP on double chance.": [
+   "DC2_12",
+   "DC2_1X",
+   "DC2_X2"
+  ],
+  "verified absent: no draw-no-bet market, and no handicap line at 0 on a full-time card (their 0 lines exist on corners only).": [
+   "DNB_1",
+   "DNB_2"
+  ],
+  "verified absent: their early market is 'Goal In First 5 Minutes', a different window from ours.": [
+   "EARLY_OV_10_1.5",
+   "EARLY_OV_30_2.5",
+   "EARLY_OV_50_3.5",
+   "EARLY_UN_10_1.5",
+   "EARLY_UN_30_2.5",
+   "EARLY_UN_50_3.5"
+  ],
+  "verified absent: 'European Handicap' in full time sells lines -2 -1 1 2, not -3": [
+   "EH_0_3_1",
+   "EH_0_3_2",
+   "EH_0_3_X"
+  ],
+  "verified absent: 'European Handicap' in full time sells lines -2 -1 1 2, not -4": [
+   "EH_0_4_1",
+   "EH_0_4_2",
+   "EH_0_4_X"
+  ],
+  "verified absent: 'European Handicap' in full time sells lines -2 -1 1 2, not -5": [
+   "EH_0_5_1",
+   "EH_0_5_2",
+   "EH_0_5_X"
+  ],
+  "verified absent: 'European Handicap' in full time sells lines -2 -1 1 2, not 3": [
+   "EH_3_0_1",
+   "EH_3_0_2",
+   "EH_3_0_X"
+  ],
+  "verified absent: '3Way Total' in full time sells lines 2 3 4 5, not 0": [
+   "EXACT_0"
+  ],
+  "verified absent: '3Way Total' in full time sells lines 2 3 4 5, not 1": [
+   "EXACT_1"
+  ],
+  "verified absent: a bet on the total being anything but n is not sold.": [
+   "EXGOALS_0",
+   "EXGOALS_1",
+   "EXGOALS_2",
+   "EXGOALS_3",
+   "EXGOALS_4",
+   "EXGOALS_5",
+   "EXGOALS_FH_0",
+   "EXGOALS_FH_1",
+   "EXGOALS_FH_2",
+   "EXGOALS_FH_3"
+  ],
+  "verified absent: 'Handicap' in 1st half sells lines -1.5 -1 1 1.5, not -0.5": [
+   "FH_AH_1_-0.5",
+   "FH_AH_2_-0.5"
+  ],
+  "verified absent: 'Handicap' in 1st half sells lines -1.5 -1 1 1.5, not -2": [
+   "FH_AH_1_-2",
+   "FH_AH_2_-2"
+  ],
+  "verified absent: 'Handicap' in 1st half sells lines -1.5 -1 1 1.5, not 0": [
+   "FH_AH_1_0",
+   "FH_AH_2_0"
+  ],
+  "verified absent: 'Handicap' in 1st half sells lines -1.5 -1 1 1.5, not 0.5": [
+   "FH_AH_1_0.5",
+   "FH_AH_2_0.5"
+  ],
+  "verified absent: 'Total 2' in 1st half sells lines 0.5 1 1.5 2, not 2.5": [
+   "FH_AWAY_OVER_2.5",
+   "FH_AWAY_UNDER_2.5"
+  ],
+  "verified absent: see CARD_.": [
+   "FH_CARDUN_A_1",
+   "FH_CARDUN_A_2",
+   "FH_CARDUN_A_3",
+   "FH_CARDUN_H_1",
+   "FH_CARDUN_H_2",
+   "FH_CARDUN_H_3",
+   "FH_CARD_A_1",
+   "FH_CARD_A_2",
+   "FH_CARD_A_3",
+   "FH_CARD_H_1",
+   "FH_CARD_H_2",
+   "FH_CARD_H_3",
+   "HMC_1",
+   "HMC_2",
+   "HMC_E"
+  ],
+  "verified absent: 'European Handicap' in 1st half sells lines -1 1, not -2": [
+   "FH_EH_0_2_1",
+   "FH_EH_0_2_2",
+   "FH_EH_0_2_X"
+  ],
+  "verified absent: 'Total 1' in 1st half sells lines 0.5 1 1.5 2, not 2.5": [
+   "FH_HOME_OVER_2.5",
+   "FH_HOME_UNDER_2.5"
+  ],
+  "verified absent: 'Total From 2 To 3' exists on the halves only.": [
+   "GOALRANGE_0_1",
+   "GOALRANGE_2_3",
+   "GOALRANGE_4_6",
+   "GOALRANGE_7"
+  ],
+  "verified absent: no half-versus-half corner bet.": [
+   "HALFCORNER_1",
+   "HALFCORNER_2",
+   "HALFCORNER_E"
+  ],
+  "verified absent: no winning-margin market on any of eight deep cards.": [
+   "MARGIN_A1",
+   "MARGIN_A2",
+   "MARGIN_A3",
+   "MARGIN_DRAW",
+   "MARGIN_H1",
+   "MARGIN_H2",
+   "MARGIN_H3"
+  ],
+  "verified absent: ours is an OR bet (\"draw OR both score\"); 1xBet sells only \"X And Both Teams To Score\", the AND bet.": [
+   "MIXGG_1",
+   "MIXGG_2",
+   "MIXGG_X"
+  ],
+  "verified absent: ours is an OR bet (\"draw OR not both score\"); 1xBet sells only the AND bet.": [
+   "MIXNG_1",
+   "MIXNG_2",
+   "MIXNG_X"
+  ],
+  "verified absent: ours is an OR bet (\"home OR over 1.5\"); 1xBet sells only \"Team 1 To Win And Total >\", the AND bet, which is narrower. Never map one onto the other.": [
+   "MIX_1_OV_1.5",
+   "MIX_1_OV_2.5",
+   "MIX_1_OV_3.5",
+   "MIX_1_UN_1.5",
+   "MIX_1_UN_2.5",
+   "MIX_1_UN_3.5",
+   "MIX_2_OV_1.5",
+   "MIX_2_OV_2.5",
+   "MIX_2_OV_3.5",
+   "MIX_2_UN_1.5",
+   "MIX_2_UN_2.5",
+   "MIX_2_UN_3.5",
+   "MIX_X_OV_1.5",
+   "MIX_X_OV_2.5",
+   "MIX_X_OV_3.5",
+   "MIX_X_UN_1.5",
+   "MIX_X_UN_2.5",
+   "MIX_X_UN_3.5"
+  ],
+  "verified absent: only 'Penalty In First 5 Minutes' is sold, not a match penalty market.": [
+   "PEN_N",
+   "PEN_Y"
+  ],
+  "verified absent: shots appear only under Players' stats, per player.": [
+   "SHOTS_OV_19.5",
+   "SHOTS_OV_20.5",
+   "SHOTS_OV_21.5",
+   "SHOTS_OV_22.5",
+   "SHOTS_OV_23.5",
+   "SHOTS_OV_24.5",
+   "SHOTS_OV_25.5",
+   "SHOTS_OV_26.5",
+   "SHOTS_OV_27.5",
+   "SHOTS_OV_28.5",
+   "SHOTS_OV_29.5",
+   "SHOTS_OV_30.5",
+   "SHOTS_OV_31.5",
+   "SHOTS_UN_19.5",
+   "SHOTS_UN_20.5",
+   "SHOTS_UN_21.5",
+   "SHOTS_UN_22.5",
+   "SHOTS_UN_23.5",
+   "SHOTS_UN_24.5",
+   "SHOTS_UN_25.5",
+   "SHOTS_UN_26.5",
+   "SHOTS_UN_27.5",
+   "SHOTS_UN_28.5",
+   "SHOTS_UN_29.5",
+   "SHOTS_UN_30.5",
+   "SHOTS_UN_31.5"
+  ],
+  "verified absent: 'Handicap' in 2nd half sells lines -1.5 -1 1 1.5, not -0.5": [
+   "SH_AH_1_-0.5",
+   "SH_AH_2_-0.5"
+  ],
+  "verified absent: 'Handicap' in 2nd half sells lines -1.5 -1 1 1.5, not -2": [
+   "SH_AH_1_-2",
+   "SH_AH_2_-2"
+  ],
+  "verified absent: 'Handicap' in 2nd half sells lines -1.5 -1 1 1.5, not 0": [
+   "SH_AH_1_0",
+   "SH_AH_2_0"
+  ],
+  "verified absent: 'Handicap' in 2nd half sells lines -1.5 -1 1 1.5, not 0.5": [
+   "SH_AH_1_0.5",
+   "SH_AH_2_0.5"
+  ],
+  "verified absent: 'European Handicap' in 2nd half sells lines -1 1, not -2": [
+   "SH_EH_0_2_1",
+   "SH_EH_0_2_2"
+  ],
+  "verified absent: per-team exact goals exist for the halves only, and ours are full time.": [
+   "TEAMGOALS_A_0",
+   "TEAMGOALS_A_1",
+   "TEAMGOALS_A_2",
+   "TEAMGOALS_A_3",
+   "TEAMGOALS_H_0",
+   "TEAMGOALS_H_1",
+   "TEAMGOALS_H_2",
+   "TEAMGOALS_H_3"
+  ],
+  "verified absent: 1xBet runs 2UP only, never 1UP.": [
+   "UP1_1",
+   "UP1_2",
+   "UP1_X"
+  ]
+ },
+ "sign": {
+  "ah": [
+   436,
+   0
+  ],
+  "eh": [
+   28,
+   0
+  ]
+ }
+}

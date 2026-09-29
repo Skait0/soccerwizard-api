@@ -58,19 +58,23 @@ const SIDE3 = { "1": "1", X: "X", "2": "2" };
 function propose(code) {
   let m;
 
-  if ((m = /^MIX_([12X])_(OV|UN)_([\d.]+)$/.exec(code))) {
-    return { market: "1X2 and Totals - FT", line: m[3], family: "1X2 + totals",
-             outcome: SIDE3[m[1]] + (m[2] === "OV" ? " - Over" : " - Under") };
+  /* OR IS NOT AND (29 Sep 2026). Our full-time MIX_ and MIXGG_/MIXNG_ are OR
+     bets ("home OR over 1.5"); Betpawa's "1X2 and Totals" / "1X2 and BTTS"
+     are AND bets - priced above both parts on every event checked. This file
+     used to map them together; it refuses them now. FH_MIX_ below is an AND
+     bet on our side as well, so it still maps. */
+  if (/^MIX_/.test(code)) {
+    return { family: "1X2 or total",
+             why: "ours is an OR bet; their 1X2 and Totals is the AND bet" };
   }
   if ((m = /^FH_MIX_([12X])_(OV|UN)_([\d.]+)$/.exec(code))) {
     return { market: "1X2 and Totals - 1H", line: m[3],
              family: "1X2 + totals, first half",
              outcome: SIDE3[m[1]] + (m[2] === "OV" ? " - Over" : " - Under") };
   }
-  if ((m = /^MIX(GG|NG)_([12X])$/.exec(code))) {
-    return { market: "1X2 and Both Teams To Score - FT",
-             outcome: SIDE3[m[2]] + (m[1] === "GG" ? " - Yes" : " - No"),
-             line: null, family: "1X2 + both to score" };
+  if (/^MIX(GG|NG)_/.test(code)) {
+    return { family: "1X2 or both to score",
+             why: "ours is an OR bet; their 1X2 and Both Teams To Score is the AND bet" };
   }
   if ((m = /^UP([12])_([12X])$/.exec(code))) {
     return { market: "1X2 " + m[1] + "UP - FT", outcome: SIDE3[m[2]],

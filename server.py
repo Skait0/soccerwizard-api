@@ -14,6 +14,7 @@ from flask_cors import CORS
 import bet9ja
 import betking
 import betpawa
+import onexbet
 from srid import sr_id
 
 app = Flask(__name__)
@@ -541,6 +542,8 @@ _BETKING_TTL = 45 * 60
 # reason - the interval is about how rarely we ask, not how fast we can.
 _BETPAWA_CACHE = {"at": 0, "data": None}
 _BETPAWA_TTL = 45 * 60
+_ONEXBET_CACHE = {"at": 0, "data": None}
+_ONEXBET_TTL = 45 * 60
 
 # --- Shared cache (opt-in) -------------------------------------------------
 # With one process the in-memory dicts above are fine. Set REDIS_URL (add a
@@ -1264,6 +1267,55 @@ def _start_betpawa_thread():
 _start_betpawa_thread()
 
 
+# 1XBET: one card per fixture, because their game list carries no prices -
+# about 18 minutes a sweep against a 45 minute timer (29 Sep 2026). The
+# short-sweep guard is Betpawa's; the sweep also counts the games it skipped
+# at its deadline, reported here so a cut-short sweep is visible rather than
+# reading as a quiet day.
+_ONEXBET_LOCK = threading.Lock()
+
+def _refresh_onexbet_once():
+    try:
+        fixtures, stats = onexbet.all_fixtures()
+    except Exception as ex:                          # noqa: BLE001 - background
+        log.warning("1xbet refresh failed, keeping previous copy: %s", ex)
+        return False
+    got = len(fixtures)
+    if not fixtures:
+        log.warning("1xbet refresh returned nothing; keeping previous copy")
+        return False
+    prev = _cache_get("onexbet", _ONEXBET_CACHE)
+    prev_n = len((prev or {}).get("data") or {})
+    if prev_n and got < prev_n * 0.8:
+        log.warning("1xbet refresh returned %d against %d stored, looks truncated; "
+                    "keeping the fuller copy", got, prev_n)
+        return False
+    if stats.get("skipped"):
+        report("1xbet sweep hit its deadline", skipped=stats["skipped"],
+               listed=stats["listed"], kept=got)
+    _cache_put("onexbet", _ONEXBET_CACHE, fixtures)
+    log.info("1xbet refreshed: %d events (%d listed)", got, stats.get("listed"))
+    return True
+
+def _onexbet_loop():
+    entry = _cache_get("onexbet", _ONEXBET_CACHE)
+    if entry and entry.get("data"):
+        age = time.time() - entry["at"]
+        if age < _ONEXBET_TTL:
+            time.sleep(_ONEXBET_TTL - age)
+    while True:
+        ok = _refresh_onexbet_once()
+        time.sleep(_ONEXBET_TTL if ok else 300)
+
+def _start_onexbet_thread():
+    if not _ONEXBET_LOCK.acquire(blocking=False):
+        return
+    threading.Thread(target=_onexbet_loop, name="onexbet-refresh", daemon=True).start()
+    log.info("1xbet refresher started (every %dm)", _ONEXBET_TTL // 60)
+
+_start_onexbet_thread()
+
+
 @app.route('/api/fixtures', methods=['GET'])
 def get_fixtures():
     entry = _cache_get("fixtures", _FIXTURES_CACHE)
@@ -1790,6 +1842,95 @@ def api_betpawa_code():
     return jsonify({"success": False, **out}), 502
 
 
+@app.route('/api/onexbet/fixtures', methods=['GET'])
+def get_onexbet_fixtures():
+    """Every 1xBet event, served from the background sweep."""
+    entry = _cache_get("onexbet", _ONEXBET_CACHE)
+    data = (entry or {}).get("data")
+    if not data:
+        return jsonify({"success": False, "count": 0, "matches": {},
+                        "error": "1xbet fixtures not loaded yet"}), 503
+    return jsonify({"success": True, "cached": True,
+                    "ageSeconds": int(time.time() - entry["at"]),
+                    "count": len(data), "matches": data})
+
+
+@app.route('/api/onexbet/booking-code', methods=['POST'])
+def api_onexbet_code():
+    """Picks -> a 1xBet booking code. Same three-way answer as the other books:
+    not_mapped / event_gone / not_priced / same_game, each leg named.
+
+    THEIR CAP (50, ErrorCode 157972) is checked here before any request, and a
+    code that reads back holding fewer legs than were sent is a 502, never a
+    success - 1xBet drops a leg it will not take without saying so."""
+    data = request.get_json(silent=True) or {}
+    picks = data.get("selections") or []
+    if not picks:
+        return jsonify({"success": False, "error": "no selections"}), 400
+    if len(picks) > onexbet.BETSLIP_MAX:
+        return jsonify({"success": False, "sent": len(picks),
+                        "error": f"1xbet slips hold at most {onexbet.BETSLIP_MAX:d} selections"}), 400
+    resolved, bad, cache, booked = [], [], {}, set()
+    # FAST ENOUGH FOR THE PROXIES (review C1, 29 Sep 2026). A full-time leg the
+    # sweep already priced is booked off the swept card: 1xBet does not check
+    # the price sent (the read-back reprices it) and the read-back below
+    # names any leg that has since gone. Only a game whose legs need a half or
+    # corners card, or that the sweep lacks, is read live - and only for the
+    # periods those legs live on.
+    swept = (_cache_get("onexbet", _ONEXBET_CACHE) or {}).get("data") or {}
+    codes_by_event = {}
+    for p in picks:
+        codes_by_event.setdefault(p.get("eventId"), []).append(p.get("code"))
+    try:
+        for p in picks:
+            code, event_id = p.get("code"), p.get("eventId")
+            leg = {"eventId": event_id, "prediction": code}
+            if onexbet.market_for(code) is None:
+                bad.append(dict(leg, reason="not_mapped"))
+                continue
+            if event_id in booked:
+                bad.append(dict(leg, reason="same_game"))
+                continue
+            if event_id not in cache:
+                row = swept.get(str(event_id))
+                periods = onexbet.periods_for(codes_by_event[event_id])
+                if row and periods == [""] and code in (row.get("odds") or {}):
+                    cache[event_id] = row
+                else:
+                    cache[event_id] = onexbet.fetch_event(event_id, periods=periods)
+            ev = cache[event_id]
+            if not ev:
+                bad.append(dict(leg, reason="event_gone"))
+                continue
+            if code not in (ev.get("odds") or {}):
+                bad.append(dict(leg, reason="not_priced"))
+                continue
+            booked.add(event_id)
+            resolved.append({"event": ev, "code": code})
+    except Exception as ex:                      # noqa: BLE001 - user-facing
+        report("1xbet odds fetch failed", error=str(ex))
+        return jsonify({"success": False, "error": str(ex)}), 502
+    if bad:
+        only_same = all(b["reason"] == "same_game" for b in bad)
+        return jsonify({"success": False, "message": "1xBet rejected the slip",
+                        "detail": ("one selection per game is all 1xBet takes on a multiple"
+                                   if only_same else
+                                   f"no market there for {len(bad)} of {len(picks)} picks"),
+                        "unbookable": bad}), 400
+    out = onexbet.generate_code(resolved)
+    if out.get("code") and not out.get("error"):
+        return jsonify({"success": True, **out})
+    if out.get("missing"):
+        # Named by the read-back, so the client drops exactly these and books
+        # the rest - the same answer as a leg refused before minting.
+        return jsonify({"success": False, "message": "1xBet rejected the slip",
+                        "detail": f"1xBet would not keep {len(out['missing'])} of {len(picks)} picks",
+                        "unbookable": [dict(m, reason="not_priced") for m in out["missing"]]}), 400
+    report("1xbet booking refused", legs=len(resolved),
+           detail=str(out.get("error"))[:300], empty_code=out.get("code"))
+    return jsonify({"success": False, **out}), 502
+
+
 # --- reading a booking code back -------------------------------------------
 # BOTH BOOKS WILL HAND A CODE BACK, which is the fact the converter and the
 # splitter both rest on, and neither was reachable by guessing: SportyBet
@@ -1958,12 +2099,12 @@ def _stamp_sr(book, legs):
 
 @app.route('/api/slip', methods=['GET'])
 def api_read_slip():
-    """GET /api/slip?book=sporty|bet9ja|betking|betpawa&code=XXXX -> the legs behind a code."""
+    """GET /api/slip?book=sporty|bet9ja|betking|betpawa|onexbet&code=XXXX -> the legs behind a code."""
     book = (request.args.get("book") or "sporty").strip().lower()
     code = (request.args.get("code") or "").strip()
     if not _CODE_RE.match(code):
         return jsonify({"success": False, "error": "that is not a booking code"}), 400
-    if book not in ("sporty", "bet9ja", "betking", "betpawa"):
+    if book not in ("sporty", "bet9ja", "betking", "betpawa", "onexbet"):
         return jsonify({"success": False, "error": "unknown bookmaker"}), 400
 
     # Named rather than defaulted, so a typo in `book` can never be read
@@ -1974,6 +2115,8 @@ def api_read_slip():
         out = betking.read_coupon(code)
     elif book == "betpawa":
         out = betpawa.read_coupon(code)
+    elif book == "onexbet":
+        out = onexbet.read_coupon(code)
     else:
         out = read_sporty_share(code)
     if out.get("notFound"):
