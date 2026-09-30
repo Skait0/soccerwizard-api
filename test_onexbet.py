@@ -378,5 +378,40 @@ class TheReadBackChecksEveryLeg(unittest.TestCase):
         self.assertEqual(out["missing"], [{"eventId": "1", "prediction": "X"}])
 
 
+class ReviewMinors(unittest.TestCase):
+    """The six minor findings of the 29 Sep review, fixed together."""
+
+    def test_m1_a_read_back_that_could_not_be_read_is_not_a_dropped_leg(self):
+        # The save worked; OUR read failed. Say so, keep the code, unverified.
+        calls = iter([{"Value": "ABCDE", "Success": True}, OSError("reset by peer")])
+
+        def post(*a, **k):
+            v = next(calls)
+            if isinstance(v, Exception):
+                raise v
+            return v
+        with mock.patch.object(onexbet, "_post", side_effect=post):
+            out = onexbet.generate_code([{"event": _event(), "code": "1"}])
+        self.assertEqual(out.get("code"), "ABCDE")
+        self.assertIs(out.get("verified"), False)
+        self.assertNotIn("error", out)
+
+    def test_m2_a_leg_with_no_price_gives_no_total(self):
+        read = json.loads(json.dumps(COUPON["read"]))
+        read["Value"]["Events"] = read["Value"]["Events"][:1]
+        read["Value"]["Events"][0]["Coef"] = None
+        calls = iter([{"Value": "ABCDE", "Success": True}, read])
+        with mock.patch.object(onexbet, "_post", side_effect=lambda *a, **k: next(calls)):
+            out = onexbet.generate_code([{"event": _event(), "code": "1"}])
+        self.assertTrue(out["verified"])
+        self.assertIsNone(out["odds"])
+
+    def test_m4_half_handicap_reasons_say_what_is_absent(self):
+        for code in ("FH_AH_1_0.5", "FH_AH_2_-0.5", "SH_AH_1_0", "SH_AH_2_-2"):
+            why = onexbet.reason_uncarried(code)
+            self.assertIn("verified absent", why, code)
+            self.assertNotIn("0.25", why, code)   # no claim about quarters we never map
+
+
 if __name__ == "__main__":
     unittest.main()

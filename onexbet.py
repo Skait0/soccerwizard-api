@@ -262,7 +262,7 @@ NOT_CARRIED = {
     'EH_': 'carried at a head start of one or two goals. Three and more are not read yet: none appeared on the eight harvested cards, but a lopsided fixture sells them (Arsenal-Leeds carried -3 on 29 Sep) - re-harvest with one before mapping them.',
     'EXACT_': 'carried from 2 to 6+ through their 3-way total; verified absent: exactly 0 or exactly 1 at full time.',
     'EXGOALS_': 'verified absent: a bet on the total being anything but n is not sold.',
-    'FH_AH_': 'carried, except: their first-half handicaps are +-1, +-1.5 and the quarters +-0.25, +-0.75 only - verified absent: +-0.5, 0 and +-2.',
+    'FH_AH_': 'carried at -1 and -1.5 for either side; verified absent: -0.5, 0, +0.5 and -2. Their first-half card sells +-1 and +-1.5 (and quarter lines no half code of ours uses).',
     'FH_AWAY_': 'carried, except: see FH_HOME_.',
     'FH_CARD': 'verified absent: see CARD_.',
     'FH_EH_': 'carried at a one-goal head start; verified absent at two in the first half.',
@@ -276,7 +276,7 @@ NOT_CARRIED = {
     'MIXNG_': 'verified absent: ours is an OR bet ("draw OR not both score"); 1xBet sells only the AND bet.',
     'PEN_': "verified absent: only 'Penalty In First 5 Minutes' is sold, not a match penalty market.",
     'SHOTS_': "verified absent: shots appear only under Players' stats, per player.",
-    'SH_AH_': 'carried, except: their second-half handicaps are +-1, +-1.5 and the quarters +-0.25, +-0.75 only - verified absent: +-0.5, 0 and +-2.',
+    'SH_AH_': 'carried at -1 and -1.5 for either side; verified absent: -0.5, 0, +0.5 and -2. Their second-half card sells +-1 and +-1.5 (and quarter lines no half code of ours uses).',
     'SH_EH_': 'carried at a one-goal head start; verified absent at two on every outcome in the second half.',
     'TEAMGOALS_': 'verified absent: per-team exact goals exist for the halves only, and ours are full time.',
     'UP1_': 'verified absent: 1xBet runs 2UP only, never 1UP.',
@@ -639,7 +639,13 @@ def generate_code(selections):
 
     # READ IT BACK, ALWAYS. A bogus type mints a code that reads back empty, and
     # 30 legs came back as 29 with no error (29 Sep 2026).
-    legs = read_coupon(code).get("legs") or []
+    got = read_coupon(code)
+    if got.get("error") and not got.get("notFound"):
+        # OUR read failed (network), not their slip: the code stands, unchecked.
+        # Reporting it as "0 of N legs" blamed a slip nobody had looked at.
+        log.warning("1xbet read-back failed for %s: %s", code, got.get("error"))
+        return {"code": code, "odds": None, "legs": len(events), "verified": False}
+    legs = got.get("legs") or []
     # EVERY LEG, NOT JUST THE COUNT. A leg booked against the wrong game, or
     # one they re-lined, keeps the count and is still a different slip. Each
     # leg read back must decode to the code sent on the event it was sent for;
@@ -657,7 +663,13 @@ def generate_code(selections):
                          f"{len(events) - len(missing)} of {len(events)} legs as sent",
                 "code": code, "sent": len(events), "available": len(legs),
                 "missing": missing}
+    # A leg they read back with no price makes the total unknown - counting it
+    # as 1.0 understated what the slip pays.
     total = 1.0
     for leg in legs:
-        total *= leg["odds"] or 1.0
-    return {"code": code, "odds": round(total, 2), "legs": len(events), "verified": True}
+        if not leg.get("odds"):
+            total = None
+            break
+        total *= leg["odds"]
+    return {"code": code, "odds": round(total, 2) if total else None,
+            "legs": len(events), "verified": True}
