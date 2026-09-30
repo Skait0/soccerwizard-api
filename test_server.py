@@ -2539,6 +2539,30 @@ class OnexbetRoutes(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.get_json()["unbookable"], [{"eventId": "7", "prediction": "1", "reason": "not_priced"}])
 
+    def test_m3_a_mixed_refusal_counts_each_reason(self):
+        ev = {"eventId": "7", "odds": {"1": 1.5}, "sel": {}, "sub": {}}
+        with self.mock.patch.object(server, "_cache_get", return_value=None),              self.mock.patch.object(server.onexbet, "fetch_event", return_value=ev):
+            with server.app.test_client() as c:
+                r = c.post("/api/onexbet/booking-code", json={"selections": [
+                    {"eventId": "7", "code": "1"}, {"eventId": "7", "code": "X"},
+                    {"eventId": "8", "code": "NOPE"}]})
+        d = r.get_json()["detail"]
+        self.assertIn("1 more on a game already on the slip", d)
+        self.assertIn("no market there for 1", d)
+
+    def test_m5_the_feed_says_how_much_the_sweep_skipped(self):
+        entry = {"data": {"7": {"eventId": "7"}}, "at": 0}
+        with self.mock.patch.object(server, "_cache_get", return_value=entry),              self.mock.patch.dict(server._ONEXBET_STATS, {"skipped": 42, "listed": 1600}):
+            with server.app.test_client() as c:
+                d = c.get("/api/onexbet/fixtures").get_json()
+        self.assertEqual((d["skipped"], d["listed"]), (42, 1600))
+
+    def test_m5_a_rejected_sweep_waits_the_full_timer(self):
+        prev = {"data": {str(i): {} for i in range(100)}, "at": 0}
+        with self.mock.patch.object(server.onexbet, "all_fixtures",
+                                    return_value=({"1": {}}, {"listed": 1, "skipped": 0})),              self.mock.patch.object(server, "_cache_get", return_value=prev):
+            self.assertEqual(server._refresh_onexbet_once(), "kept")
+
     def test_slip_reads_onexbet(self):
         legs = {"legs": [{"eventId": "7", "prediction": "1"}], "available": 1, "booked": 1}
         with self.mock.patch.object(server.onexbet, "read_coupon", return_value=legs):

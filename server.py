@@ -544,6 +544,9 @@ _BETPAWA_CACHE = {"at": 0, "data": None}
 _BETPAWA_TTL = 45 * 60
 _ONEXBET_CACHE = {"at": 0, "data": None}
 _ONEXBET_TTL = 45 * 60
+# What the last sweep read and skipped, served beside the feed (review M5), so
+# a date missing because the sweep hit its deadline is visible from outside.
+_ONEXBET_STATS = {"listed": 0, "skipped": 0}
 
 # --- Shared cache (opt-in) -------------------------------------------------
 # With one process the in-memory dicts above are fine. Set REDIS_URL (add a
@@ -1289,7 +1292,10 @@ def _refresh_onexbet_once():
     if prev_n and got < prev_n * 0.8:
         log.warning("1xbet refresh returned %d against %d stored, looks truncated; "
                     "keeping the fuller copy", got, prev_n)
-        return False
+        # A whole sweep ran and was judged short: waiting the full timer, not
+        # five minutes, or 18-minute sweeps run back to back against 1xBet.
+        return "kept"
+    _ONEXBET_STATS.update(listed=stats.get("listed", 0), skipped=stats.get("skipped", 0))
     if stats.get("skipped"):
         report("1xbet sweep hit its deadline", skipped=stats["skipped"],
                listed=stats["listed"], kept=got)
@@ -1852,7 +1858,8 @@ def get_onexbet_fixtures():
                         "error": "1xbet fixtures not loaded yet"}), 503
     return jsonify({"success": True, "cached": True,
                     "ageSeconds": int(time.time() - entry["at"]),
-                    "count": len(data), "matches": data})
+                    "count": len(data), "listed": _ONEXBET_STATS["listed"],
+                    "skipped": _ONEXBET_STATS["skipped"], "matches": data})
 
 
 @app.route('/api/onexbet/booking-code', methods=['POST'])
@@ -1911,12 +1918,18 @@ def api_onexbet_code():
         report("1xbet odds fetch failed", error=str(ex))
         return jsonify({"success": False, "error": str(ex)}), 502
     if bad:
-        only_same = all(b["reason"] == "same_game" for b in bad)
+        # Each reason counted on its own (review M3): a same-game leg is not a
+        # missing market, and saying so sent readers looking for the wrong fix.
+        same = sum(b["reason"] == "same_game" for b in bad)
+        other = len(bad) - same
+        if not other:
+            detail = "one selection per game is all 1xBet takes on a multiple"
+        else:
+            detail = f"no market there for {other} of {len(picks)} picks"
+            if same:
+                detail += f", and {same} more on a game already on the slip"
         return jsonify({"success": False, "message": "1xBet rejected the slip",
-                        "detail": ("one selection per game is all 1xBet takes on a multiple"
-                                   if only_same else
-                                   f"no market there for {len(bad)} of {len(picks)} picks"),
-                        "unbookable": bad}), 400
+                        "detail": detail, "unbookable": bad}), 400
     out = onexbet.generate_code(resolved)
     if out.get("code") and not out.get("error"):
         return jsonify({"success": True, **out})
