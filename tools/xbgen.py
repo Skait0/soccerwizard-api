@@ -89,10 +89,15 @@ def propose(code):
     if m:
         per = PER[m[1] or ""]
         # Whole and half lines live on "Handicap", quarters on "Asian Handicap";
-        # both name the outcome "Handicap N (line)", and each side's line is its
-        # OWN start - checked by the sign test below, so no negation here.
-        group = "Asian Handicap" if abs(float(m[3]) * 2 - round(float(m[3]) * 2)) > 1e-9 else "Handicap"
-        return find(per, group, rf"Handicap {m[2]} \(.*\)", f(m[3]))
+        # both name the outcome "Handicap N (line)" with that side's OWN start.
+        n = float(m[3])
+        group = "Asian Handicap" if abs(n * 2 - round(n * 2)) > 1e-9 else "Handicap"
+        # OUR AH_2_L IS THE HOME TEAM'S LINE; 1xBet's "Handicap 2 (P)" is the
+        # away side's own, so the away code looks up P = -L. Mapped as P = L
+        # until 30 Sep 2026 - the opposite bet - which the price-ladder check
+        # could not see (it tests their ladder, not our meaning).
+        own = n if m[2] == "1" else -n
+        return find(per, group, rf"Handicap {m[2]} \(.*\)", f(own))
     m = re.fullmatch(r"(FH_|SH_)?EH_(\d+)_(\d+)_([12X])", code)
     if m:
         # Ours is a scoreline head start (EH_0_1 = away starts a goal up);
