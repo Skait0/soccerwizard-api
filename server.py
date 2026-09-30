@@ -2589,7 +2589,11 @@ def _unbookable(raw_selections):
 
 
 LINE_CHECK_EVENTS = 8
-_LINE_PREFIXES = ("CORNERS_", "SHOTS_")
+# Handicaps joined 30 Sep 2026: their lines close and move with the price like
+# corners and shots, and the Handicap chip put them on big slips. A closed one
+# is flagged, never re-lined - _nearest_open_line reads total= lines only, and
+# a different handicap line is a different bet.
+_LINE_PREFIXES = ("CORNERS_", "SHOTS_", "AH_")
 
 
 @app.route('/api/sporty/live-check', methods=['POST'])
