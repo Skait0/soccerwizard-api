@@ -649,6 +649,12 @@ FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
                       # marquee games about a day out, lines that move with
                       # the game, and the site offers only what this quotes.
                       "900394",
+                      # Asian handicap, every line (30 Sep 2026), for the
+                      # site's Handicap chip: books sell a few lines per game
+                      # around its own handicap, so the chip offers only lines
+                      # this feed quotes. Without it the chip booked lines no
+                      # book listed ("a lot of markets are closed").
+                      "16",
                       # Corners per team, home then away (25 Sep 2026), for
                       # the site's Team corners chip: 108 listed events had
                       # them against 54 with the total. LAST on purpose - if

@@ -2608,3 +2608,17 @@ class TeamShots(unittest.TestCase):
         # own, so the site can only offer a line this feed quotes.
         self.assertIn("900552", server.FIXTURE_MARKET_IDS)
         self.assertIn("900553", server.FIXTURE_MARKET_IDS)
+
+
+class HandicapsAreSwept(unittest.TestCase):
+    """The Handicap chip booked lines the book did not list (owner, 30 Sep
+    2026: "a lot of markets are closed when I try to book"). Books sell a few
+    handicap lines per game, around that game's own handicap, so the site can
+    only offer a line this sweep has seen. Market 16 carries every AH line."""
+
+    def test_the_sweep_asks_for_the_asian_handicap(self):
+        self.assertIn("16", server.FIXTURE_MARKET_IDS)
+
+    def test_a_swept_line_maps_to_our_code(self):
+        self.assertEqual(server._ODDS_LOOKUP.get(("16", "1715", "hcp=-1.5")), "AH_2_-1.5")
+        self.assertEqual(server._ODDS_LOOKUP.get(("16", "1714", "hcp=1")), "AH_1_1")
