@@ -1481,6 +1481,12 @@ class PassThroughParity(unittest.TestCase):
     # events, so all of it reads and splits rather than converting. The one
     # sibling that DOES cross - first-half 1X2 & over/under - is absent from
     # this list for exactly that reason.
+    # Team shots, both sides, every line (30 Sep 2026): SportyBet 900552/900553.
+    # Bet9ja not read yet for a per-team shots market - the site's Team shots
+    # chip offers SportyBet alone until it is.
+    SPORTY_ONLY_TEAMSHOTS: ClassVar = {
+        f"SHOTS_{s}_{d}_{n}.5" for s in "HA" for d in ("OV", "UN") for n in range(4, 23)}
+
     SPORTY_ONLY_SIBLINGS: ClassVar = {
         # European handicap, the match and each half. Bet9ja names one
         # (S_1X2HND1T/2T) and prices it on none of five events.
@@ -1594,7 +1600,8 @@ class PassThroughParity(unittest.TestCase):
     def test_the_asymmetry_is_the_recorded_one(self):
         s, b = set(server.PASSTHROUGH_MAP), set(server.bet9ja.PASSTHROUGH_MAP)
         self.assertEqual(s - b, self.SPORTY_ONLY | self.SPORTY_ONLY_14SEP
-                         | self.SPORTY_ONLY_CATALOGUE | self.SPORTY_ONLY_SIBLINGS)
+                         | self.SPORTY_ONLY_CATALOGUE | self.SPORTY_ONLY_SIBLINGS
+                         | self.SPORTY_ONLY_TEAMSHOTS)
         self.assertEqual(b - s, self.BET9JA_ONLY)
 
     def test_every_shared_code_resolves_on_both_books(self):
@@ -2358,7 +2365,10 @@ class TeamCornersBuildable(unittest.TestCase):
 
     def test_the_sweep_asks_for_both_sides_after_everything_else(self):
         ids = server.FIXTURE_MARKET_IDS
-        self.assertEqual(ids[-2:], ("900300", "900301"))
+        # Team shots (900552/900553) came after them on 30 Sep 2026, and are
+        # the only thing allowed to: the corners still outrank them.
+        self.assertEqual(ids[-4:-2], ("900300", "900301"))
+        self.assertEqual(ids[-2:], ("900552", "900553"))
 
     def test_a_swept_outcome_comes_back_as_its_code(self):
         ev = {"markets": [{"id": 900301, "specifier": "total=2.5",
@@ -2574,3 +2584,27 @@ class OnexbetRoutes(unittest.TestCase):
     def test_the_sweep_starts_at_import_like_the_others(self):
         with open(os.path.join(os.path.dirname(__file__), "server.py"), encoding="utf-8") as f:
             self.assertRegex(f.read(), r"(?m)^_start_onexbet_thread\(\)")
+
+
+class TeamShots(unittest.TestCase):
+    """Per-team shots over/under, SportyBet 900552 (home) and 900553 (away),
+    outcome 12 over / 13 under on total=N.5. The owner's code SAJ9y6 (USA over
+    13.5 shots, 29 Sep 2026) proved SportyBet sells them; the lines sit near
+    each team's own average, 7.5 to 18.5 seen, so a wide span is mapped."""
+
+    def test_the_owners_code_reads(self):
+        self.assertEqual(server._ODDS_LOOKUP.get(("900552", "12", "total=13.5")), "SHOTS_H_OV_13.5")
+        self.assertEqual(server._ODDS_LOOKUP.get(("900553", "13", "total=8.5")), "SHOTS_A_UN_8.5")
+
+    def test_booking_resolves_both_sides_and_lines(self):
+        m = server.market_for("SHOTS_A_OV_9.5")
+        self.assertEqual((str(m["marketId"]), str(m["outcomeId"]), m["specifier"]),
+                         ("900553", "12", "total=9.5"))
+        for line in ("4.5", "18.5", "22.5"):
+            self.assertIsNotNone(server.market_for("SHOTS_H_OV_" + line), line)
+
+    def test_the_sweep_asks_for_them(self):
+        # Swept for availability as much as price: each team's lines are its
+        # own, so the site can only offer a line this feed quotes.
+        self.assertIn("900552", server.FIXTURE_MARKET_IDS)
+        self.assertIn("900553", server.FIXTURE_MARKET_IDS)
