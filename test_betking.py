@@ -273,6 +273,29 @@ class BookingGuards(unittest.TestCase):
         self.assertIn("empty", out["error"])
         self.assertNotEqual(out.get("verified"), True)
 
+    def test_a_read_back_that_lags_is_read_again_before_refusing(self):
+        # 30 Sep 2026: the day's code RU2RZ1 read back 3 of 5 legs the moment
+        # it was booked and was refused three times - and read back all 5,
+        # correct markets, minutes later. Their coupon store lags the booking.
+        post = mock.Mock(return_value=mock.Mock(
+            json=lambda: {"ResponseStatus": 1, "BookedCouponCode": "RU2RZ1"}))
+        reads = mock.Mock(side_effect=[(0, []), (1, [{"MatchName": "Leeds - Newcastle"}])])
+        with mock.patch.object(betking.requests, "post", post),              mock.patch.object(betking, "global_variables", return_value={}),              mock.patch.object(betking, "read_code", reads),              mock.patch.object(betking.time, "sleep") as sleep:
+            out = betking.generate_code(self.picks)
+        self.assertEqual(out["code"], "RU2RZ1")
+        self.assertTrue(out["verified"])
+        self.assertEqual(reads.call_count, 2)
+        self.assertTrue(sleep.called)
+
+    def test_a_code_still_short_after_the_rereads_is_refused(self):
+        post = mock.Mock(return_value=mock.Mock(
+            json=lambda: {"ResponseStatus": 1, "BookedCouponCode": "PE2PFH"}))
+        reads = mock.Mock(return_value=(0, []))
+        with mock.patch.object(betking.requests, "post", post),              mock.patch.object(betking, "global_variables", return_value={}),              mock.patch.object(betking, "read_code", reads),              mock.patch.object(betking.time, "sleep"):
+            out = betking.generate_code(self.picks)
+        self.assertIn("error", out)
+        self.assertEqual(reads.call_count, 3)
+
     def test_their_own_refusal_is_reported_as_one(self):
         out, _ = self._book({"ResponseStatus": 21, "BookedCouponCode": None},
                             [])

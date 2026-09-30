@@ -998,6 +998,10 @@ def read_coupon(code, timeout=20):
             "removed": removed, "booked": booked}
 
 
+# Seconds to wait before each re-read of a code that read back short.
+READBACK_WAITS = (1.0, 2.0)
+
+
 def generate_code(selections, timeout=30, verify=True):
     """Turn a list of {event, code} into a BetKing booking code.
 
@@ -1072,6 +1076,18 @@ def generate_code(selections, timeout=30, verify=True):
             log.warning("betking read-back failed for %s: %s", code, ex)
             return {"code": code, "odds": round(odds_total, 2),
                     "legs": len(legs), "verified": False}
+        # THEIR COUPON STORE LAGS THE BOOKING (30 Sep 2026). The day's code
+        # RU2RZ1 read back 3 of 5 legs at once and all 5, right markets,
+        # minutes later - refused three times over a read that came too soon.
+        # Read again before calling it short; well inside the proxy's 15 s.
+        for wait in READBACK_WAITS:
+            if len(rows) == len(legs):
+                break
+            time.sleep(wait)
+            try:
+                available, rows = read_code(code, timeout)
+            except Exception:                    # noqa: BLE001 - keep the last read
+                break
         if len(rows) != len(legs):
             return {"error": "betking accepted the slip and returned an empty "
                              f"code ({len(rows)} of {len(legs)} legs resolved)",
