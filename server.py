@@ -230,6 +230,19 @@ for _line in ("19.5", "20.5", "21.5", "22.5", "23.5", "24.5", "25.5", "26.5", "2
     PASSTHROUGH_MAP[f"SHOTS_UN_{_line}"] = {
         "marketId": 900394, "outcomeId": 13, "specifier": f"total={_line}"}
 
+# TEAM SHOTS, 900552 home and 900553 away - total shots' shape exactly, outcome
+# 12 over and 13 under on total=N.5. The owner's code SAJ9y6 (USA over 13.5,
+# 29 Sep 2026) is how we learned they exist; the 23 Sep note saying SportyBet
+# had no team shots had only looked at "Most Shots", a player duel. Each team's
+# line sits near its own average - 7.5 to 18.5 seen over 20 fixtures - so the
+# span mapped is wider than anything seen.
+for _line in [f"{n}.5" for n in range(4, 23)]:
+    for _side, _mid in (("H", 900552), ("A", 900553)):
+        PASSTHROUGH_MAP[f"SHOTS_{_side}_OV_{_line}"] = {
+            "marketId": _mid, "outcomeId": 12, "specifier": f"total={_line}"}
+        PASSTHROUGH_MAP[f"SHOTS_{_side}_UN_{_line}"] = {
+            "marketId": _mid, "outcomeId": 13, "specifier": f"total={_line}"}
+
 for _line in ("6.5", "7.5", "8.5", "9.5", "10.5", "11.5", "12.5"):
     PASSTHROUGH_MAP[f"CORNERS_OV_{_line}"] = {
         "marketId": 166, "outcomeId": 12, "specifier": f"total={_line}"}
@@ -641,7 +654,11 @@ FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
                       # them against 54 with the total. LAST on purpose - if
                       # the sweep ever runs out of time these are what gets
                       # cut, never the markets above.
-                      "900300", "900301")
+                      "900300", "900301",
+                      # Team shots, home then away (30 Sep 2026). After team
+                      # corners, so a sweep short on time loses these first:
+                      # only the Team shots chip leans on them.
+                      "900552", "900553")
 
 
 def _headers(region="ng"):
