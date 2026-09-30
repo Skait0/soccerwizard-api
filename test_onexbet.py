@@ -413,5 +413,22 @@ class ReviewMinors(unittest.TestCase):
             self.assertNotIn("0.25", why, code)   # no claim about quarters we never map
 
 
+class AwayHandicapSign(unittest.TestCase):
+    """OUR AH_2_L CARRIES THE HOME TEAM'S LINE; the away side's own is -L
+    (index.html's label, betpawa.py's bpgen negation). 1xBet's "Handicap 2 (P)"
+    is the away side's OWN line, so AH_2_L must map to P = -L. The first table
+    mapped P = L - the opposite bet - and neither the price-ladder sign check
+    nor the round-trip verifier could see it (found 30 Sep 2026)."""
+
+    def test_away_codes_take_the_negated_line(self):
+        self.assertEqual(onexbet.market_for("AH_2_1.5"), ("", "8", "-1.5"))    # away -1.5
+        self.assertEqual(onexbet.market_for("AH_2_-1.5"), ("", "8", "1.5"))    # away +1.5
+        self.assertEqual(onexbet.market_for("AH_2_0.75")[2], "-0.75")
+        self.assertEqual(onexbet.market_for("FH_AH_2_-1"), ("1st half", "8", "1"))
+
+    def test_home_codes_are_untouched(self):
+        self.assertEqual(onexbet.market_for("AH_1_-1.5"), ("", "7", "-1.5"))
+
+
 if __name__ == "__main__":
     unittest.main()
