@@ -2622,3 +2622,27 @@ class HandicapsAreSwept(unittest.TestCase):
     def test_a_swept_line_maps_to_our_code(self):
         self.assertEqual(server._ODDS_LOOKUP.get(("16", "1715", "hcp=-1.5")), "AH_2_-1.5")
         self.assertEqual(server._ODDS_LOOKUP.get(("16", "1714", "hcp=1")), "AH_1_1")
+
+
+class LiveCheckCoversHandicaps(unittest.TestCase):
+    """Handicap lines are re-lined and closed as the price moves, like corners
+    and shots, so the pre-booking live check reads them too (30 Sep 2026)."""
+
+    def test_handicap_legs_are_checked(self):
+        from unittest import mock
+        seen = []
+
+        def fake(legs, region="ng"):
+            seen.extend(l["prediction"] for l in legs)
+            return [{"i": 0, "reason": "closed"}]
+        with mock.patch.object(server, "_live_verdicts", side_effect=fake):
+            with server.app.test_client() as c:
+                r = c.post("/api/sporty/live-check", json={"selections": [
+                    {"eventId": "sr:match:1", "prediction": "AH_2_-1.5"},
+                    {"eventId": "sr:match:2", "prediction": "OVER_1.5"}]})
+        self.assertEqual(seen, ["AH_2_-1.5"], "goals legs stay unchecked")
+        self.assertEqual(r.get_json()["verdicts"][0]["reason"], "closed")
+
+    def test_a_closed_handicap_is_not_relined_to_another_bet(self):
+        key = ("16", "1715", "hcp=-1.5")
+        self.assertIsNone(server._nearest_open_line({("16", "1715", "hcp=-1"): (0, 1)}, key))
