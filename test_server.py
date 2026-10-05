@@ -650,6 +650,82 @@ class FailuresAreReported(unittest.TestCase):
         self.assertEqual(sent["extra"]["bad_legs"], 2)
         self.assertEqual(sent["extra"]["markets"], "HOME_OVER_0.5")
 
+    def _counting_sentry(self):
+        sent = []
+
+        class Scope:
+            def set_tag(self, k, v): pass
+            def set_extra(self, k, v): pass
+
+        class Ctx:
+            def __enter__(self): return Scope()
+            def __exit__(self, *a): return False
+
+        class FakeSentry:
+            @staticmethod
+            def push_scope(): return Ctx()
+            @staticmethod
+            def capture_message(msg, level=None): sent.append((msg, level))
+
+        return FakeSentry, sent
+
+    def test_info_goes_to_the_log_but_not_to_sentry(self):
+        """Routine booking notes (level info) used about a third of the 5k
+        monthly Sentry cap on their own. They are reading material for the
+        Railway log, not alerts, so they stop at the log."""
+        fake, sent = self._counting_sentry()
+        real = server._sentry
+        server._sentry = fake
+        server._REPORT_SENT.clear()
+        try:
+            with self.assertLogs(server.log, level="INFO") as cap:
+                server.report("booking: live card read after a SportyBet refusal", level="info", n=1)
+        finally:
+            server._sentry = real
+        self.assertEqual(sent, [], "info must not reach Sentry")
+        self.assertTrue(any("live card read" in r.getMessage() for r in cap.records),
+                        "but it must still be logged")
+
+    def test_a_repeated_warning_reaches_sentry_once_per_window(self):
+        """One warning firing sixty times a day is one signal, not sixty events
+        against the quota. Every occurrence is still logged; Sentry hears about
+        each distinct message at most once per REPORT_EVERY_S."""
+        fake, sent = self._counting_sentry()
+        real, real_now = server._sentry, server._report_now
+        clock = {"t": 1000.0}
+        server._sentry = fake
+        server._report_now = lambda: clock["t"]
+        server._REPORT_SENT.clear()
+        try:
+            with self.assertLogs(server.log, level="WARNING") as cap:
+                for _ in range(5):
+                    server.report("booking: SportyBet rejected a slip that passed validation", legs=3)
+                server.report("booking: a different warning", legs=1)
+                clock["t"] += server.REPORT_EVERY_S - 1
+                server.report("booking: SportyBet rejected a slip that passed validation", legs=3)
+                clock["t"] += 2
+                server.report("booking: SportyBet rejected a slip that passed validation", legs=3)
+        finally:
+            server._sentry, server._report_now = real, real_now
+        self.assertEqual([m for m, _ in sent], [
+            "booking: SportyBet rejected a slip that passed validation",
+            "booking: a different warning",
+            "booking: SportyBet rejected a slip that passed validation",
+        ])
+        self.assertEqual(len(cap.records), 8, "every occurrence still goes to the log")
+
+    def test_errors_are_never_throttled(self):
+        fake, sent = self._counting_sentry()
+        real = server._sentry
+        server._sentry = fake
+        server._REPORT_SENT.clear()
+        try:
+            for _ in range(3):
+                server.report("booking: something broke", level="error")
+        finally:
+            server._sentry = real
+        self.assertEqual(len(sent), 3)
+
     def test_a_broken_reporter_cannot_break_a_booking(self):
         class Exploding:
             @staticmethod

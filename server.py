@@ -49,6 +49,12 @@ else:
     _sentry = None
 
 
+REPORT_EVERY_S = 600          # one Sentry event per warning message per 10 minutes
+_REPORT_SENT = {}             # message -> monotonic time it last reached Sentry
+_REPORT_LOCK = threading.Lock()
+_report_now = time.monotonic  # swapped in tests
+
+
 def report(message, level="warning", **context):
     """Log it, and send it to Sentry as a searchable event when one is set up.
 
@@ -75,6 +81,21 @@ def report(message, level="warning", **context):
             " ".join(f"{k}={v}" for k, v in sorted(context.items())))
     if not _sentry:
         return
+    # The Sentry plan is 5k events a month and these notes were most of it:
+    # routine booking notes (info) about a third, one "rejected a slip" warning
+    # firing ~60 times a day nearly as much again. Info stays in the Railway log
+    # only. A warning reaches Sentry once per REPORT_EVERY_S per message - the
+    # issue, its count trend and its context survive; the duplicates do not.
+    # Errors are never held back.
+    if level == "info":
+        return
+    if level == "warning":
+        now = _report_now()
+        with _REPORT_LOCK:
+            last = _REPORT_SENT.get(message)
+            if last is not None and now - last < REPORT_EVERY_S:
+                return
+            _REPORT_SENT[message] = now
     try:
         with _sentry.push_scope() as scope:
             scope.set_tag("area", "booking")
