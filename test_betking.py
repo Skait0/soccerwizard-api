@@ -294,7 +294,7 @@ class BookingGuards(unittest.TestCase):
         with mock.patch.object(betking.requests, "post", post),              mock.patch.object(betking, "global_variables", return_value={}),              mock.patch.object(betking, "read_code", reads),              mock.patch.object(betking.time, "sleep"):
             out = betking.generate_code(self.picks)
         self.assertIn("error", out)
-        self.assertEqual(reads.call_count, 3)
+        self.assertEqual(reads.call_count, 1 + len(betking.READBACK_WAITS))
 
     def test_their_own_refusal_is_reported_as_one(self):
         out, _ = self._book({"ResponseStatus": 21, "BookedCouponCode": None},

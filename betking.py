@@ -999,7 +999,12 @@ def read_coupon(code, timeout=20):
 
 
 # Seconds to wait before each re-read of a code that read back short.
-READBACK_WAITS = (1.0, 2.0)
+# 6/7 Oct 2026: the canary's two-leg code read 1 of 2 after 1+2 s and both legs
+# later, so 3 s was not enough. 6 s keeps a booking near 9 s, inside the
+# proxy's 15 s (lib/bookproxy.js TIMEOUT_MS).
+# ponytail: fixed waits; if 6 s still misses, hand back the code unverified
+# rather than stretching past the proxy budget.
+READBACK_WAITS = (1.0, 2.0, 3.0)
 
 
 def generate_code(selections, timeout=30, verify=True):
