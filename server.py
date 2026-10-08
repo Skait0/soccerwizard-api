@@ -124,6 +124,8 @@ MARKET_MAP = {
     # it costs no extra request - and the model has produced o35 all along.
     "OVER_3.5":  {"marketId": "18", "outcomeId": "12", "specifier": "total=3.5"},
     "UNDER_3.5": {"marketId": "18", "outcomeId": "13", "specifier": "total=3.5"},
+    # Under 4.5, the readers' near-sure leg (owner, 8 Oct 2026). Same market 18.
+    "UNDER_4.5": {"marketId": "18", "outcomeId": "13", "specifier": "total=4.5"},
     "GG":        {"marketId": "29", "outcomeId": "74"},
     "NG":        {"marketId": "29", "outcomeId": "76"},
     # First half, at least one goal. The model has predicted this all along

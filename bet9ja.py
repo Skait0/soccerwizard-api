@@ -127,6 +127,7 @@ MARKET_MAP = {
     "UNDER_1.5":      ("S_OU@1.5_U", POPULAR),
     "UNDER_2.5":      ("S_OU@2.5_U", POPULAR),
     "UNDER_3.5":      ("S_OU@3.5_U", POPULAR),
+    "UNDER_4.5":      ("S_OU@4.5_U", POPULAR),
     "NG":             ("S_GGNG_N", POPULAR),
     "FH_UNDER_0.5":   ("S_OU1T@0.5_U", POPULAR),
     "HOME_UNDER_0.5": ("S_HTS_N", HOME_AWAY),
