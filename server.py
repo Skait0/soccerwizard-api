@@ -1373,9 +1373,14 @@ def get_fixtures():
     entry = _cache_get("fixtures", _FIXTURES_CACHE)
     if entry and entry.get("data"):
         age = int(time.time() - entry["at"])
+        try:
+            refused = [k.split("|", 1) for k in _refused_now()]
+        except Exception:                        # noqa: BLE001 - the odds still go out
+            refused = []
         return jsonify({"success": True, "cached": True, "ageSeconds": age,
                         "stale": age > _FIXTURES_TTL,
-                        "count": len(entry["data"]), "matches": entry["data"]})
+                        "count": len(entry["data"]), "matches": entry["data"],
+                        "refused": refused})
     # Nothing stored yet - the refresher is on its first pass. 503 rather than
     # 500 so callers treat it as "not ready", and the CDN in front does not
     # store it as the answer.
@@ -2611,6 +2616,35 @@ def _unbookable(raw_selections):
     }
 
 
+# SHARED REFUSALS (owner, 9 Oct 2026). A game SportyBet refused for one reader
+# is left out of the builders for every reader for half an hour, instead of
+# each of them building the same dead line. Fed only by SportyBet's own
+# answers - a booking refusal or a live-card read - so it costs no request.
+# Served beside the odds in /api/fixtures, never inside them: the prices the
+# predictions read are untouched.
+_REFUSED_TTL = 30 * 60
+_REFUSED_CACHE = {"at": 0, "data": None}
+_REFUSED_REASONS = {"line_moved", "closed", "started", "refused_alone", "dropped_by_book"}
+
+
+def _refused_now():
+    entry = _cache_get("refused", _REFUSED_CACHE) or {}
+    now = time.time()
+    return {k: t for k, t in (entry.get("data") or {}).items() if t > now}
+
+
+def _remember_refused(legs):
+    keep = [l for l in legs if l.get("reason") in _REFUSED_REASONS and l.get("eventId")]
+    if not keep:
+        return
+    live = _refused_now()
+    for l in keep:
+        live[f"{l['eventId']}|{l.get('prediction')}"] = time.time() + _REFUSED_TTL
+    if len(live) > 3000:                          # bounded: newest 3000
+        live = dict(sorted(live.items(), key=lambda kv: kv[1])[-3000:])
+    _cache_put("refused", _REFUSED_CACHE, live)
+
+
 def _logged(legs):
     _log_refused(legs)
     return legs
@@ -2634,6 +2668,10 @@ def _log_refused(legs):
                      price if price else "-", age, leg.get("reason") or "?")
     except Exception as ex:                      # noqa: BLE001 - logging must not break booking
         log.info("refused leg log failed: %s", ex)
+    try:
+        _remember_refused(legs)
+    except Exception as ex:                      # noqa: BLE001 - nor may remembering
+        log.info("refused leg store failed: %s", ex)
 
 
 LINE_CHECK_EVENTS = 8
@@ -2683,6 +2721,7 @@ def api_sporty_live_check():
             if v.get(k):
                 leg[k] = v[k]
         out.append(leg)
+    _remember_refused(out)
     return jsonify({"verdicts": out, "checked": len(legs)})
 
 

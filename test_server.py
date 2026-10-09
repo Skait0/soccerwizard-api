@@ -2754,7 +2754,7 @@ class RefusedLegLog(unittest.TestCase):
             with self.assertLogs(server.log, level="INFO") as cm:
                 server._log_refused([{"eventId": "sr:match:1", "prediction": "HOME_OVER_0.5", "reason": "line_moved"},
                                      {"eventId": "sr:match:9", "prediction": "1"}])
-        lines = [l for l in cm.output if "refused leg" in l]
+        lines = [l for l in cm.output if "refused leg |" in l]
         self.assertEqual(len(lines), 2)
         self.assertIn("market=HOME_OVER_0.5 league=Welsh Cymru North price=1.07 cache_min=10 reason=line_moved", lines[0])
         self.assertIn("league=? price=-", lines[1])
@@ -2763,3 +2763,38 @@ class RefusedLegLog(unittest.TestCase):
         from unittest import mock
         with mock.patch.object(server, "_cache_get", side_effect=RuntimeError("boom")):
             server._log_refused([{"eventId": "x", "prediction": "1"}])
+
+
+class SharedRefusals(unittest.TestCase):
+    """A game SportyBet refused for one reader is listed for everyone for 30
+    minutes, beside the odds and never inside them (owner, 9 Oct 2026)."""
+
+    def setUp(self):
+        self._r = server._redis
+        server._redis = None
+        server._REFUSED_CACHE.update(at=0, data=None)
+
+    def tearDown(self):
+        server._redis = self._r
+        server._REFUSED_CACHE.update(at=0, data=None)
+
+    def test_refused_legs_are_served_beside_untouched_odds(self):
+        from unittest import mock
+        server._remember_refused([
+            {"eventId": "sr:match:1", "prediction": "HOME_OVER_0.5", "reason": "line_moved"},
+            {"eventId": "sr:match:2", "prediction": "1", "reason": "suspect"}])
+        odds = {"HOME_OVER_0.5": 1.07}
+        entry = {"at": server.time.time(), "data": [{"eventId": "sr:match:1", "odds": odds}]}
+        real = server._cache_get
+        with mock.patch.object(server, "_cache_get",
+                               side_effect=lambda n, m: entry if n == "fixtures" else real(n, m)):
+            with server.app.test_client() as c:
+                j = c.get("/api/fixtures").get_json()
+        self.assertEqual(j["refused"], [["sr:match:1", "HOME_OVER_0.5"]], "a guess (suspect) is never shared")
+        self.assertEqual(j["matches"][0]["odds"], {"HOME_OVER_0.5": 1.07}, "the prices are untouched")
+
+    def test_entries_expire(self):
+        server._remember_refused([{"eventId": "e", "prediction": "1", "reason": "closed"}])
+        with __import__("unittest").mock.patch.object(server.time, "time",
+                                                     return_value=server.time.time() + server._REFUSED_TTL + 1):
+            self.assertEqual(server._refused_now(), {})
