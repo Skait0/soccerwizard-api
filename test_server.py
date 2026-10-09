@@ -2798,3 +2798,39 @@ class SharedRefusals(unittest.TestCase):
         with __import__("unittest").mock.patch.object(server.time, "time",
                                                      return_value=server.time.time() + server._REFUSED_TTL + 1):
             self.assertEqual(server._refused_now(), {})
+
+
+class NearPass(unittest.TestCase):
+    """Same request budget, spent on the next 12 hours (owner, 9 Oct 2026)."""
+
+    OLD = [{"eventId": "a", "startTime": 1, "league": "L", "odds": {"1": 1.5, "HOME_OVER_0.5": 1.07}},
+           {"eventId": "far", "startTime": 9, "odds": {"1": 2.0}}]
+
+    def test_a_complete_pass_replaces_a_games_odds_so_closed_lines_go(self):
+        out = server._merge_near(self.OLD, [{"eventId": "a", "startTime": 1, "odds": {"1": 1.55}}], True)
+        self.assertEqual(out[0]["odds"], {"1": 1.55})
+        self.assertEqual(out[0]["league"], "L", "everything but the odds is kept")
+        self.assertEqual(out[1], self.OLD[1], "games outside the window are untouched")
+
+    def test_a_short_pass_never_wipes_a_price(self):
+        out = server._merge_near(self.OLD, [{"eventId": "a", "odds": {"1": 1.55}},
+                                            {"eventId": "new", "odds": {"X": 3.1}}], False)
+        self.assertEqual(out[0]["odds"], {"1": 1.55, "HOME_OVER_0.5": 1.07})
+        self.assertEqual(out[-1]["eventId"], "new")
+
+    def test_the_near_pass_asks_for_the_window_and_the_budget_holds(self):
+        from unittest import mock
+        urls = []
+
+        class R:
+            def json(self):
+                return {"bizCode": 10000, "data": {"tournaments": []}}
+        with mock.patch.object(server.requests, "get", side_effect=lambda u, **k: (urls.append(u), R())[1]), \
+             mock.patch.object(server.time, "sleep"):
+            server.fetch_sportybet_fixtures(timeline=12)
+        self.assertTrue(urls and all(u.endswith("&timeline=12") for u in urls))
+        server._LAST_FETCH.update(requests=150)
+        self.assertGreaterEqual(server._near_wait() / 3600 * server._NEAR_PER_HOUR, 150 - 1e-9,
+                                "a big window waits long enough to stay under the hourly budget")
+        server._LAST_FETCH.update(requests=10)
+        self.assertEqual(server._near_wait(), server._NEAR_EVERY)

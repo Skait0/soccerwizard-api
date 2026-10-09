@@ -560,7 +560,18 @@ _FIXTURES_CACHE = {"at": 0, "data": None}
 # Longer than it was. Every refresh is fifty-odd requests to SportyBet, and
 # fixtures for the days ahead barely move between builds - so the useful
 # thing to optimise is how rarely we ask, not how fast we ask.
-_FIXTURES_TTL = 45 * 60
+# THE SAME REQUEST BUDGET, SPENT WHERE THE SLIPS ARE (owner, 9 Oct 2026).
+# Refusals come from games kicking off soon, whose lines SportyBet moves and
+# closes; games days away barely change. So the whole card is swept every 90
+# minutes instead of 45, and in between the next 12 hours alone (their own
+# timeline=12 filter) every 15 minutes - slowed further whenever that window
+# is big, so it never spends more than _NEAR_PER_HOUR. Together that is no
+# more an hour than the 45-minute sweep was: ~200 + up to ~210.
+_FIXTURES_TTL = 90 * 60
+_NEAR_EVERY = 15 * 60
+_NEAR_HOURS = 12
+_NEAR_PER_HOUR = 200
+_LAST_FETCH = {"requests": 0, "complete": True}
 _LIVE_CACHE = {"at": 0, "data": None}
 _LIVE_TTL = 30
 # Bet9ja has no bulk endpoint: one request per competition, 170 of them, about
@@ -737,7 +748,7 @@ def _extract_odds(event):
     return odds
 
 
-def fetch_sportybet_fixtures(region="ng"):
+def fetch_sportybet_fixtures(region="ng", timeline=None):
     """Fetch upcoming events and merge odds across the markets we bet on.
 
     The pcUpcomingEvents endpoint returns each event's `markets` array filtered
@@ -795,7 +806,9 @@ def fetch_sportybet_fixtures(region="ng"):
     # minutes, so even a full fifteen-minute fetch is a third of the cycle.
     # The old budget was the constraint; there was never a reason for it to be
     # this tight.
-    deadline = time.time() + 900
+    deadline = time.time() + (300 if timeline else 900)
+    window = f"&timeline={int(timeline)}" if timeline else ""
+    requests_made, complete = 0, True
 
     for market_id in FIXTURE_MARKET_IDS:
         # Seven pages was seven hundred events, and SportyBet currently lists
@@ -817,14 +830,16 @@ def fetch_sportybet_fixtures(region="ng"):
                        markets_total=len(FIXTURE_MARKET_IDS))
                 log.warning("fixtures fetch hit its deadline at market %s page %s; "
                             "returning %d events", market_id, page, len(by_event))
+                complete = False
                 break
             url = (f"https://www.sportybet.com/api/{region}/factsCenter/pcUpcomingEvents"
-                   f"?sportId=sr:sport:1&marketId={market_id}&pageSize=100&pageNum={page}")
+                   f"?sportId=sr:sport:1&marketId={market_id}&pageSize=100&pageNum={page}{window}")
             # One retry before abandoning a market. A single refused request
             # used to zero every market it touched, which is how one bad
             # minute turned into an empty feed.
             data = None
             for attempt in (1, 2):
+                requests_made += 1
                 try:
                     r = requests.get(url, headers=headers, impersonate="chrome120", timeout=12)
                     data = r.json()
@@ -840,6 +855,7 @@ def fetch_sportybet_fixtures(region="ng"):
                         # same refusal.
                         time.sleep(4)
             if data is None:
+                complete = False
                 break  # give up on this market, move to the next
             # A real pause between pages, not a token one. At roughly one and
             # a half requests a second SportyBet started refusing partway
@@ -890,6 +906,7 @@ def fetch_sportybet_fixtures(region="ng"):
                     m["league"] = lg
                 # Merge this market's odds into whatever we already have.
                 m["odds"].update(_extract_odds(e))
+    _LAST_FETCH.update(requests=requests_made, complete=complete)
     if not by_event and errors:
         # Total failure - let the route serve stale rather than cache an empty set.
         raise RuntimeError("all SportyBet fixture fetches failed")
@@ -1096,25 +1113,79 @@ def _refresh_fixtures_once():
         log.warning("fixtures refresh failed, keeping previous copy: %s", ex)
     return False
 
+def _merge_near(old, near, complete):
+    """The stored card with the next-12-hours pass laid over it. A game in
+    both takes the fresh odds - whole, so a line SportyBet closed disappears,
+    but only when every market answered; a short pass only adds and updates,
+    so a throttled request never wipes a price. Games the pass did not mention
+    are left exactly as they were; new ones are appended."""
+    fresh = {m["eventId"]: m for m in near if m.get("eventId")}
+    out, seen = [], set()
+    for m in old:
+        n = fresh.get(m.get("eventId"))
+        if n is None:
+            out.append(m)
+            continue
+        seen.add(n["eventId"])
+        odds = dict(n["odds"]) if complete else dict(m.get("odds") or {}, **n["odds"])
+        out.append(dict(m, odds=odds, startTime=n.get("startTime") or m.get("startTime")))
+    out.extend(m for eid, m in fresh.items() if eid not in seen)
+    return out
+
+
+def _refresh_near_once():
+    """Re-read only the games kicking off in the next _NEAR_HOURS. Never runs
+    beside the full sweep - both live on the one refresher thread."""
+    try:
+        prev = _cache_get("fixtures", _FIXTURES_CACHE)
+        if not prev or not prev.get("data"):
+            return False
+        near = fetch_sportybet_fixtures(timeline=_NEAR_HOURS)
+        if not near:
+            return False
+        merged = _merge_near(prev["data"], near, _LAST_FETCH["complete"])
+        _cache_put("fixtures", _FIXTURES_CACHE, merged)
+        log.info("fixtures near pass: %d games in %dh, %d requests, complete=%s",
+                 len(near), _NEAR_HOURS, _LAST_FETCH["requests"], _LAST_FETCH["complete"])
+        return True
+    except Exception as ex:  # noqa: BLE001
+        log.warning("fixtures near pass failed, keeping previous copy: %s", ex)
+    return False
+
+
+def _near_wait():
+    """Seconds until the next near pass: every _NEAR_EVERY, or longer when
+    the last one was big, so near passes stay under _NEAR_PER_HOUR."""
+    return max(_NEAR_EVERY, _LAST_FETCH["requests"] * 3600 / _NEAR_PER_HOUR)
+
+
 def _fixtures_loop():
     # With a shared cache the copy in Redis outlives this process, so a
     # redeploy usually starts with data that is minutes old. Refetching it
     # straight away would spend forty-nine requests to replace something we
     # already have - and every one of those is a request that got this server
     # refused once. Wait out whatever is left of its life instead.
+    # Near passes reset the stored copy's age, so the full sweep keeps its own
+    # clock from here; after a redeploy the first full sweep simply waits one
+    # interval and near passes cover the games that matter meanwhile.
     entry = _cache_get("fixtures", _FIXTURES_CACHE)
+    next_full = time.time()
     if entry and entry.get("data"):
-        age = time.time() - entry["at"]
-        if age < _FIXTURES_TTL:
-            wait = _FIXTURES_TTL - age
-            log.info("fixtures cache is %ds old; first refresh in %ds",
-                     int(age), int(wait))
-            time.sleep(wait)
+        next_full = time.time() + _FIXTURES_TTL
+        log.info("fixtures cache present; first full sweep in %ds, near passes meanwhile",
+                 _FIXTURES_TTL)
+        time.sleep(_NEAR_EVERY)
     while True:
-        ok = _refresh_fixtures_once()
-        # Retry sooner after a failure than after a success, but never so
-        # soon that a refused IP gets hammered back into refusing.
-        time.sleep(_FIXTURES_TTL if ok else 300)
+        if time.time() >= next_full:
+            ok = _refresh_fixtures_once()
+            # Retry sooner after a failure than after a success, but never so
+            # soon that a refused IP gets hammered back into refusing.
+            next_full = time.time() + (_FIXTURES_TTL if ok else 300)
+            wait = _NEAR_EVERY
+        else:
+            _refresh_near_once()
+            wait = _near_wait()
+        time.sleep(max(60, min(wait, next_full - time.time())))
 
 def _start_fixtures_thread():
     if not _REFRESH_LOCK.acquire(blocking=False):
