@@ -711,9 +711,23 @@ def _headers(region="ng"):
     }
 
 
+# THE BOOKING QUEUE (owner, 9 Oct 2026 - "SportyBet throttling Railway is the
+# risk"). Every booking, probe call and live-card read goes to SportyBet from
+# one IP, and a burst from a datacentre IP is what they refuse. So at most
+# _SPORTY_SLOTS of them are in flight at once, whatever the traffic; the rest
+# wait their turn, and one that waits too long is told "busy" honestly rather
+# than adding to the burst. One process (workers 1), so this is global.
+_SPORTY_SLOTS = 3
+_SPORTY_SEM = threading.BoundedSemaphore(_SPORTY_SLOTS)
+_SLOT_WAIT_S = 10
+
+
 def generate_sportybet_code(selections_list, region="ng"):
     url = f"https://www.sportybet.com/api/{region}/orders/share"
     headers = dict(_headers(region)); headers["Content-Type"] = "application/json"
+    if not _SPORTY_SEM.acquire(timeout=_SLOT_WAIT_S):
+        log.warning("booking queue full for %ss; answered busy", _SLOT_WAIT_S)
+        return {"error": "busy", "busy": True, "sent": selections_list}
     try:
         response = requests.post(url, json={"selections": selections_list},
                                  headers=headers, impersonate="chrome120", timeout=10)
@@ -726,6 +740,8 @@ def generate_sportybet_code(selections_list, region="ng"):
         # always getting a dict back (never a 500). Log so failures are visible.
         log.warning("booking request to SportyBet failed: %s", e)
         return {"error": f"request failed: {e}", "sent": selections_list}
+    finally:
+        _SPORTY_SEM.release()
 
 
 def _extract_odds(event):
@@ -2396,6 +2412,25 @@ def _verify_sporty_code(code, raw_selections, region="ng"):
 # Calls run ~0.1s each there, so forty fits inside the deadline.
 PROBE_MAX_CALLS = 40
 PROBE_DEADLINE_S = 8.0
+# A SHARED BUDGET ON TOP (owner, 9 Oct 2026). Forty calls for one reader is
+# fine; forty each for a crowd refused at once is the burst that gets Railway
+# throttled. So probes across every reader spend at most this many calls a
+# minute - normal traffic never reaches it, and in a rush the probes go quiet
+# first (no verdict, never a wrong one) while ordinary bookings carry on.
+PROBE_PER_MIN = 60
+_PROBE_SPENT = []
+_PROBE_LOCK = threading.Lock()
+
+
+def _probe_allowed():
+    now = time.time()
+    with _PROBE_LOCK:
+        while _PROBE_SPENT and now - _PROBE_SPENT[0] > 60:
+            _PROBE_SPENT.pop(0)
+        if len(_PROBE_SPENT) >= PROBE_PER_MIN:
+            return False
+        _PROBE_SPENT.append(now)
+        return True
 
 
 def _probe_refusal(formatted, region="ng", first=()):
@@ -2413,8 +2448,12 @@ def _probe_refusal(formatted, region="ng", first=()):
         if (calls["n"] >= PROBE_MAX_CALLS
                 or time.time() - started > PROBE_DEADLINE_S):
             return None                      # out of budget: no opinion
+        if not _probe_allowed():
+            return None                      # shared budget spent: no opinion
         calls["n"] += 1
         got = generate_sportybet_code([formatted[i] for i in subset], region)
+        if got.get("busy"):
+            return None                      # queue full is not a refusal
         return bool(got.get("code"))
 
     bad, ran_out = [], False
@@ -2496,6 +2535,8 @@ def _event_markets(event_id, region="ng"):
     url = (f"https://www.sportybet.com/api/{region}/factsCenter/event"
            f"?eventId={quote(str(event_id))}&productId=3")
     out = None
+    if not _SPORTY_SEM.acquire(timeout=3):
+        return None                              # unknown, never a verdict
     try:
         r = requests.get(url, headers=_headers(region), impersonate="chrome120",
                          timeout=5)
@@ -2512,6 +2553,8 @@ def _event_markets(event_id, region="ng"):
                         pass
     except Exception as ex:                      # noqa: BLE001 - best effort
         log.info("sportybet live card failed for %s: %s", event_id, ex)
+    finally:
+        _SPORTY_SEM.release()
     if len(_LIVE_CACHE) > 2000:
         _LIVE_CACHE.clear()
     _LIVE_CACHE[event_id] = (time.time(), out)
@@ -2764,22 +2807,10 @@ def api_sporty_live_check():
     Body {"selections": [{"eventId", "prediction"}]}. Returns {"verdicts":
     [{"eventId", "prediction", "reason", "now"?, "odds"?}]}, `odds` being the
     live price of `now`. At most LINE_CHECK_EVENTS games are read."""
-    body = request.json or {}
-    sel = body.get("selections") or []
-    # GOALS LINES ON REQUEST (9 Oct 2026). A built slip is checked as it lands
-    # in My slip, before anyone presses Get code, and the refusals the owner
-    # kept hitting were goals lines - team over 0.5 / over 1.5 re-lined or shut
-    # on a busy card. That caller sends goals=true; the booking-time check
-    # still reads only the lines named above.
-    goals = body.get("goals") is True
+    sel = (request.json or {}).get("selections") or []
     legs, evs = [], set()
     for s in sel:
-        if not isinstance(s, dict):
-            continue
-        pred = str(s.get("prediction") or "")
-        m = market_for(pred) if goals else None
-        if not pred.startswith(_LINE_PREFIXES) and not (
-                m and str(m.get("specifier") or "").startswith("total=")):
+        if not isinstance(s, dict) or not str(s.get("prediction") or "").startswith(_LINE_PREFIXES):
             continue
         if s.get("eventId") not in evs and len(evs) >= LINE_CHECK_EVENTS:
             continue
@@ -2864,6 +2895,9 @@ def api_generate_code():
             "specifier": mapping.get("specifier", "")
         })
     result = generate_sportybet_code(formatted_selections)
+    if result.get("busy"):
+        return jsonify({"success": False, "busy": True,
+                        "message": "SportyBet is busy right now - try again in a moment"}), 503
     if result.get("code"):
         # READ IT BACK BEFORE HANDING IT OVER. They mint a perfectly ordinary
         # code for a slip they only partly understood - see

@@ -2086,6 +2086,12 @@ class WhenSportyBetWillNotSayWhichLeg(unittest.TestCase):
     team-totals price at all, and asking for one is refused exactly this way.
     """
 
+    def setUp(self):
+        # Each test is one reader; the shared per-minute budget is not what
+        # these measure, so every test starts with it unspent.
+        server._PROBE_SPENT.clear()
+
+
     @staticmethod
     def _legs(n):
         return [{"eventId": f"sr:match:{i:d}", "marketId": "1",
@@ -2719,24 +2725,6 @@ class LiveCheckCoversHandicaps(unittest.TestCase):
         self.assertEqual(seen, ["AH_2_-1.5"], "goals legs stay unchecked")
         self.assertEqual(r.get_json()["verdicts"][0]["reason"], "closed")
 
-    def test_goals_lines_are_checked_when_asked(self):
-        """My slip asks about goals lines as a built slip lands (9 Oct 2026);
-        1X2 still costs no request."""
-        from unittest import mock
-        seen = []
-
-        def fake(legs, region="ng"):
-            seen.extend(l["prediction"] for l in legs)
-            return [{"i": 0, "reason": "line_moved", "now": "HOME_OVER_1.5", "odds": 1.4}]
-        with mock.patch.object(server, "_live_verdicts", side_effect=fake):
-            with server.app.test_client() as c:
-                r = c.post("/api/sporty/live-check", json={"goals": True, "selections": [
-                    {"eventId": "sr:match:1", "prediction": "HOME_OVER_0.5"},
-                    {"eventId": "sr:match:2", "prediction": "1"},
-                    {"eventId": "sr:match:3", "prediction": "CORNERS_OV_9.5"}]})
-        self.assertEqual(seen, ["HOME_OVER_0.5", "CORNERS_OV_9.5"])
-        self.assertEqual(r.get_json()["verdicts"][0]["now"], "HOME_OVER_1.5")
-
     def test_a_closed_handicap_is_not_relined_to_another_bet(self):
         key = ("16", "1715", "hcp=-1.5")
         self.assertIsNone(server._nearest_open_line({("16", "1715", "hcp=-1"): (0, 1)}, key))
@@ -2834,3 +2822,42 @@ class NearPass(unittest.TestCase):
                                 "a big window waits long enough to stay under the hourly budget")
         server._LAST_FETCH.update(requests=10)
         self.assertEqual(server._near_wait(), server._NEAR_EVERY)
+
+
+class BookingQueue(unittest.TestCase):
+    """At most _SPORTY_SLOTS SportyBet calls in flight; probes share a budget
+    (owner, 9 Oct 2026: throttling is the risk)."""
+
+    def test_a_full_queue_answers_busy_and_never_calls_sportybet(self):
+        from unittest import mock
+        held = [server._SPORTY_SEM.acquire() for _ in range(server._SPORTY_SLOTS)]
+        try:
+            with mock.patch.object(server, "_SLOT_WAIT_S", 0.01), \
+                 mock.patch.object(server.requests, "post") as post:
+                got = server.generate_sportybet_code([{"eventId": "e"}])
+            post.assert_not_called()
+            self.assertTrue(got.get("busy"))
+            with mock.patch.object(server._SPORTY_SEM, "acquire", return_value=False),                  mock.patch.object(server.requests, "get") as get:
+                self.assertIsNone(server._event_markets("sr:match:queue-test"))
+            get.assert_not_called()
+        finally:
+            for _ in held:
+                server._SPORTY_SEM.release()
+
+    def test_a_busy_queue_is_never_read_as_a_refusal(self):
+        from unittest import mock
+        with mock.patch.object(server, "generate_sportybet_code", return_value={"busy": True}):
+            bad, how = server._probe_refusal([{"eventId": "a"}, {"eventId": "b"}])
+        self.assertEqual(bad, [], "busy names nothing")
+        self.assertTrue(how["ran_out"])
+
+    def test_the_shared_probe_budget_runs_dry_then_refills(self):
+        from unittest import mock
+        server._PROBE_SPENT.clear()
+        now = server.time.time()
+        with mock.patch.object(server.time, "time", return_value=now):
+            self.assertTrue(all(server._probe_allowed() for _ in range(server.PROBE_PER_MIN)))
+            self.assertFalse(server._probe_allowed())
+        with mock.patch.object(server.time, "time", return_value=now + 61):
+            self.assertTrue(server._probe_allowed())
+        server._PROBE_SPENT.clear()
