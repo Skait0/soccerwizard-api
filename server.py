@@ -2630,10 +2630,22 @@ def api_sporty_live_check():
     Body {"selections": [{"eventId", "prediction"}]}. Returns {"verdicts":
     [{"eventId", "prediction", "reason", "now"?, "odds"?}]}, `odds` being the
     live price of `now`. At most LINE_CHECK_EVENTS games are read."""
-    sel = (request.json or {}).get("selections") or []
+    body = request.json or {}
+    sel = body.get("selections") or []
+    # GOALS LINES ON REQUEST (9 Oct 2026). A built slip is checked as it lands
+    # in My slip, before anyone presses Get code, and the refusals the owner
+    # kept hitting were goals lines - team over 0.5 / over 1.5 re-lined or shut
+    # on a busy card. That caller sends goals=true; the booking-time check
+    # still reads only the lines named above.
+    goals = body.get("goals") is True
     legs, evs = [], set()
     for s in sel:
-        if not isinstance(s, dict) or not str(s.get("prediction") or "").startswith(_LINE_PREFIXES):
+        if not isinstance(s, dict):
+            continue
+        pred = str(s.get("prediction") or "")
+        m = market_for(pred) if goals else None
+        if not pred.startswith(_LINE_PREFIXES) and not (
+                m and str(m.get("specifier") or "").startswith("total=")):
             continue
         if s.get("eventId") not in evs and len(evs) >= LINE_CHECK_EVENTS:
             continue

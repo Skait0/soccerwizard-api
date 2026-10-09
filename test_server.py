@@ -2719,6 +2719,24 @@ class LiveCheckCoversHandicaps(unittest.TestCase):
         self.assertEqual(seen, ["AH_2_-1.5"], "goals legs stay unchecked")
         self.assertEqual(r.get_json()["verdicts"][0]["reason"], "closed")
 
+    def test_goals_lines_are_checked_when_asked(self):
+        """My slip asks about goals lines as a built slip lands (9 Oct 2026);
+        1X2 still costs no request."""
+        from unittest import mock
+        seen = []
+
+        def fake(legs, region="ng"):
+            seen.extend(l["prediction"] for l in legs)
+            return [{"i": 0, "reason": "line_moved", "now": "HOME_OVER_1.5", "odds": 1.4}]
+        with mock.patch.object(server, "_live_verdicts", side_effect=fake):
+            with server.app.test_client() as c:
+                r = c.post("/api/sporty/live-check", json={"goals": True, "selections": [
+                    {"eventId": "sr:match:1", "prediction": "HOME_OVER_0.5"},
+                    {"eventId": "sr:match:2", "prediction": "1"},
+                    {"eventId": "sr:match:3", "prediction": "CORNERS_OV_9.5"}]})
+        self.assertEqual(seen, ["HOME_OVER_0.5", "CORNERS_OV_9.5"])
+        self.assertEqual(r.get_json()["verdicts"][0]["now"], "HOME_OVER_1.5")
+
     def test_a_closed_handicap_is_not_relined_to_another_bet(self):
         key = ("16", "1715", "hcp=-1.5")
         self.assertIsNone(server._nearest_open_line({("16", "1715", "hcp=-1"): (0, 1)}, key))
