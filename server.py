@@ -2611,6 +2611,31 @@ def _unbookable(raw_selections):
     }
 
 
+def _logged(legs):
+    _log_refused(legs)
+    return legs
+
+
+def _log_refused(legs):
+    """ONE LINE PER GAME SPORTYBET REFUSED (owner, 9 Oct 2026). Market,
+    league, the price our copy held and how old that copy was - so which
+    markets and leagues get refused is measured, not guessed. Logs only; it
+    sends nothing anywhere and changes no answer."""
+    try:
+        entry = _cache_get("fixtures", _FIXTURES_CACHE) or {}
+        at = entry.get("at")
+        age = int((time.time() - at) / 60) if at else -1
+        rows = {m.get("eventId"): m for m in (entry.get("data") or []) if isinstance(m, dict)}
+        for leg in legs:
+            m = rows.get(leg.get("eventId")) or {}
+            price = (m.get("odds") or {}).get(leg.get("prediction"))
+            log.info("refused leg | market=%s league=%s price=%s cache_min=%s reason=%s",
+                     leg.get("prediction"), m.get("league") or "?",
+                     price if price else "-", age, leg.get("reason") or "?")
+    except Exception as ex:                      # noqa: BLE001 - logging must not break booking
+        log.info("refused leg log failed: %s", ex)
+
+
 LINE_CHECK_EVENTS = 8
 # Handicaps joined 30 Sep 2026: their lines close and move with the price like
 # corners and shots, and the Handicap chip put them on big slips. A closed one
@@ -2750,9 +2775,9 @@ def api_generate_code():
             "message": "SportyBet rejected the slip",
             "detail": "SportyBet returned a code holding "
                       f"{len(raw_selections) - len(missing)} of {len(raw_selections)} games",
-            "unbookable": [{"eventId": m.get("eventId"),
+            "unbookable": _logged([{"eventId": m.get("eventId"),
                             "prediction": m.get("prediction"),
-                            "reason": "dropped_by_book"} for m in missing],
+                            "reason": "dropped_by_book"} for m in missing]),
         }), 400
 
     # Got past our own check and SportyBet still said no. That is the case
@@ -2805,6 +2830,7 @@ def api_generate_code():
             if v.get("now"):
                 leg["now"] = v["now"]
             body["unbookable"].append(leg)
+        _log_refused(body["unbookable"])
         return jsonify(body), 400
 
     # ASK THEM WHICH LEG, RATHER THAN GUESSING FROM OUR OWN CACHE.
@@ -2828,6 +2854,7 @@ def api_generate_code():
                 {"eventId": raw_selections[i].get("eventId"),
                  "prediction": raw_selections[i].get("prediction"),
                  "reason": "refused_alone"} for i in bad_ix]
+            _log_refused(body["unbookable"])
             return jsonify(body), 400
         if not bad_ix and not probe["ran_out"]:
             # EVERY LEG BOOKS ALONE AND THE SLIP DOES NOT. That is a statement

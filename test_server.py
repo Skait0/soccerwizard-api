@@ -2740,3 +2740,26 @@ class LiveCheckCoversHandicaps(unittest.TestCase):
     def test_a_closed_handicap_is_not_relined_to_another_bet(self):
         key = ("16", "1715", "hcp=-1.5")
         self.assertIsNone(server._nearest_open_line({("16", "1715", "hcp=-1"): (0, 1)}, key))
+
+
+class RefusedLegLog(unittest.TestCase):
+    """Owner, 9 Oct 2026: every refused game is logged with its market, league,
+    our price and the cache's age, so the next fix is chosen on data."""
+
+    def test_one_line_per_refused_leg(self):
+        from unittest import mock
+        entry = {"at": server.time.time() - 600, "data": [
+            {"eventId": "sr:match:1", "league": "Welsh Cymru North", "odds": {"HOME_OVER_0.5": 1.07}}]}
+        with mock.patch.object(server, "_cache_get", return_value=entry):
+            with self.assertLogs(server.log, level="INFO") as cm:
+                server._log_refused([{"eventId": "sr:match:1", "prediction": "HOME_OVER_0.5", "reason": "line_moved"},
+                                     {"eventId": "sr:match:9", "prediction": "1"}])
+        lines = [l for l in cm.output if "refused leg" in l]
+        self.assertEqual(len(lines), 2)
+        self.assertIn("market=HOME_OVER_0.5 league=Welsh Cymru North price=1.07 cache_min=10 reason=line_moved", lines[0])
+        self.assertIn("league=? price=-", lines[1])
+
+    def test_a_broken_cache_never_breaks_booking(self):
+        from unittest import mock
+        with mock.patch.object(server, "_cache_get", side_effect=RuntimeError("boom")):
+            server._log_refused([{"eventId": "x", "prediction": "1"}])
