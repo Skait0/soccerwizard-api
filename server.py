@@ -725,9 +725,13 @@ _SLOT_WAIT_S = 10
 def generate_sportybet_code(selections_list, region="ng"):
     url = f"https://www.sportybet.com/api/{region}/orders/share"
     headers = dict(_headers(region)); headers["Content-Type"] = "application/json"
+    queued = time.time()
     if not _SPORTY_SEM.acquire(timeout=_SLOT_WAIT_S):
         log.warning("booking queue full for %ss; answered busy", _SLOT_WAIT_S)
         return {"error": "busy", "busy": True, "sent": selections_list}
+    # Timed, so the slot count is raised on evidence: how long a reader waited
+    # for a slot and how long SportyBet held it (owner, 9 Oct 2026).
+    started = time.time()
     try:
         response = requests.post(url, json={"selections": selections_list},
                                  headers=headers, impersonate="chrome120", timeout=10)
@@ -742,6 +746,8 @@ def generate_sportybet_code(selections_list, region="ng"):
         return {"error": f"request failed: {e}", "sent": selections_list}
     finally:
         _SPORTY_SEM.release()
+        log.info("sporty slot | kind=book legs=%d wait_ms=%d call_ms=%d",
+                 len(selections_list), (started - queued) * 1000, (time.time() - started) * 1000)
 
 
 def _extract_odds(event):
@@ -1249,16 +1255,27 @@ def _refresh_bet9ja_once():
     if not fixtures:
         log.warning("bet9ja refresh returned nothing; keeping previous copy")
         return False
-    # Their own catalogue said how many events exist. Coming back well under
-    # that is a throttled or blocked sweep, not a thin day, and storing it
-    # would quietly shrink the board.
-    if expected and got < expected * 0.9:
+    # Their own catalogue said how many events exist. Coming back far under
+    # that is a block page or a throttle, not a thin day.
+    #
+    # NOT 90% ANY MORE (9 Oct 2026). Their catalogue now counts ~28% more than
+    # the per-league feed returns - 1,415 of 1,970, short in 127 leagues, with
+    # ZERO failed requests - so every sweep was refused and the stored copy sat
+    # 10.5 hours old with 262 kicked-off games in it. A real block shows up as
+    # failed leagues or a near-empty sweep, so those are what is refused now;
+    # the shrink guard below still catches a quiet truncation.
+    failed = len(stats.get("failed") or [])
+    if (expected and got < expected * 0.5) or failed > (stats.get("competitions") or 0) * 0.1:
         log.warning("bet9ja refresh collected %d of %d they list; keeping "
                     "previous copy (failed=%d short=%d)", got, expected,
-                    len(stats.get("failed") or []), len(stats.get("short") or []))
+                    failed, len(stats.get("short") or []))
         return False
     prev = _cache_get("bet9ja", _BET9JA_CACHE)
-    prev_n = len((prev or {}).get("data") or {})
+    # Compared with the stored copy's games still to come: kicked-off games
+    # inflate an old copy, and against them a healthy sweep looks truncated.
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    prev_n = sum(1 for r in ((prev or {}).get("data") or {}).values()
+                 if not isinstance(r, dict) or not r.get("kickoff") or r["kickoff"] > now_iso)
     if prev_n and got < prev_n * 0.8:
         log.warning("bet9ja refresh returned %d against %d stored, looks "
                     "truncated; keeping the fuller copy", got, prev_n)
@@ -2523,20 +2540,25 @@ def _probe_refusal(formatted, region="ng", first=()):
 LIVE_TTL = 60
 LIVE_MAX_EVENTS = 30
 LIVE_BUDGET_S = 6
-_LIVE_CACHE = {}
+# Its own name. It used to reuse _LIVE_CACHE, which rebound the live-scores
+# cache above to this dict at import - so a card-cache clear wiped the scores'
+# local copy and the scores wrote 'at'/'data' into the card cache.
+_CARD_CACHE = {}
 
 
 def _event_markets(event_id, region="ng"):
     """One event's live card: {"status", "markets": {(mid, oid, spec): (status,
     isActive)}}, or None when they did not answer."""
-    hit = _LIVE_CACHE.get(event_id)
+    hit = _CARD_CACHE.get(event_id)
     if hit and time.time() - hit[0] < LIVE_TTL:
         return hit[1]
     url = (f"https://www.sportybet.com/api/{region}/factsCenter/event"
            f"?eventId={quote(str(event_id))}&productId=3")
     out = None
+    queued = time.time()
     if not _SPORTY_SEM.acquire(timeout=3):
         return None                              # unknown, never a verdict
+    started = time.time()
     try:
         r = requests.get(url, headers=_headers(region), impersonate="chrome120",
                          timeout=5)
@@ -2555,9 +2577,11 @@ def _event_markets(event_id, region="ng"):
         log.info("sportybet live card failed for %s: %s", event_id, ex)
     finally:
         _SPORTY_SEM.release()
-    if len(_LIVE_CACHE) > 2000:
-        _LIVE_CACHE.clear()
-    _LIVE_CACHE[event_id] = (time.time(), out)
+        log.info("sporty slot | kind=card wait_ms=%d call_ms=%d",
+                 (started - queued) * 1000, (time.time() - started) * 1000)
+    if len(_CARD_CACHE) > 2000:
+        _CARD_CACHE.clear()
+    _CARD_CACHE[event_id] = (time.time(), out)
     return out
 
 

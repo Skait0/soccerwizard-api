@@ -866,6 +866,26 @@ class Bet9jaRefreshGuards(unittest.TestCase):
         self.assertFalse(self._sweep({str(i): {} for i in range(50)}, 50))
         self.assertEqual(len(server._cache_get("bet9ja", server._BET9JA_CACHE)["data"]), 100)
 
+    def test_their_catalogue_overcounting_no_longer_freezes_the_copy(self):
+        # 9 Oct 2026: 72% of their own count, no failures - a healthy sweep.
+        self.assertTrue(self._sweep({str(i): {} for i in range(72)}, 100))
+
+    def test_failed_leagues_are_a_block(self):
+        real = server.bet9ja.all_fixtures
+        server.bet9ja.all_fixtures = lambda *a, **k: (
+            {str(i): {} for i in range(95)}, {"expected": 100, "collected": 95,
+             "competitions": 170, "failed": list(range(20)), "short": []})
+        try:
+            self.assertFalse(server._refresh_bet9ja_once())
+        finally:
+            server.bet9ja.all_fixtures = real
+
+    def test_kicked_off_games_do_not_count_against_a_new_sweep(self):
+        old = {str(i): {"kickoff": "2000-01-01T00:00:00Z"} for i in range(60)}
+        old.update({f"u{i}": {"kickoff": "2999-01-01T00:00:00Z"} for i in range(40)})
+        server._cache_put("bet9ja", server._BET9JA_CACHE, old)
+        self.assertTrue(self._sweep({str(i): {} for i in range(40)}, 50))
+
     def test_a_raising_sweep_keeps_the_previous_copy(self):
         self._sweep({str(i): {} for i in range(100)}, 100)
         real = server.bet9ja.all_fixtures
@@ -2861,3 +2881,20 @@ class BookingQueue(unittest.TestCase):
         with mock.patch.object(server.time, "time", return_value=now + 61):
             self.assertTrue(server._probe_allowed())
         server._PROBE_SPENT.clear()
+
+
+class CachesKeepTheirOwnNames(unittest.TestCase):
+    def test_the_card_cache_no_longer_replaces_the_live_scores_cache(self):
+        self.assertIsNot(server._CARD_CACHE, server._LIVE_CACHE)
+        self.assertIn("data", server._LIVE_CACHE, "live scores keep their {'at','data'} entry")
+
+    def test_slot_timing_is_logged(self):
+        from unittest import mock
+
+        class R:
+            def json(self):
+                return {"bizCode": 10000, "data": {"shareCode": "ABC123"}}
+        with mock.patch.object(server.requests, "post", return_value=R()):
+            with self.assertLogs(server.log, level="INFO") as cm:
+                self.assertEqual(server.generate_sportybet_code([{"eventId": "e"}]), {"code": "ABC123"})
+        self.assertTrue(any("sporty slot | kind=book legs=1 wait_ms=" in l for l in cm.output))
