@@ -68,13 +68,15 @@ class MarketTable(unittest.TestCase):
         # names for one bet - EXGOALS_0 and OVER_0.5 say the same thing about
         # a non-negative integer. Anything else colliding is a code silently
         # dropped from the reverse index.
-        # Only the first-half pair collides: our vocabulary has no OVER_0.5,
-        # so EXGOALS_0 is the only name we hold for (160, 0.5, 12) and owns it
-        # outright.
-        alias = {"EXGOALS_FH_0"}
+        # Two pairs collide on purpose: the first half's (EXGOALS_FH_0 /
+        # FH_OVER_0.5), and since 11 Oct 2026 the match's (EXGOALS_0 /
+        # OVER_0.5), when Over 0.5 joined our vocabulary for Bankers slips.
+        # MARKET_MAP is read last, so the code we price owns the read-back.
+        alias = {"EXGOALS_FH_0", "EXGOALS_0"}
         self.assertEqual(
             len(betking._BY_TRIPLE),
             len(betking.MARKET_MAP) + len(betking.PASSTHROUGH_MAP) - len(alias))
+        self.assertEqual(betking._BY_TRIPLE[(160, 0.5, 12)], "OVER_0.5")
 
     def test_a_code_is_in_one_table_or_the_other_never_both(self):
         # A code in both is two answers to one question, and which one wins

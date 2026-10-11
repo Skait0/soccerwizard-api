@@ -98,6 +98,7 @@ MARKET_MAP = {
     "1X":            ("S_DC_1X", POPULAR),
     "12":            ("S_DC_12", POPULAR),
     "X2":            ("S_DC_X2", POPULAR),
+    "OVER_0.5":      ("S_OU@0.5_O", POPULAR),
     "OVER_1.5":      ("S_OU@1.5_O", POPULAR),
     "OVER_2.5":      ("S_OU@2.5_O", POPULAR),
     "OVER_3.5":      ("S_OU@3.5_O", POPULAR),
@@ -124,6 +125,7 @@ MARKET_MAP = {
     # Bet9ja was blend:false purely because these were missing, so its readers
     # got model prices with no market check at all. Same nine SportyBet has,
     # all verified present on a live event.
+    "UNDER_0.5":      ("S_OU@0.5_U", POPULAR),
     "UNDER_1.5":      ("S_OU@1.5_U", POPULAR),
     "UNDER_2.5":      ("S_OU@2.5_U", POPULAR),
     "UNDER_3.5":      ("S_OU@3.5_U", POPULAR),

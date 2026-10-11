@@ -116,6 +116,10 @@ MARKET_MAP = {
     "1X":        {"marketId": "10", "outcomeId": "9"},
     "12":        {"marketId": "10", "outcomeId": "10"},
     "X2":        {"marketId": "10", "outcomeId": "11"},
+    # Over 0.5 match goals, the Bankers leg (owner, 11 Oct 2026). Same market 18;
+    # live 11 Oct: Liverpool v Man City x1.02 / x16.50.
+    "OVER_0.5":  {"marketId": "18", "outcomeId": "12", "specifier": "total=0.5"},
+    "UNDER_0.5": {"marketId": "18", "outcomeId": "13", "specifier": "total=0.5"},
     "OVER_1.5":  {"marketId": "18", "outcomeId": "12", "specifier": "total=1.5"},
     "UNDER_1.5": {"marketId": "18", "outcomeId": "13", "specifier": "total=1.5"},
     "OVER_2.5":  {"marketId": "18", "outcomeId": "12", "specifier": "total=2.5"},

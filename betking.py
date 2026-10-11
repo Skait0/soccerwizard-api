@@ -110,6 +110,7 @@ MARKET_MAP = {
     "1X": (146, 0.0, 9),
     "12": (146, 0.0, 10),
     "X2": (146, 0.0, 11),
+    "OVER_0.5":  (160, 0.5, 12),
     "OVER_1.5":  (160, 1.5, 12),
     "OVER_2.5":  (160, 2.5, 12),
     "OVER_3.5":  (160, 3.5, 12),
@@ -125,6 +126,7 @@ MARKET_MAP = {
     # here for the same reason they are in bet9ja.py, to de-vig - over and
     # under together give the bookmaker's implied probability with the margin
     # taken out, and a book with no unders blends nothing.
+    "UNDER_0.5": (160, 0.5, 13),
     "UNDER_1.5": (160, 1.5, 13),
     "UNDER_2.5": (160, 2.5, 13),
     "UNDER_3.5": (160, 3.5, 13),
