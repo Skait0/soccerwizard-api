@@ -270,6 +270,15 @@ for _line in [f"{n}.5" for n in range(4, 23)]:
         PASSTHROUGH_MAP[f"SHOTS_{_side}_UN_{_line}"] = {
             "marketId": _mid, "outcomeId": 13, "specifier": f"total={_line}"}
 
+# "TO SCORE 3 OR MORE GOALS IN A ROW" (owner, 11 Oct 2026): any team 60020,
+# home 60021, away 60022; 74 = Yes, 76 = No, no specifier. SportyBet-only, like
+# corners, so it sits here rather than in MARKET_MAP (which every book must
+# carry). The site offers only No; Yes is swept for the de-vig. Live 11 Oct: No
+# at x1.03-1.29. Goal order is random given the score (3,711 matches).
+for _code, _mid in (("ANY", "60020"), ("H", "60021"), ("A", "60022")):
+    PASSTHROUGH_MAP[f"NR3_{_code}"] = {"marketId": _mid, "outcomeId": "76"}
+    PASSTHROUGH_MAP[f"R3_{_code}"] = {"marketId": _mid, "outcomeId": "74"}
+
 for _line in ("6.5", "7.5", "8.5", "9.5", "10.5", "11.5", "12.5"):
     PASSTHROUGH_MAP[f"CORNERS_OV_{_line}"] = {
         "marketId": 166, "outcomeId": 12, "specifier": f"total={_line}"}
@@ -674,6 +683,10 @@ def _cache_put(name, mem, data):
 # everything from the board to the booking pre-flight leans on.
 FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
                       "854", "856", "858", "860", "861", "862",
+                      # Three in-a-row markets in ONE request: the list
+                      # endpoint takes a comma list (checked 11 Oct 2026),
+                      # so this costs one market's pages, not three.
+                      "60020,60021,60022",
                       # Corners, total for the match. Swept for AVAILABILITY
                       # as much as price: books open corners a few days before
                       # kick-off and some leagues never, and the site's corners
@@ -703,6 +716,10 @@ FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
                       # corners, so a sweep short on time loses these first:
                       # only the Team shots chip leans on them.
                       "900552", "900553")
+
+
+# Every single market id the sweep asks for, with the comma entries split.
+SWEPT_MARKET_IDS = frozenset(x for e in FIXTURE_MARKET_IDS for x in e.split(","))
 
 
 def _headers(region="ng"):

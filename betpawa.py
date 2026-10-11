@@ -360,6 +360,8 @@ SWEEP_MARKETS = sorted({m for m, _line, _out in MARKET_MAP.values()})
 # Longest prefix wins, which matters: AH_ is half carried (the half balls) and
 # FH_CARD_ must not inherit FH_'s answer.
 NOT_CARRIED = {
+    "NR3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
+    "R3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
     # OR IS NOT AND (29 Sep 2026). These were mapped onto "1X2 and Totals" and
     # "1X2 and BTTS" until the 1xBet work read the prices: Betpawa's are ABOVE
     # both parts on every event checked, so they are AND bets, while ours are

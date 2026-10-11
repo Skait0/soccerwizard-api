@@ -399,6 +399,8 @@ PASSTHROUGH_MAP = {
 # "not read yet" means nobody has sat down with their card - it is work, not a
 # property of their catalogue, and the two must never look the same.
 NOT_CARRIED = {
+    "NR3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
+    "R3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
     "AH_1_": "verified absent: 305 sells half-ball lines only (-2.5 -1.5 -0.5 "
              "0.5 1.5 2.5 3.5, checked on twelve cards). Whole balls exist at "
              "342 and that is a DIFFERENT bet - three-way, draw its own "

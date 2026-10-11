@@ -43,7 +43,7 @@ class MarketMapIntegrity(unittest.TestCase):
         # and the symptom is silent - those picks quietly fall back to
         # estimated odds instead of real ones.
         need = {str(m["marketId"]) for m in server.MARKET_MAP.values()}
-        missing = need - set(server.FIXTURE_MARKET_IDS)
+        missing = need - set(server.SWEPT_MARKET_IDS)
         self.assertEqual(missing, set(),
                          f"mapped but never fetched: {sorted(missing)}")
 
@@ -1582,6 +1582,9 @@ class PassThroughParity(unittest.TestCase):
     # chip offers SportyBet alone until it is.
     SPORTY_ONLY_TEAMSHOTS: ClassVar = {
         f"SHOTS_{s}_{d}_{n}.5" for s in "HA" for d in ("OV", "UN") for n in range(4, 23)}
+    # 3 or more goals in a row (11 Oct 2026): SportyBet 60020-60022. The owner
+    # asked for SportyBet's market; Bet9ja's card not read for it yet.
+    SPORTY_ONLY_INROW: ClassVar = {f"{y}R3_{w}" for y in ("", "N") for w in ("ANY", "H", "A")}
 
     SPORTY_ONLY_SIBLINGS: ClassVar = {
         # European handicap, the match and each half. Bet9ja names one
@@ -1697,7 +1700,7 @@ class PassThroughParity(unittest.TestCase):
         s, b = set(server.PASSTHROUGH_MAP), set(server.bet9ja.PASSTHROUGH_MAP)
         self.assertEqual(s - b, self.SPORTY_ONLY | self.SPORTY_ONLY_14SEP
                          | self.SPORTY_ONLY_CATALOGUE | self.SPORTY_ONLY_SIBLINGS
-                         | self.SPORTY_ONLY_TEAMSHOTS)
+                         | self.SPORTY_ONLY_TEAMSHOTS | self.SPORTY_ONLY_INROW)
         self.assertEqual(b - s, self.BET9JA_ONLY)
 
     def test_every_shared_code_resolves_on_both_books(self):
@@ -2416,7 +2419,7 @@ class EveryMarketTheBuilderOffersCarriesARealPrice(unittest.TestCase):
         for code in self.BUILDER_MARKETS:
             ids = server.market_for(code)
             self.assertIsNotNone(ids, f"{code} is offered but maps to nothing")
-            if str(ids["marketId"]) not in server.FIXTURE_MARKET_IDS:
+            if str(ids["marketId"]) not in server.SWEPT_MARKET_IDS:
                 missing.append("{} (market {})".format(code, ids["marketId"]))
         self.assertEqual(missing, [],
                          "offered with no real price, so priced off the model: "

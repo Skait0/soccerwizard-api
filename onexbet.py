@@ -247,6 +247,8 @@ SWEEP_PERIODS = ("",)
 # Written from tools/xbmap.json's rejects; "verified absent" means eight deep
 # cards were read for it. Longest prefix wins.
 NOT_CARRIED = {
+    "NR3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
+    "R3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
     'AH_': "carried, except where their card stops: whole and half lines +-1 to +-3.5 on 'Handicap' and quarter lines +-0.25 to +-2.25 on 'Asian Handicap'. Verified absent on eight deep cards: +-0.5, 0, +-2.75 and anything past +-3.5.",
     'BOTHHALVES_': "verified absent: 'Goals Scored In Both Halves' is about any goal in each half, not each half clearing a line.",
     'BOUNDS_': 'verified absent: per-team goal bounds are not sold at full time.',
