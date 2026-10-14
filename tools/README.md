@@ -41,3 +41,14 @@ that have nothing to do with the sign.
 
 The rejects matter as much as the map: grouped by family they are the
 asymmetry note that says what a book does not sell, and why.
+
+    python tools/bwgen.py <cards> <out.json>
+
+The same job for Betway, and the cheapest of all: Betway's ids ARE
+Sportradar's (event id = sr match id; market/outcome ids are UOF ids glued
+onto it), so nothing is proposed - every SportyBet pass-through code is its
+own candidate in Betway's spelling (variant outcomes as bare numbers, 1UP/2UP
+as 1601 xup=1/2, team corners as 167/168) and is kept only if priced on one
+of the deepest cards, plus line variants of markets proven on sale. Its
+output is pasted into betway.py PASSTHROUGH_MAP; the rejects become
+NOT_CARRIED.
