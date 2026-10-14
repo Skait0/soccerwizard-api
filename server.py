@@ -14,6 +14,7 @@ from flask_cors import CORS
 import bet9ja
 import betking
 import betpawa
+import betway
 import onexbet
 from srid import sr_id
 
@@ -607,6 +608,10 @@ _ONEXBET_TTL = 45 * 60
 # What the last sweep read and skipped, served beside the feed (review M5), so
 # a date missing because the sweep hit its deadline is visible from outside.
 _ONEXBET_STATS = {"listed": 0, "skipped": 0}
+# Betway lists ~1,400 games a month ahead in 14 pages, then prices them six to
+# a request: about 4.5 minutes a sweep (14 Oct 2026).
+_BETWAY_CACHE = {"at": 0, "data": None}
+_BETWAY_TTL = 45 * 60
 
 # --- Shared cache (opt-in) -------------------------------------------------
 # With one process the in-memory dicts above are fine. Set REDIS_URL (add a
@@ -1493,6 +1498,71 @@ def _start_onexbet_thread():
 _start_onexbet_thread()
 
 
+# --- Betway, the sixth book --------------------------------------------------
+# Two threads: the sweep, like every other book, and the session keeper, which
+# no other book needs. Booking runs on the owner's login (betway.py); when the
+# renewal is refused the session is gone and only the owner can bring it back,
+# so that is reported as an error every hour until it is fixed.
+_BETWAY_LOCK = threading.Lock()
+_BETWAY_SESSION_EVERY = 60 * 60
+
+def _refresh_betway_once():
+    try:
+        fixtures, stats = betway.all_fixtures()
+    except Exception as ex:                          # noqa: BLE001 - background
+        log.warning("betway refresh failed, keeping previous copy: %s", ex)
+        return False
+    got = len(fixtures)
+    if not fixtures:
+        log.warning("betway refresh returned nothing; keeping previous copy")
+        return False
+    prev = _cache_get("betway", _BETWAY_CACHE)
+    prev_n = len((prev or {}).get("data") or {})
+    if prev_n and got < prev_n * 0.8:
+        log.warning("betway refresh returned %d against %d stored, looks "
+                    "truncated; keeping the fuller copy", got, prev_n)
+        return "kept"
+    if stats.get("skipped"):
+        report("betway sweep hit its deadline", skipped=stats["skipped"],
+               listed=stats["listed"], kept=got)
+    _cache_put("betway", _BETWAY_CACHE, fixtures)
+    log.info("betway refreshed: %d events (%d listed)", got, stats.get("listed"))
+    return True
+
+def _betway_loop():
+    entry = _cache_get("betway", _BETWAY_CACHE)
+    if entry and entry.get("data"):
+        age = time.time() - entry["at"]
+        if age < _BETWAY_TTL:
+            time.sleep(_BETWAY_TTL - age)
+    while True:
+        ok = _refresh_betway_once()
+        time.sleep(_BETWAY_TTL if ok else 300)
+
+def _betway_session_loop():
+    while True:
+        try:
+            st = betway.keep_alive()
+            if not st["ok"]:
+                report("betway session is dead - booking on Betway is down until "
+                       "the owner logs in again and reseeds BETWAY_AUTH / "
+                       "BETWAY_REFRESH_TOKEN", level="error",
+                       secondsLeft=st["secondsLeft"], hasRefresh=st["hasRefresh"])
+        except Exception as ex:                      # noqa: BLE001 - background
+            log.warning("betway session check failed: %s", type(ex).__name__)
+        time.sleep(_BETWAY_SESSION_EVERY)
+
+def _start_betway_threads():
+    if not _BETWAY_LOCK.acquire(blocking=False):
+        return
+    threading.Thread(target=_betway_loop, name="betway-refresh", daemon=True).start()
+    threading.Thread(target=_betway_session_loop, name="betway-session",
+                     daemon=True).start()
+    log.info("betway refresher started (every %dm)", _BETWAY_TTL // 60)
+
+_start_betway_threads()
+
+
 @app.route('/api/fixtures', methods=['GET'])
 def get_fixtures():
     entry = _cache_get("fixtures", _FIXTURES_CACHE)
@@ -2024,6 +2094,93 @@ def api_betpawa_code():
     return jsonify({"success": False, **out}), 502
 
 
+@app.route('/api/betway/fixtures', methods=['GET'])
+def get_betway_fixtures():
+    """Every Betway event, served from the background sweep."""
+    entry = _cache_get("betway", _BETWAY_CACHE)
+    data = (entry or {}).get("data")
+    if not data:
+        return jsonify({"success": False, "count": 0, "matches": {},
+                        "error": "betway fixtures not loaded yet"}), 503
+    return jsonify({"success": True, "cached": True,
+                    "ageSeconds": int(time.time() - entry["at"]),
+                    "count": len(data), "matches": data})
+
+
+@app.route('/api/betway/session', methods=['GET'])
+def get_betway_session():
+    """Is the booking login alive? Lengths and times only, never a token."""
+    return jsonify({"success": True, **betway.session_state()})
+
+
+@app.route('/api/betway/booking-code', methods=['POST'])
+def api_betway_code():
+    """Turn a set of picks into a Betway booking code.
+
+    Body: {"selections": [{"eventId": "73835276", "code": "1X"}, ...]}
+
+    Same three-way answer as the other books - every leg Betway will not take
+    is named in `unbookable` (not_mapped / event_gone / not_priced /
+    same_game). SAME GAME IS REFUSED HERE BY US: whether Betway takes two legs
+    of one game on a multiple is not measured yet, and naming it costs the
+    reader one leg rather than the slip.
+    """
+    data = request.get_json(silent=True) or {}
+    picks = data.get("selections") or []
+    if not picks:
+        return jsonify({"success": False, "error": "no selections"}), 400
+    if len(picks) > betway.BETSLIP_MAX:
+        return jsonify({"success": False,
+                        "error": f"betway slips are capped at {betway.BETSLIP_MAX:d} "
+                                 "selections here", "sent": len(picks)}), 400
+
+    resolved, bad = [], []
+    cache, booked_games = {}, set()
+    try:
+        for p in picks:
+            code, event_id = p.get("code"), str(p.get("eventId") or "")
+            leg = {"eventId": event_id, "prediction": code}
+            if betway.market_for(code) is None:
+                bad.append({**leg, "reason": "not_mapped"})
+                continue
+            if event_id in booked_games:
+                bad.append({**leg, "reason": "same_game"})
+                continue
+            if event_id not in cache:
+                cache[event_id] = betway.fetch_event(event_id)
+            ev = cache[event_id]
+            if not ev:
+                bad.append({**leg, "reason": "event_gone"})
+                continue
+            if code not in (ev.get("odds") or {}):
+                bad.append({**leg, "reason": "not_priced"})
+                continue
+            booked_games.add(event_id)
+            resolved.append({"event": ev, "code": code})
+    except Exception as ex:                      # noqa: BLE001 - user-facing
+        report("betway odds fetch failed", error=str(ex))
+        return jsonify({"success": False, "error": str(ex)}), 502
+
+    if bad:
+        report("booking: Betway refused legs", level="info",
+               bad_legs=len(bad), total_legs=len(picks),
+               reasons=", ".join(sorted({b["reason"] for b in bad})),
+               markets=", ".join(sorted({str(b["prediction"]) for b in bad})))
+        same = [b for b in bad if b["reason"] == "same_game"]
+        detail = ("one selection per game is all Betway takes on a multiple"
+                  if len(same) == len(bad)
+                  else f"no market there for {len(bad)} of {len(picks)} picks")
+        return jsonify({"success": False, "message": "Betway rejected the slip",
+                        "detail": detail, "unbookable": bad}), 400
+
+    out = betway.generate_code(resolved)
+    if out.get("code") and not out.get("error"):
+        return jsonify({"success": True, **out})
+    report("betway booking refused", legs=len(resolved),
+           detail=str(out.get("error"))[:300], empty_code=out.get("code"))
+    return jsonify({"success": False, **out}), 400 if out.get("unbookable") else 502
+
+
 @app.route('/api/onexbet/fixtures', methods=['GET'])
 def get_onexbet_fixtures():
     """Every 1xBet event, served from the background sweep."""
@@ -2288,12 +2445,12 @@ def _stamp_sr(book, legs):
 
 @app.route('/api/slip', methods=['GET'])
 def api_read_slip():
-    """GET /api/slip?book=sporty|bet9ja|betking|betpawa|onexbet&code=XXXX -> the legs behind a code."""
+    """GET /api/slip?book=sporty|bet9ja|betking|betpawa|onexbet|betway&code=XXXX -> the legs behind a code."""
     book = (request.args.get("book") or "sporty").strip().lower()
     code = (request.args.get("code") or "").strip()
     if not _CODE_RE.match(code):
         return jsonify({"success": False, "error": "that is not a booking code"}), 400
-    if book not in ("sporty", "bet9ja", "betking", "betpawa", "onexbet"):
+    if book not in ("sporty", "bet9ja", "betking", "betpawa", "onexbet", "betway"):
         return jsonify({"success": False, "error": "unknown bookmaker"}), 400
 
     # Named rather than defaulted, so a typo in `book` can never be read
@@ -2306,6 +2463,9 @@ def api_read_slip():
         out = betpawa.read_coupon(code)
     elif book == "onexbet":
         out = onexbet.read_coupon(code)
+    elif book == "betway":
+        # Each leg already carries srId: their event id IS Sportradar's.
+        out = betway.read_coupon(code)
     else:
         out = read_sporty_share(code)
     if out.get("notFound"):
