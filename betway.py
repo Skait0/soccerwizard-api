@@ -59,8 +59,10 @@ _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 PAGE = 100
-# OURS, NOT THEIRS - not measured yet. Matches BetKing, the lowest real cap
-# among the other books, until a probe reads Betway's.
+# MEASURED, 14 Oct 2026 (Railway probe, test codes, no stake): 30 and 40
+# distinct games booked and read back whole (BW79BED4E7, BW79BED60F); 50
+# answered 400 errorCode 10 "UnexpectedError" - their generic word for it.
+# So the cap sits between 41 and 49 and 40 is the last size proven.
 BETSLIP_MAX = 40
 # The price endpoint takes outcome ids in the query string and answers an
 # EMPTY BODY past roughly 8 KB of URL (measured 14 Oct: 270 ids, 8.7 KB).
@@ -978,8 +980,17 @@ def _book(payload, timeout):
 def generate_code(selections, timeout=30, verify=True):
     """Turn [{event, code}] into a Betway booking code, read back leg by leg.
 
-    Prices are re-read live before booking: the swept price can be 45 minutes
-    old, and whether Betway refuses a stale `value` is not measured yet.
+    THEY DO NOT CHECK THE PRICE WE SEND (measured 14 Oct 2026): a leg sent at
+    99.0 against a live 1.89 booked, and the read-back carried 1.89 - the code
+    is repriced when it is read, like BetKing. Prices are still re-read live
+    first, because the live read is also how a market that has CLOSED since the
+    sweep is caught before the slip goes out.
+
+    SAME GAME: a home win and over 1.5 on one game booked and read back both
+    legs (BW79BED3C4). Accepted is not placeable - 1xBet took a same-game pair
+    and its betslip then marked it incompatible - so server.py still refuses a
+    second leg on a game until one is opened in Betway's own betslip.
+
     A 401 renews the session once and retries.
     """
     if not selections:
