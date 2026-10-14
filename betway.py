@@ -418,8 +418,10 @@ PASSTHROUGH_MAP = {
 # above (14 Oct 2026) unless it says "not read yet". Longest prefix wins.
 _TEN = "on ten deep cards (Champions League, Europa League, LaLiga, Serie A, Bundesliga), 14 Oct 2026"
 NOT_CARRIED = {
-    "AH_": "verified absent: no full-time Asian handicap (market 16) " + _TEN +
-           ". Their handicap is the three-way one, a different bet.",
+    "AH_": "verified absent at whole and quarter lines: no full-time Asian handicap "
+           "(market 16) " + _TEN + ". Half lines ARE carried, on the three-way "
+           "handicap that wins on exactly the same scores (AH_VIA_EH); whole and "
+           "quarter lines push, so the three-way one is a different bet there.",
     "FH_AH_": "verified absent past the half balls: their first-half handicap "
               "(66) is a half-ball market " + _TEN + "; whole and zero lines push, "
               "so they are a different bet.",
@@ -480,9 +482,51 @@ _BY_TRIPLE = {triple: code
               list(MARKET_MAP.items())}
 
 
+# --- half-line Asian handicaps, booked on the three-way handicap --------------
+# Betway sells no Asian handicap (market 16 absent on ten deep cards), but a
+# HALF-LINE Asian bet and one outcome of the three-way handicap (market 14) win
+# on exactly the same scores - neither can push or draw:
+#   home at line L  wins iff  diff + L > 0      iff  diff + (L + 0.5) > 0
+#                   = 3-way "home" (1711) at net head start L + 0.5
+#   away at line L  wins iff  diff + L < 0      iff  diff + (L - 0.5) < 0
+#     (our AH_2_L is the away side at the HOME team's line L, as everywhere)
+#                   = 3-way "away" (1713) at net head start L - 0.5
+# and a net head start of 0 is the plain 1X2. Mapped at the owner's call
+# (14 Oct 2026) after checking it on prices: 12 of 12 SportyBet Asian prices
+# sat within 10% of Betway's three-way price for the same Sportradar match,
+# Betway slightly shorter, on both sides and both signs. WHOLE and quarter
+# lines push, so they are a different bet and stay unmapped (NOT_CARRIED AH_).
+def _ah_via_eh(side, line):
+    net = line + 0.5 if side == "1" else line - 0.5
+    if net == 0:
+        return ("1", None, "1" if side == "1" else "3")
+    n = int(abs(net))
+    hcp = "hcp={}:0".format(n) if net > 0 else "hcp=0:{}".format(n)
+    return ("14", hcp, "1711" if side == "1" else "1713")
+
+
+AH_VIA_EH = {}
+for _side in ("1", "2"):
+    for _tenths in range(-45, 50, 10):          # -4.5 .. 4.5 in steps of one
+        _line = _tenths / 10
+        _code = "AH_{}_{}".format(_side, ("%g" % _line))
+        AH_VIA_EH[_code] = _ah_via_eh(_side, _line)
+
+
+# triple -> the Asian codes it also books, so a card that prices the
+# three-way outcome prices them too (fetch_event).
+_ALIASES = {}
+for _code, _t in AH_VIA_EH.items():
+    _ALIASES.setdefault(_t, []).append(_code)
+
+
 def market_for(code):
-    """The triple for one of our codes, or None. NEVER a default."""
-    return MARKET_MAP.get(code) or PASSTHROUGH_MAP.get(code)
+    """The triple for one of our codes, or None. NEVER a default.
+
+    AH_VIA_EH is consulted but kept OUT of _BY_TRIPLE: its triples are the
+    three-way handicap's own, so a code read back shows Betway's bet by
+    Betway's name (EH_2_0_1) rather than ours. Same bet either way."""
+    return MARKET_MAP.get(code) or PASSTHROUGH_MAP.get(code) or AH_VIA_EH.get(code)
 
 
 # --- ids --------------------------------------------------------------------
@@ -732,15 +776,16 @@ def fetch_event(event_id, timeout=30):
     row = _row({"eventId": event_id})
     for o in outcomes:
         triple = decode(event_id, o.get("marketId"), o.get("outcomeId"))
-        code = _BY_TRIPLE.get(triple) if triple else None
-        if not code or not o.get("isTradingActive", True):
+        codes = ([_BY_TRIPLE[triple]] if triple in _BY_TRIPLE else []) +             _ALIASES.get(triple, [])
+        if not codes or not o.get("isTradingActive", True):
             continue
         m = markets.get(o.get("marketId")) or {}
         if m.get("isSuspended") or m.get("isActive") is False:
             continue
-        _put(row, code, o["outcomeId"], o["marketId"],
-             prices.get(o["outcomeId"]), m.get("displayName") or "",
-             o.get("displayName") or o.get("name") or "")
+        for code in codes:
+            _put(row, code, o["outcomeId"], o["marketId"],
+                 prices.get(o["outcomeId"]), m.get("displayName") or "",
+                 o.get("displayName") or o.get("name") or "")
     return row if row["odds"] else None
 
 

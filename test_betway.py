@@ -60,6 +60,47 @@ class TheIds(unittest.TestCase):
         self.assertIsNone(betway.decode(EID, "99999991", "999999911"))
 
 
+class HalfLineAsianOnTheThreeWay(unittest.TestCase):
+    """Betway sells no Asian handicap; a half-line Asian bet wins on exactly
+    the scores one three-way outcome does (owner's call, 14 Oct 2026, after
+    12 of 12 price checks against SportyBet on the same Sportradar match)."""
+
+    def settle_ah(self, side, line, diff):
+        return diff + line > 0 if side == "1" else diff + line < 0
+
+    def settle_eh(self, triple, diff):
+        m, spec, o = triple
+        if m == "1":
+            return diff > 0 if o == "1" else diff < 0
+        a, b = (int(x) for x in spec.split("=")[1].split(":"))
+        net = diff + a - b
+        return net > 0 if o == "1711" else net < 0
+
+    def test_every_mapped_line_wins_on_exactly_the_same_scores(self):
+        for code, triple in betway.AH_VIA_EH.items():
+            _, side, line = code.split("_")
+            for diff in range(-9, 10):
+                self.assertEqual(self.settle_ah(side, float(line), diff),
+                                 self.settle_eh(triple, diff), (code, diff))
+
+    def test_the_lines_checked_on_prices(self):
+        # 14 Oct 2026, Vissel Kobe v Jeonbuk and Kashiwa v Port, against
+        # SportyBet market 16 on the same match ids.
+        self.assertEqual(betway.market_for("AH_1_-1.5"), ("14", "hcp=0:1", "1711"))
+        self.assertEqual(betway.market_for("AH_2_-1.5"), ("14", "hcp=0:2", "1713"))
+        self.assertEqual(betway.market_for("AH_2_-0.5"), ("14", "hcp=0:1", "1713"))
+        self.assertEqual(betway.market_for("AH_1_0.5"), ("14", "hcp=1:0", "1711"))
+
+    def test_whole_and_quarter_lines_stay_unmapped(self):
+        for code in ("AH_1_-1", "AH_2_1", "AH_1_0", "AH_1_-0.25", "AH_2_-1.75"):
+            self.assertIsNone(betway.market_for(code), code)
+            self.assertIn("push", betway.reason_uncarried(code))
+
+    def test_a_read_back_keeps_betways_own_name(self):
+        t = betway.AH_VIA_EH["AH_1_1.5"]
+        self.assertEqual(betway._BY_TRIPLE[t], "EH_2_0_1")
+
+
 class MarketTable(unittest.TestCase):
 
     def test_the_numbers_are_sportybets_numbers(self):
@@ -77,7 +118,7 @@ class MarketTable(unittest.TestCase):
 
     def test_an_unknown_market_refuses_rather_than_defaulting(self):
         self.assertIsNone(betway.market_for("NOPE"))
-        self.assertIsNone(betway.market_for("AH_1_-0.5"))
+        self.assertIsNone(betway.market_for("AH_1_-1"))
 
     def test_nothing_is_silently_missing(self):
         import bet9ja
