@@ -986,10 +986,11 @@ def generate_code(selections, timeout=30, verify=True):
     first, because the live read is also how a market that has CLOSED since the
     sweep is caught before the slip goes out.
 
-    SAME GAME: a home win and over 1.5 on one game booked and read back both
-    legs (BW79BED3C4). Accepted is not placeable - 1xBet took a same-game pair
-    and its betslip then marked it incompatible - so server.py still refuses a
-    second leg on a game until one is opened in Betway's own betslip.
+    SAME GAME IS REFUSED, AND THAT IS VERIFIED: a home win and over 1.5 on one
+    game booked and read back both legs (BW79BED3C4), and Betway's own betslip
+    then flagged them "There are conflicting selections in your Betslip, please
+    revise" (owner's screenshot, 14 Oct 2026). Accepted, not placeable - the
+    1xBet shape - so server.py names the second leg same_game and drops it.
 
     A 401 renews the session once and retries.
     """
