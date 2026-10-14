@@ -122,13 +122,344 @@ MARKET_MAP = {
 }
 
 # --- markets we carry but never model --------------------------------------
-# Empty until it is GENERATED: SportyBet's pass-through codes, each kept only
-# if Betway prices its built outcome id on a deep card. Not typed by hand.
-PASSTHROUGH_MAP = {}
+# GENERATED, NEVER TYPED - tools/bwgen.py, 14 Oct 2026, against the ten
+# deepest cards on the board (Roma v Real Madrid at 330 markets down to
+# Deportivo v Levante at 296). Every candidate is SportyBet's own triple in
+# Betway's spelling, so meaning cannot drift: the provider's market
+# definitions are the same objects. 157 were priced on those cards.
+#
+# Two spelling differences, handled in bwgen.candidate():
+# - SportyBet writes a variant outcome "sr:exact_goals:6+:68"; Betway "68".
+# - SportyBet's own promo ids map to Sportradar's originals: 1UP/2UP (60200/
+#   60100) is 1601 with xup=1/xup=2 - checked on prices, 1UP shorter than 2UP
+#   shorter than the plain 1X2 on six cards - and team corners (900300/1) are
+#   167 (home, named after the home side on three cards) and 168 (away).
+#
+# "# line variant" rows (52): the market is on sale in the same specifier
+# shape and only that LINE was not up on the ten cards. Betway sets lines per
+# game (one corner line per team), so booking re-reads the live price and
+# names the leg not_priced when the line is not up on that game.
+PASSTHROUGH_MAP = {
+    # --- BOTHHALVES_OV (2) ---
+    "BOTHHALVES_OV_N": ("58", "total=1.5", "76"),
+    "BOTHHALVES_OV_Y": ("58", "total=1.5", "74"),
+    # --- BOTHHALVES_UN (2) ---
+    "BOTHHALVES_UN_N": ("59", "total=1.5", "76"),
+    "BOTHHALVES_UN_Y": ("59", "total=1.5", "74"),
+    # --- CORNERS_A_OV (10) ---
+    "CORNERS_A_OV_0.5": ("168", "total=0.5", "12"),  # line variant
+    "CORNERS_A_OV_1.5": ("168", "total=1.5", "12"),  # line variant
+    "CORNERS_A_OV_2.5": ("168", "total=2.5", "12"),  # line variant
+    "CORNERS_A_OV_3.5": ("168", "total=3.5", "12"),  # line variant
+    "CORNERS_A_OV_4.5": ("168", "total=4.5", "12"),
+    "CORNERS_A_OV_5.5": ("168", "total=5.5", "12"),
+    "CORNERS_A_OV_6.5": ("168", "total=6.5", "12"),
+    "CORNERS_A_OV_7.5": ("168", "total=7.5", "12"),  # line variant
+    "CORNERS_A_OV_8.5": ("168", "total=8.5", "12"),  # line variant
+    "CORNERS_A_OV_9.5": ("168", "total=9.5", "12"),  # line variant
+    # --- CORNERS_A_UN (10) ---
+    "CORNERS_A_UN_0.5": ("168", "total=0.5", "13"),  # line variant
+    "CORNERS_A_UN_1.5": ("168", "total=1.5", "13"),  # line variant
+    "CORNERS_A_UN_2.5": ("168", "total=2.5", "13"),  # line variant
+    "CORNERS_A_UN_3.5": ("168", "total=3.5", "13"),  # line variant
+    "CORNERS_A_UN_4.5": ("168", "total=4.5", "13"),
+    "CORNERS_A_UN_5.5": ("168", "total=5.5", "13"),
+    "CORNERS_A_UN_6.5": ("168", "total=6.5", "13"),
+    "CORNERS_A_UN_7.5": ("168", "total=7.5", "13"),  # line variant
+    "CORNERS_A_UN_8.5": ("168", "total=8.5", "13"),  # line variant
+    "CORNERS_A_UN_9.5": ("168", "total=9.5", "13"),  # line variant
+    # --- CORNERS_H_OV (10) ---
+    "CORNERS_H_OV_0.5": ("167", "total=0.5", "12"),  # line variant
+    "CORNERS_H_OV_1.5": ("167", "total=1.5", "12"),  # line variant
+    "CORNERS_H_OV_2.5": ("167", "total=2.5", "12"),  # line variant
+    "CORNERS_H_OV_3.5": ("167", "total=3.5", "12"),
+    "CORNERS_H_OV_4.5": ("167", "total=4.5", "12"),
+    "CORNERS_H_OV_5.5": ("167", "total=5.5", "12"),  # line variant
+    "CORNERS_H_OV_6.5": ("167", "total=6.5", "12"),  # line variant
+    "CORNERS_H_OV_7.5": ("167", "total=7.5", "12"),  # line variant
+    "CORNERS_H_OV_8.5": ("167", "total=8.5", "12"),  # line variant
+    "CORNERS_H_OV_9.5": ("167", "total=9.5", "12"),  # line variant
+    # --- CORNERS_H_UN (10) ---
+    "CORNERS_H_UN_0.5": ("167", "total=0.5", "13"),  # line variant
+    "CORNERS_H_UN_1.5": ("167", "total=1.5", "13"),  # line variant
+    "CORNERS_H_UN_2.5": ("167", "total=2.5", "13"),  # line variant
+    "CORNERS_H_UN_3.5": ("167", "total=3.5", "13"),
+    "CORNERS_H_UN_4.5": ("167", "total=4.5", "13"),
+    "CORNERS_H_UN_5.5": ("167", "total=5.5", "13"),  # line variant
+    "CORNERS_H_UN_6.5": ("167", "total=6.5", "13"),  # line variant
+    "CORNERS_H_UN_7.5": ("167", "total=7.5", "13"),  # line variant
+    "CORNERS_H_UN_8.5": ("167", "total=8.5", "13"),  # line variant
+    "CORNERS_H_UN_9.5": ("167", "total=9.5", "13"),  # line variant
+    # --- CORNERS_OV (7) ---
+    "CORNERS_OV_10.5": ("166", "total=10.5", "12"),
+    "CORNERS_OV_11.5": ("166", "total=11.5", "12"),
+    "CORNERS_OV_12.5": ("166", "total=12.5", "12"),  # line variant
+    "CORNERS_OV_6.5": ("166", "total=6.5", "12"),  # line variant
+    "CORNERS_OV_7.5": ("166", "total=7.5", "12"),  # line variant
+    "CORNERS_OV_8.5": ("166", "total=8.5", "12"),
+    "CORNERS_OV_9.5": ("166", "total=9.5", "12"),
+    # --- CORNERS_UN (7) ---
+    "CORNERS_UN_10.5": ("166", "total=10.5", "13"),
+    "CORNERS_UN_11.5": ("166", "total=11.5", "13"),
+    "CORNERS_UN_12.5": ("166", "total=12.5", "13"),  # line variant
+    "CORNERS_UN_6.5": ("166", "total=6.5", "13"),  # line variant
+    "CORNERS_UN_7.5": ("166", "total=7.5", "13"),  # line variant
+    "CORNERS_UN_8.5": ("166", "total=8.5", "13"),
+    "CORNERS_UN_9.5": ("166", "total=9.5", "13"),
+    # --- DC2 (3) ---
+    "DC2_12": ("85", None, "10"),
+    "DC2_1X": ("85", None, "9"),
+    "DC2_X2": ("85", None, "11"),
+    # --- DNB (2) ---
+    "DNB_1": ("11", None, "4"),
+    "DNB_2": ("11", None, "5"),
+    # --- EH (16) ---
+    "EH_0_1_1": ("14", "hcp=0:1", "1711"),
+    "EH_0_1_2": ("14", "hcp=0:1", "1713"),
+    "EH_0_2_1": ("14", "hcp=0:2", "1711"),
+    "EH_0_2_2": ("14", "hcp=0:2", "1713"),
+    "EH_0_3_1": ("14", "hcp=0:3", "1711"),
+    "EH_0_3_2": ("14", "hcp=0:3", "1713"),
+    "EH_0_4_1": ("14", "hcp=0:4", "1711"),
+    "EH_0_4_2": ("14", "hcp=0:4", "1713"),
+    "EH_0_5_1": ("14", "hcp=0:5", "1711"),
+    "EH_0_5_2": ("14", "hcp=0:5", "1713"),
+    "EH_1_0_1": ("14", "hcp=1:0", "1711"),
+    "EH_1_0_2": ("14", "hcp=1:0", "1713"),
+    "EH_2_0_1": ("14", "hcp=2:0", "1711"),
+    "EH_2_0_2": ("14", "hcp=2:0", "1713"),
+    "EH_3_0_1": ("14", "hcp=3:0", "1711"),
+    "EH_3_0_2": ("14", "hcp=3:0", "1713"),
+    # --- EH_0_1 (1) ---
+    "EH_0_1_X": ("14", "hcp=0:1", "1712"),
+    # --- EH_0_2 (1) ---
+    "EH_0_2_X": ("14", "hcp=0:2", "1712"),
+    # --- EH_0_3 (1) ---
+    "EH_0_3_X": ("14", "hcp=0:3", "1712"),
+    # --- EH_0_4 (1) ---
+    "EH_0_4_X": ("14", "hcp=0:4", "1712"),
+    # --- EH_0_5 (1) ---
+    "EH_0_5_X": ("14", "hcp=0:5", "1712"),
+    # --- EH_1_0 (1) ---
+    "EH_1_0_X": ("14", "hcp=1:0", "1712"),
+    # --- EH_2_0 (1) ---
+    "EH_2_0_X": ("14", "hcp=2:0", "1712"),
+    # --- EH_3_0 (1) ---
+    "EH_3_0_X": ("14", "hcp=3:0", "1712"),
+    # --- EXACT (7) ---
+    "EXACT_0": ("21", "variant=sr:exact_goals:6+", "68"),
+    "EXACT_1": ("21", "variant=sr:exact_goals:6+", "69"),
+    "EXACT_2": ("21", "variant=sr:exact_goals:6+", "70"),
+    "EXACT_3": ("21", "variant=sr:exact_goals:6+", "71"),
+    "EXACT_4": ("21", "variant=sr:exact_goals:6+", "72"),
+    "EXACT_5": ("21", "variant=sr:exact_goals:6+", "73"),
+    "EXACT_6": ("21", "variant=sr:exact_goals:6+", "74"),
+    # --- EXACT_SH (3) ---
+    "EXACT_SH_0": ("93", "variant=sr:exact_goals:2+", "85"),
+    "EXACT_SH_1": ("93", "variant=sr:exact_goals:2+", "86"),
+    "EXACT_SH_2": ("93", "variant=sr:exact_goals:2+", "87"),
+    # --- FH_AH (12) ---
+    "FH_AH_1_-0.5": ("66", "hcp=-0.5", "1714"),
+    "FH_AH_1_-1": ("66", "hcp=-1", "1714"),  # line variant
+    "FH_AH_1_-1.5": ("66", "hcp=-1.5", "1714"),
+    "FH_AH_1_-2": ("66", "hcp=-2", "1714"),  # line variant
+    "FH_AH_1_0": ("66", "hcp=0", "1714"),  # line variant
+    "FH_AH_1_0.5": ("66", "hcp=0.5", "1714"),
+    "FH_AH_2_-0.5": ("66", "hcp=-0.5", "1715"),
+    "FH_AH_2_-1": ("66", "hcp=-1", "1715"),  # line variant
+    "FH_AH_2_-1.5": ("66", "hcp=-1.5", "1715"),
+    "FH_AH_2_-2": ("66", "hcp=-2", "1715"),  # line variant
+    "FH_AH_2_0": ("66", "hcp=0", "1715"),  # line variant
+    "FH_AH_2_0.5": ("66", "hcp=0.5", "1715"),
+    # --- FH_AWAY_OVER (3) ---
+    "FH_AWAY_OVER_0.5": ("70", "total=0.5", "12"),
+    "FH_AWAY_OVER_1.5": ("70", "total=1.5", "12"),
+    "FH_AWAY_OVER_2.5": ("70", "total=2.5", "12"),
+    # --- FH_AWAY_UNDER (3) ---
+    "FH_AWAY_UNDER_0.5": ("70", "total=0.5", "13"),
+    "FH_AWAY_UNDER_1.5": ("70", "total=1.5", "13"),
+    "FH_AWAY_UNDER_2.5": ("70", "total=2.5", "13"),
+    # --- FH_EH (6) ---
+    "FH_EH_0_1_1": ("65", "hcp=0:1", "1711"),
+    "FH_EH_0_1_2": ("65", "hcp=0:1", "1713"),
+    "FH_EH_0_2_1": ("65", "hcp=0:2", "1711"),
+    "FH_EH_0_2_2": ("65", "hcp=0:2", "1713"),
+    "FH_EH_1_0_1": ("65", "hcp=1:0", "1711"),
+    "FH_EH_1_0_2": ("65", "hcp=1:0", "1713"),
+    # --- FH_EH_0_1 (1) ---
+    "FH_EH_0_1_X": ("65", "hcp=0:1", "1712"),
+    # --- FH_EH_0_2 (1) ---
+    "FH_EH_0_2_X": ("65", "hcp=0:2", "1712"),
+    # --- FH_EH_1_0 (1) ---
+    "FH_EH_1_0_X": ("65", "hcp=1:0", "1712"),
+    # --- FH_HOME_OVER (3) ---
+    "FH_HOME_OVER_0.5": ("69", "total=0.5", "12"),
+    "FH_HOME_OVER_1.5": ("69", "total=1.5", "12"),
+    "FH_HOME_OVER_2.5": ("69", "total=2.5", "12"),
+    # --- FH_HOME_UNDER (3) ---
+    "FH_HOME_UNDER_0.5": ("69", "total=0.5", "13"),
+    "FH_HOME_UNDER_1.5": ("69", "total=1.5", "13"),
+    "FH_HOME_UNDER_2.5": ("69", "total=2.5", "13"),
+    # --- FH_MIX_1_OV (1) ---
+    "FH_MIX_1_OV_1.5": ("79", "total=1.5", "796"),
+    # --- FH_MIX_1_UN (1) ---
+    "FH_MIX_1_UN_1.5": ("79", "total=1.5", "794"),
+    # --- FH_MIX_2_OV (1) ---
+    "FH_MIX_2_OV_1.5": ("79", "total=1.5", "804"),
+    # --- FH_MIX_2_UN (1) ---
+    "FH_MIX_2_UN_1.5": ("79", "total=1.5", "802"),
+    # --- FH_MIX_X_OV (1) ---
+    "FH_MIX_X_OV_1.5": ("79", "total=1.5", "800"),
+    # --- FH_MIX_X_UN (1) ---
+    "FH_MIX_X_UN_1.5": ("79", "total=1.5", "798"),
+    # --- HIGHHALF (3) ---
+    "HIGHHALF_1": ("52", None, "436"),
+    "HIGHHALF_2": ("52", None, "438"),
+    "HIGHHALF_E": ("52", None, "440"),
+    # --- HIGHHALF_A (3) ---
+    "HIGHHALF_A_1": ("54", None, "436"),
+    "HIGHHALF_A_2": ("54", None, "438"),
+    "HIGHHALF_A_E": ("54", None, "440"),
+    # --- HIGHHALF_H (3) ---
+    "HIGHHALF_H_1": ("53", None, "436"),
+    "HIGHHALF_H_2": ("53", None, "438"),
+    "HIGHHALF_H_E": ("53", None, "440"),
+    # --- MIXGG (3) ---
+    "MIXGG_1": ("860", None, "74"),
+    "MIXGG_2": ("862", None, "74"),
+    "MIXGG_X": ("861", None, "74"),
+    # --- MIX_1_OV (1) ---
+    "MIX_1_OV_2.5": ("854", "total=2.5", "74"),
+    # --- MIX_1_UN (1) ---
+    "MIX_1_UN_2.5": ("855", "total=2.5", "74"),
+    # --- MIX_2_OV (1) ---
+    "MIX_2_OV_2.5": ("858", "total=2.5", "74"),
+    # --- MIX_2_UN (1) ---
+    "MIX_2_UN_2.5": ("859", "total=2.5", "74"),
+    # --- MIX_X_OV (1) ---
+    "MIX_X_OV_2.5": ("856", "total=2.5", "74"),
+    # --- MIX_X_UN (1) ---
+    "MIX_X_UN_2.5": ("857", "total=2.5", "74"),
+    # --- OVER (2) ---
+    "OVER_2": ("18", "total=2", "12"),  # line variant
+    "OVER_3": ("18", "total=3", "12"),  # line variant
+    # --- SH_AH (12) ---
+    "SH_AH_1_-0.5": ("88", "hcp=-0.5", "1714"),
+    "SH_AH_1_-1": ("88", "hcp=-1", "1714"),  # line variant
+    "SH_AH_1_-1.5": ("88", "hcp=-1.5", "1714"),
+    "SH_AH_1_-2": ("88", "hcp=-2", "1714"),  # line variant
+    "SH_AH_1_0": ("88", "hcp=0", "1714"),  # line variant
+    "SH_AH_1_0.5": ("88", "hcp=0.5", "1714"),
+    "SH_AH_2_-0.5": ("88", "hcp=-0.5", "1715"),
+    "SH_AH_2_-1": ("88", "hcp=-1", "1715"),  # line variant
+    "SH_AH_2_-1.5": ("88", "hcp=-1.5", "1715"),
+    "SH_AH_2_-2": ("88", "hcp=-2", "1715"),  # line variant
+    "SH_AH_2_0": ("88", "hcp=0", "1715"),  # line variant
+    "SH_AH_2_0.5": ("88", "hcp=0.5", "1715"),
+    # --- SH_AWAY_OVER (3) ---
+    "SH_AWAY_OVER_0.5": ("92", "total=0.5", "12"),
+    "SH_AWAY_OVER_1.5": ("92", "total=1.5", "12"),
+    "SH_AWAY_OVER_2.5": ("92", "total=2.5", "12"),
+    # --- SH_AWAY_UNDER (3) ---
+    "SH_AWAY_UNDER_0.5": ("92", "total=0.5", "13"),
+    "SH_AWAY_UNDER_1.5": ("92", "total=1.5", "13"),
+    "SH_AWAY_UNDER_2.5": ("92", "total=2.5", "13"),
+    # --- SH_EH (6) ---
+    "SH_EH_0_1_1": ("87", "hcp=0:1", "1711"),
+    "SH_EH_0_1_2": ("87", "hcp=0:1", "1713"),
+    "SH_EH_0_2_1": ("87", "hcp=0:2", "1711"),
+    "SH_EH_0_2_2": ("87", "hcp=0:2", "1713"),
+    "SH_EH_1_0_1": ("87", "hcp=1:0", "1711"),
+    "SH_EH_1_0_2": ("87", "hcp=1:0", "1713"),
+    # --- SH_EH_0_1 (1) ---
+    "SH_EH_0_1_X": ("87", "hcp=0:1", "1712"),
+    # --- SH_EH_0_2 (1) ---
+    "SH_EH_0_2_X": ("87", "hcp=0:2", "1712"),
+    # --- SH_EH_1_0 (1) ---
+    "SH_EH_1_0_X": ("87", "hcp=1:0", "1712"),
+    # --- SH_HOME_OVER (3) ---
+    "SH_HOME_OVER_0.5": ("91", "total=0.5", "12"),
+    "SH_HOME_OVER_1.5": ("91", "total=1.5", "12"),
+    "SH_HOME_OVER_2.5": ("91", "total=2.5", "12"),
+    # --- SH_HOME_UNDER (3) ---
+    "SH_HOME_UNDER_0.5": ("91", "total=0.5", "13"),
+    "SH_HOME_UNDER_1.5": ("91", "total=1.5", "13"),
+    "SH_HOME_UNDER_2.5": ("91", "total=2.5", "13"),
+    # --- TEAMGOALS_A (4) ---
+    "TEAMGOALS_A_0": ("24", "variant=sr:exact_goals:3+", "88"),
+    "TEAMGOALS_A_1": ("24", "variant=sr:exact_goals:3+", "89"),
+    "TEAMGOALS_A_2": ("24", "variant=sr:exact_goals:3+", "90"),
+    "TEAMGOALS_A_3": ("24", "variant=sr:exact_goals:3+", "91"),
+    # --- TEAMGOALS_H (4) ---
+    "TEAMGOALS_H_0": ("23", "variant=sr:exact_goals:3+", "88"),
+    "TEAMGOALS_H_1": ("23", "variant=sr:exact_goals:3+", "89"),
+    "TEAMGOALS_H_2": ("23", "variant=sr:exact_goals:3+", "90"),
+    "TEAMGOALS_H_3": ("23", "variant=sr:exact_goals:3+", "91"),
+    # --- UNDER (2) ---
+    "UNDER_2": ("18", "total=2", "13"),  # line variant
+    "UNDER_3": ("18", "total=3", "13"),  # line variant
+    # --- UP1 (3) ---
+    "UP1_1": ("1601", "xup=1", "1"),
+    "UP1_2": ("1601", "xup=1", "3"),
+    "UP1_X": ("1601", "xup=1", "2"),
+    # --- UP2 (3) ---
+    "UP2_1": ("1601", "xup=2", "1"),
+    "UP2_2": ("1601", "xup=2", "3"),
+    "UP2_X": ("1601", "xup=2", "2"),
+    # --- WINHALF_A (2) ---
+    "WINHALF_A_N": ("51", None, "76"),
+    "WINHALF_A_Y": ("51", None, "74"),
+    # --- WINHALF_H (2) ---
+    "WINHALF_H_N": ("50", None, "76"),
+    "WINHALF_H_Y": ("50", None, "74"),
+}
 
+# Every reason below was measured by tools/bwgen.py on the ten cards named
+# above (14 Oct 2026) unless it says "not read yet". Longest prefix wins.
+_TEN = "on ten deep cards (Champions League, Europa League, LaLiga, Serie A, Bundesliga), 14 Oct 2026"
 NOT_CARRIED = {
-    "": "not read yet: Betway's pass-through table has not been generated from "
-        "their cards. Only the modelled markets are carried so far (14 Oct 2026).",
+    "AH_": "verified absent: no full-time Asian handicap (market 16) " + _TEN +
+           ". Their handicap is the three-way one, a different bet.",
+    "FH_AH_": "verified absent past the half balls: their first-half handicap "
+              "(66) is a half-ball market " + _TEN + "; whole and zero lines push, "
+              "so they are a different bet.",
+    "SH_AH_": "verified absent past the half balls: see FH_AH_ (market 88).",
+    "BOUNDS_": "verified absent: their team Multigoals rungs (1-2, 1-3, 2-3, 4+, "
+               "no goal) are a different set from ours, and our 1-3 means one to "
+               "three OR MORE.",
+    "CARD_": "verified absent: they sell total bookings and sending-off markets "
+             "only; no per-team booking count " + _TEN + ".",
+    "FH_CARD_": "verified absent: see CARD_.",
+    "FH_CARDUN_": "verified absent: see CARD_.",
+    "CORNRANGE_": "verified absent: no corner-range market (169-171) " + _TEN + ".",
+    "DC1UP_": "verified absent: they run 1UP on the 1X2 only, not on double chance.",
+    "EARLY_": "verified absent: their early market is a 1X2 over the first ten "
+              "minutes (105), not a goals line.",
+    "EXACT_FH_": "verified absent: no first-half exact goals (71) " + _TEN + ".",
+    "EXGOALS_": "verified absent: a bet that the total is anything BUT n is not sold.",
+    "FIRSTGOAL_": "verified absent: no first-team-to-score market (8/62/84) " + _TEN +
+                  "; their nearest is 1st Goal & 1X2, a different bet.",
+    "GOALRANGE_": "verified absent in our rungs: their Goal Range (25) carries the "
+                  "point_range:6+ variant (0-1, 2-3, 4-5, 6+), not our goal_range:7+ "
+                  "(0-1, 2-3, 4-6, 7+). Same position, different rungs.",
+    "HALFCORNER_": "verified absent: no half-with-most-corners market " + _TEN + ".",
+    "HMC_": "verified absent: no half-with-most-bookings market " + _TEN + ".",
+    "MARGIN_": "verified absent: no winning-margin market (15) " + _TEN + ".",
+    "MIX_": "verified absent at 1.5 and 3.5: their 'X Or Over/Under' markets "
+            "(854-859) are sold at 2.5 only " + _TEN + ".",
+    "MIXNG_": "verified absent: they sell 'X Or Both Teams To Score' (860-862) "
+              "and not the 'or not both' side.",
+    "NR3_": "verified absent: SportyBet's own 3-in-a-row market, not a Sportradar one.",
+    "R3_": "verified absent: SportyBet's own 3-in-a-row market, not a Sportradar one.",
+    "PEN_": "verified absent: no penalty-awarded market " + _TEN + ".",
+    "CORNERS_": "not read yet past 12.5: those lines come from Bet9ja and BetKing's "
+                "tables, which SportyBet's (the generator's source) does not carry; "
+                "Betway's total-corners lines ran 8.5 to 11.5 " + _TEN + ".",
+    "SHOTS_": "verified absent: no team or match shots market " + _TEN +
+              "; their shots markets are per player.",
+    "SH_OVER_": "verified absent: no second-half match total (90) " + _TEN +
+                "; they sell second-half TEAM totals (91/92).",
+    "SH_UNDER_": "verified absent: see SH_OVER_.",
 }
 
 

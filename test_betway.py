@@ -39,11 +39,22 @@ class TheIds(unittest.TestCase):
         self.assertEqual(betway.decode(EID, EID + "1", EID + "11"), ("1", None, "1"))
         self.assertEqual(betway.decode(EID, EID + "10", EID + "1011"), ("10", None, "11"))
 
-    def test_every_modelled_code_round_trips(self):
-        for code, triple in betway.MARKET_MAP.items():
+    def test_every_carried_code_round_trips(self):
+        # Both market-id forms they use: bare "{eid}18" and "{eid}19total=0.5~".
+        for code, triple in list(betway.MARKET_MAP.items()) + list(betway.PASSTHROUGH_MAP.items()):
             oid = betway.outcome_id(EID, triple)
-            mid = EID + triple[0]                    # the bare form, worst case
-            self.assertEqual(betway._BY_TRIPLE[betway.decode(EID, mid, oid)], code)
+            for mid in (EID + triple[0], betway.market_id(EID, triple)):
+                self.assertEqual(betway._BY_TRIPLE[betway.decode(EID, mid, oid)], code)
+
+    def test_the_aliases_read_as_betway_writes_them(self):
+        # 1UP is Sportradar's 1601 xup=1 on Betway (SportyBet's own id is
+        # 60200); a variant outcome is the bare number, not sr:...:68.
+        self.assertEqual(betway.outcome_id(EID, betway.PASSTHROUGH_MAP["UP1_1"]),
+                         EID + "1601xup=1~1")
+        self.assertEqual(betway.outcome_id(EID, betway.PASSTHROUGH_MAP["EXACT_0"]),
+                         EID + "21variant=sr:exact_goals:6+~68")
+        self.assertEqual(betway.PASSTHROUGH_MAP["CORNERS_H_OV_4.5"][0], "167")
+        self.assertEqual(betway.PASSTHROUGH_MAP["CORNERS_A_OV_4.5"][0], "168")
 
     def test_a_foreign_id_decodes_to_nothing(self):
         self.assertIsNone(betway.decode(EID, "99999991", "999999911"))
