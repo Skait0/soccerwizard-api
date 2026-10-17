@@ -122,7 +122,9 @@ class MarketTable(unittest.TestCase):
     def test_modelled_codes_are_all_here(self):
         # The dozen the model prices plus their unders, same list as betpawa.MARKET_MAP.
         import betpawa
-        self.assertEqual(set(onexbet.MARKET_MAP), set(betpawa.MARKET_MAP))
+        # Less what 1xBet does not sell, each excused in NOT_CARRIED (WTN_, 17 Oct 2026).
+        excused = {c for c in betpawa.MARKET_MAP if any(c.startswith(p) for p in onexbet.NOT_CARRIED)}
+        self.assertEqual(set(onexbet.MARKET_MAP), set(betpawa.MARKET_MAP) - excused)
 
     def test_never_a_default(self):
         self.assertIsNone(onexbet.market_for("NOT_A_MARKET"))

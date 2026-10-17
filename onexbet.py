@@ -247,6 +247,7 @@ SWEEP_PERIODS = ("",)
 # Written from tools/xbmap.json's rejects; "verified absent" means eight deep
 # cards were read for it. Longest prefix wins.
 NOT_CARRIED = {
+    "WTN_": "verified absent: no win-to-nil market on the eight deep cards of 29 Sep 2026 (tools/xbcat.json) or on Roma v Genoa, 17 Oct 2026, main card and sub-games.",
     "NR3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
     "R3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
     'AH_': "carried, except where their card stops: whole and half lines +-1 to +-3.5 on 'Handicap' and quarter lines +-0.25 to +-2.25 on 'Asian Handicap'. Verified absent on eight deep cards: +-0.5, 0, +-2.75 and anything past +-3.5.",

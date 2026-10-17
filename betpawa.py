@@ -109,6 +109,9 @@ MARKET_MAP = {
     "UNDER_2.5": ("5000", "2.5", "5002"),
     "UNDER_3.5": ("5000", "3.5", "5002"),
     "UNDER_4.5": ("5000", "4.5", "5002"),
+    # Win to Nil NO, home and away, full time (owner, 17 Oct 2026). Read off Roma v Genoa.
+    "WTN_H_N": ("5051", None, "5053"),
+    "WTN_A_N": ("5042", None, "5044"),
     "NG": ("3795", None, "3797"),
     "FH_UNDER_0.5": ("4958", "0.5", "4960"),
     "HOME_UNDER_0.5": ("5006", "0.5", "5008"),

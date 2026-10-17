@@ -131,6 +131,9 @@ MARKET_MAP = {
     "UNDER_3.5": {"marketId": "18", "outcomeId": "13", "specifier": "total=3.5"},
     # Under 4.5, the readers' near-sure leg (owner, 8 Oct 2026). Same market 18.
     "UNDER_4.5": {"marketId": "18", "outcomeId": "13", "specifier": "total=4.5"},
+    # Win to Nil NO, home and away, full time (owner, 17 Oct 2026). Read off Roma v Genoa.
+    "WTN_H_N": {"marketId": "33", "outcomeId": "76"},
+    "WTN_A_N": {"marketId": "34", "outcomeId": "76"},
     "GG":        {"marketId": "29", "outcomeId": "74"},
     "NG":        {"marketId": "29", "outcomeId": "76"},
     # First half, at least one goal. The model has predicted this all along
@@ -692,6 +695,10 @@ FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
                       # endpoint takes a comma list (checked 11 Oct 2026),
                       # so this costs one market's pages, not three.
                       "60020,60021,60022",
+                      # Win to Nil, home and away, one request (17 Oct 2026):
+                      # the site offers its NO only priced x1.10-1.30, so it
+                      # needs the real price, not an estimate.
+                      "33,34",
                       # Corners, total for the match. Swept for AVAILABILITY
                       # as much as price: books open corners a few days before
                       # kick-off and some leagues never, and the site's corners
