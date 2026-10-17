@@ -696,7 +696,7 @@ FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
                       # so this costs one market's pages, not three.
                       "60020,60021,60022",
                       # Win to Nil, home and away, one request (17 Oct 2026):
-                      # the site offers its NO only priced x1.10-1.30, so it
+                      # the site offers its NO only priced x1.10-1.15, so it
                       # needs the real price, not an estimate.
                       "33,34",
                       # Corners, total for the match. Swept for AVAILABILITY
