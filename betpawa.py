@@ -362,6 +362,13 @@ SWEEP_MARKETS = sorted({m for m, _line, _out in MARKET_MAP.values()})
 #
 # Longest prefix wins, which matters: AH_ is half carried (the half balls) and
 # FH_CARD_ must not inherit FH_'s answer.
+# HALF-TIME LEGS (owner, 17 Oct 2026: "add the top four"). 2nd half over 0.5
+# and under 2.5 were already carried above; these add the 1st half under 2.5
+# and half-time 1X (home or draw at the break). Read off Tottenham v Coventry's
+# live card, 19 Oct 2026.
+PASSTHROUGH_MAP["FH_UNDER_2.5"] = ("4958", "2.5", "4960")  # 'Total Score Over/Under - 1H'
+PASSTHROUGH_MAP["FH_DC_1X"] = ("4673", None, "4674")  # 'Double Chance - 1H'
+
 NOT_CARRIED = {
     "NR3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
     "R3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",

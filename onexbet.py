@@ -243,6 +243,13 @@ PASSTHROUGH_MAP = {
 # sweep for one market.
 SWEEP_PERIODS = ("",)
 
+# HALF-TIME LEGS (owner, 17 Oct 2026: "add the top four"). 2nd half over 0.5
+# and under 2.5 were already carried above; these add the 1st half under 2.5
+# and half-time 1X (home or draw at the break). Read off Tottenham v
+# Coventry's 1st-half sub-game, 19 Oct 2026.
+PASSTHROUGH_MAP["FH_UNDER_2.5"] = ("1st half", "10", "2.5")  # 1.114
+PASSTHROUGH_MAP["FH_DC_1X"] = ("1st half", "4", None)  # 1.103, group 8
+
 # Every code any other book carries and this one does not, with the reason.
 # Written from tools/xbmap.json's rejects; "verified absent" means eight deep
 # cards were read for it. Longest prefix wins.

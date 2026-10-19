@@ -569,6 +569,14 @@ def market_for(code):
     return MARKET_MAP.get(code) or PASSTHROUGH_MAP.get(code)
 
 
+# HALF-TIME LEGS (owner, 17 Oct 2026: "add the top four"). 2nd half over 0.5
+# and under 2.5 were already carried above; these add the 1st half under 2.5
+# and half-time 1X (home or draw at the break). Read off Tottenham v Coventry's
+# live card, 19 Oct 2026.
+PASSTHROUGH_MAP["FH_UNDER_2.5"] = {"marketId": "68", "outcomeId": "13", "specifier": "total=2.5"}  # 1.17
+PASSTHROUGH_MAP["FH_DC_1X"] = {"marketId": "63", "outcomeId": "9"}  # 1.17, '1st Half - Double Chance'
+
+
 _ODDS_LOOKUP = {}
 for _code, _m in list(MARKET_MAP.items()) + list(PASSTHROUGH_MAP.items()):
     _ODDS_LOOKUP[(str(_m["marketId"]), str(_m["outcomeId"]), _m.get("specifier", "") or "")] = _code
@@ -699,6 +707,11 @@ FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
                       # the site offers its NO only priced x1.10-1.15, so it
                       # needs the real price, not an estimate.
                       "33,34",
+                      # Half-time legs, one request (19 Oct 2026): first-half
+                      # double chance (63) and second-half totals (90). The
+                      # site offers them only priced x1.02-1.15, so it needs
+                      # the real price. First-half totals already come with 68.
+                      "63,90",
                       # Corners, total for the match. Swept for AVAILABILITY
                       # as much as price: books open corners a few days before
                       # kick-off and some leagues never, and the site's corners

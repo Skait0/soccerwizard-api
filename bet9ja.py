@@ -364,6 +364,13 @@ def market_for(code):
     return MARKET_MAP.get(code) or PASSTHROUGH_MAP.get(code)
 
 
+# HALF-TIME LEGS (owner, 17 Oct 2026: "add the top four"). 2nd half over 0.5
+# and under 2.5 were already carried above; these add the 1st half under 2.5
+# and half-time 1X (home or draw at the break). Read off Tottenham v Coventry's
+# live card, 19 Oct 2026.
+PASSTHROUGH_MAP["FH_UNDER_2.5"] = ("S_OU1T@2.5_U", 1)  # 1.12
+PASSTHROUGH_MAP["FH_DC_1X"] = ("S_DC1T_1X", 1)  # 1.11
+
 MARKET_GROUPS = sorted({g for _k, g in MARKET_MAP.values()})
 
 _BY_KEY = {key: code for code, (key, _g) in

@@ -401,6 +401,13 @@ PASSTHROUGH_MAP = {
 # "verified absent" means checked across eight deep cards on 19-20 Sep 2026.
 # "not read yet" means nobody has sat down with their card - it is work, not a
 # property of their catalogue, and the two must never look the same.
+# HALF-TIME LEGS (owner, 17 Oct 2026: "add the top four"). 2nd half over 0.5
+# and under 2.5 were already carried above; these add the 1st half under 2.5
+# and half-time 1X (home or draw at the break). Read off Tottenham v Coventry's
+# live card, 19 Oct 2026.
+PASSTHROUGH_MAP["FH_UNDER_2.5"] = (161, 2.5, 13)  # 1.14, '1st Half - Total Goals 2.5'
+PASSTHROUGH_MAP["FH_DC_1X"] = (9588, 0.0, 9)  # 1.16, '1st Half - Double Chance'
+
 NOT_CARRIED = {
     "NR3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
     "R3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",

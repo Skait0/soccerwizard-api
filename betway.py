@@ -422,6 +422,13 @@ PASSTHROUGH_MAP = {
 # Every reason below was measured by tools/bwgen.py on the ten cards named
 # above (14 Oct 2026) unless it says "not read yet". Longest prefix wins.
 _TEN = "on ten deep cards (Champions League, Europa League, LaLiga, Serie A, Bundesliga), 14 Oct 2026"
+# HALF-TIME LEGS (owner, 17 Oct 2026: "add the top four"). 2nd half over 0.5
+# and under 2.5 were already carried above; these add the 1st half under 2.5
+# and half-time 1X (home or draw at the break). Betway's ids are Sportradar's,
+# the same numbers SportyBet's card showed on Tottenham v Coventry, 19 Oct 2026.
+PASSTHROUGH_MAP["FH_UNDER_2.5"] = ("68", "total=2.5", "13")
+PASSTHROUGH_MAP["FH_DC_1X"] = ("63", None, "9")
+
 NOT_CARRIED = {
     "AH_": "verified absent at whole and quarter lines: no full-time Asian handicap "
            "(market 16) " + _TEN + ". Half lines ARE carried, on the three-way "
