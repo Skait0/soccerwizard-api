@@ -249,6 +249,10 @@ SWEEP_PERIODS = ("",)
 # Coventry's 1st-half sub-game, 19 Oct 2026.
 PASSTHROUGH_MAP["FH_UNDER_2.5"] = ("1st half", "10", "2.5")  # 1.114
 PASSTHROUGH_MAP["FH_DC_1X"] = ("1st half", "4", None)  # 1.103, group 8
+# BOTH TEAMS SCORE 2+ (owner, 19 Oct 2026: "its a crazy bet"; the site offers the Yes).
+# Read off Tottenham v Coventry's live card, 19 Oct 2026. 'Each Team To Score (2) Or More', group 19.
+PASSTHROUGH_MAP["GG2_Y"] = ("", "11273", "2")  # 4.815
+PASSTHROUGH_MAP["GG2_N"] = ("", "11274", "2")  # 1.138
 
 # Every code any other book carries and this one does not, with the reason.
 # Written from tools/xbmap.json's rejects; "verified absent" means eight deep

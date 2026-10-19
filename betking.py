@@ -407,6 +407,10 @@ PASSTHROUGH_MAP = {
 # live card, 19 Oct 2026.
 PASSTHROUGH_MAP["FH_UNDER_2.5"] = (161, 2.5, 13)  # 1.14, '1st Half - Total Goals 2.5'
 PASSTHROUGH_MAP["FH_DC_1X"] = (9588, 0.0, 9)  # 1.16, '1st Half - Double Chance'
+# BOTH TEAMS SCORE 2+ (owner, 19 Oct 2026: "its a crazy bet"; the site offers the Yes).
+# Read off Tottenham v Coventry's live card, 19 Oct 2026. 'Both Teams Score 2+'.
+PASSTHROUGH_MAP["GG2_Y"] = (9905, 0.0, 74)  # 5.2
+PASSTHROUGH_MAP["GG2_N"] = (9905, 0.0, 76)  # 1.11
 
 NOT_CARRIED = {
     "NR3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",

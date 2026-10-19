@@ -370,6 +370,7 @@ PASSTHROUGH_MAP["FH_UNDER_2.5"] = ("4958", "2.5", "4960")  # 'Total Score Over/U
 PASSTHROUGH_MAP["FH_DC_1X"] = ("4673", None, "4674")  # 'Double Chance - 1H'
 
 NOT_CARRIED = {
+    "GG2_": "verified absent: no both-teams-score-2+ market on Tottenham v Coventry, 19 Oct 2026 (113 markets read); its Both Teams To Score family is the plain Yes/No and its combinations.",
     "NR3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
     "R3_": "not read yet: SportyBet-only for now (owner asked for SportyBet's 3 or more in a row market, 11 Oct 2026); this book's card not yet read for it.",
     # OR IS NOT AND (29 Sep 2026). These were mapped onto "1X2 and Totals" and

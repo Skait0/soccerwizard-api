@@ -370,6 +370,10 @@ def market_for(code):
 # live card, 19 Oct 2026.
 PASSTHROUGH_MAP["FH_UNDER_2.5"] = ("S_OU1T@2.5_U", 1)  # 1.12
 PASSTHROUGH_MAP["FH_DC_1X"] = ("S_DC1T_1X", 1)  # 1.11
+# BOTH TEAMS SCORE 2+ (owner, 19 Oct 2026: "its a crazy bet"; the site offers the Yes).
+# Read off Tottenham v Coventry's live card, 19 Oct 2026.
+PASSTHROUGH_MAP["GG2_Y"] = ("S_GGNG2PLUS_GG", 1)  # 4.6
+PASSTHROUGH_MAP["GG2_N"] = ("S_GGNG2PLUS_NG", 1)  # 1.16
 
 MARKET_GROUPS = sorted({g for _k, g in MARKET_MAP.values()})
 

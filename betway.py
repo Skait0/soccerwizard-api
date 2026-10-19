@@ -430,6 +430,7 @@ PASSTHROUGH_MAP["FH_UNDER_2.5"] = ("68", "total=2.5", "13")
 PASSTHROUGH_MAP["FH_DC_1X"] = ("63", None, "9")
 
 NOT_CARRIED = {
+    "GG2_": "not read yet: SportyBet's GG/NG 2+ is its own market (60000), not a Sportradar one, like NR3_; Betway's card cannot be read from this PC without its session.",
     "AH_": "verified absent at whole and quarter lines: no full-time Asian handicap "
            "(market 16) " + _TEN + ". Half lines ARE carried, on the three-way "
            "handicap that wins on exactly the same scores (AH_VIA_EH); whole and "

@@ -575,6 +575,10 @@ def market_for(code):
 # live card, 19 Oct 2026.
 PASSTHROUGH_MAP["FH_UNDER_2.5"] = {"marketId": "68", "outcomeId": "13", "specifier": "total=2.5"}  # 1.17
 PASSTHROUGH_MAP["FH_DC_1X"] = {"marketId": "63", "outcomeId": "9"}  # 1.17, '1st Half - Double Chance'
+# BOTH TEAMS SCORE 2+ (owner, 19 Oct 2026: "its a crazy bet"; the site offers the Yes).
+# Read off Tottenham v Coventry's live card, 19 Oct 2026. SportyBet's own market 60000, 'GG/NG 2+'.
+PASSTHROUGH_MAP["GG2_Y"] = {"marketId": "60000", "outcomeId": "74"}  # 4.75
+PASSTHROUGH_MAP["GG2_N"] = {"marketId": "60000", "outcomeId": "76"}  # 1.15
 
 
 _ODDS_LOOKUP = {}
@@ -712,6 +716,8 @@ FIXTURE_MARKET_IDS = ("1", "10", "18", "29", "68", "19", "20",
                       # site offers them only priced x1.02-1.15, so it needs
                       # the real price. First-half totals already come with 68.
                       "63,90",
+                      # Both teams score 2+ (19 Oct 2026), so the site prices it.
+                      "60000",
                       # Corners, total for the match. Swept for AVAILABILITY
                       # as much as price: books open corners a few days before
                       # kick-off and some leagues never, and the site's corners
