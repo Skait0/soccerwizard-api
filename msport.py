@@ -342,8 +342,8 @@ def read_code(code, timeout=20):
 def generate_code(selections, timeout=30, verify=True):
     """Turn [{event, code}] into an MSport share code, then read it back leg by leg.
 
-    Same-game legs are accepted here (Over 2.5 and GG on one match booked and read back,
-    22 Oct). The read-back compares the MULTISET of (event, code) sent against what decodes
+    Same-game legs are minted here (Over 2.5 and GG on one match booked and read back,
+    22 Oct) but MSport will not place them as one multiple - server.py refuses them first. The read-back compares the MULTISET of (event, code) sent against what decodes
     back, and names any missing leg as not_priced so the client drops exactly that one."""
     if not selections:
         return {"error": "no selections"}

@@ -2186,7 +2186,10 @@ def api_msport_code():
     """Turn picks into an MSport share code. Body: {"selections": [{"eventId": "sr:match:N",
     "code": "1X"}, ...]}. Every leg MSport will not take is named in `unbookable`:
     not_mapped (a code they do not sell), event_gone (their card would not load), not_priced
-    (sold, not priced on this game). Same-game legs are allowed: MSport books them (22 Oct)."""
+    (sold, not priced on this game), same_game (a second leg on a game already on the slip).
+    SAME GAME IS REFUSED HERE, NOT BY THEM: MSport mints a code holding two legs of one game, but
+    its betslip then marks them "contingent outcomes" and offers doubles only, never the
+    accumulator (owner's phone, code B2YSMQJ, 22 Oct 2026) - the Betway lesson again."""
     data = request.get_json(silent=True) or {}
     picks = data.get("selections") or []
     if not picks:
@@ -2194,13 +2197,16 @@ def api_msport_code():
     if len(picks) > msport.BETSLIP_MAX:
         return jsonify({"success": False, "sent": len(picks),
                         "error": f"msport slips are capped at {msport.BETSLIP_MAX:d} selections"}), 400
-    resolved, bad, cache = [], [], {}
+    resolved, bad, cache, games = [], [], {}, set()
     try:
         for p in picks:
             code, event_id = p.get("code"), str(p.get("eventId") or "")
             leg = {"eventId": event_id, "prediction": code}
             if msport.market_for(code) is None:
                 bad.append(dict(leg, reason="not_mapped")); continue
+            if event_id in games:
+                bad.append(dict(leg, reason="same_game")); continue
+            games.add(event_id)
             if event_id not in cache:
                 cache[event_id] = msport.fetch_event(event_id)
             ev = cache[event_id]

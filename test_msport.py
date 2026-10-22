@@ -74,5 +74,21 @@ class MintingReadsEveryLegBack(unittest.TestCase):
         self.assertEqual(out["not_priced"], [{"eventId": "sr:match:74165976", "prediction": "OVER_1.5"}])
 
 
+class SameGameIsRefusedBeforeMSport(unittest.TestCase):
+    """MSport mints two legs of one game, then its betslip will not place them as one
+    multiple ("contingent outcomes", doubles only - owner's phone, B2YSMQJ, 22 Oct 2026)."""
+    def test_the_second_leg_on_a_game_is_named_and_nothing_is_booked(self):
+        ev = _event({"OVER_2.5": 1.43, "GG": 1.41})
+        client = server.app.test_client()
+        with mock.patch.object(msport, "fetch_event", return_value=ev), \
+             mock.patch.object(msport, "generate_code") as mint:
+            r = client.post("/api/msport/booking-code", json={"selections": [
+                {"eventId": "sr:match:74165976", "code": "OVER_2.5"},
+                {"eventId": "sr:match:74165976", "code": "GG"}]})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual([(u["prediction"], u["reason"]) for u in r.get_json()["unbookable"]], [("GG", "same_game")])
+        mint.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
