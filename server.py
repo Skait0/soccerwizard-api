@@ -14,6 +14,7 @@ from flask_cors import CORS
 import bet9ja
 import betking
 import betpawa
+import msport
 import betway
 import onexbet
 from srid import sr_id
@@ -618,6 +619,8 @@ _BETKING_TTL = 45 * 60
 # reason - the interval is about how rarely we ask, not how fast we can.
 _BETPAWA_CACHE = {"at": 0, "data": None}
 _BETPAWA_TTL = 45 * 60
+_MSPORT_CACHE = {"at": 0, "data": None}
+_MSPORT_TTL = 45 * 60
 _ONEXBET_CACHE = {"at": 0, "data": None}
 _ONEXBET_TTL = 45 * 60
 # What the last sweep read and skipped, served beside the feed (review M5), so
@@ -1472,6 +1475,51 @@ def _start_betpawa_thread():
 _start_betpawa_thread()
 
 
+# --- MSport, the seventh book (22 Oct 2026) ------------------------------------
+# A cursor-paged list with no total, like Betpawa's, so the previous copy is the only
+# check on a short sweep. Their ids are Sportradar's: rows and coupon legs carry srId.
+_MSPORT_LOCK = threading.Lock()
+
+def _refresh_msport_once():
+    try:
+        rows, stats = msport.all_fixtures()
+    except Exception as ex:                          # noqa: BLE001 - background
+        log.warning("msport refresh failed, keeping previous copy: %s", ex)
+        return False
+    if not rows:
+        log.warning("msport refresh returned nothing; keeping previous copy")
+        return False
+    fixtures = {r["eventId"]: r for r in rows}
+    prev = _cache_get("msport", _MSPORT_CACHE)
+    prev_n = len((prev or {}).get("data") or {})
+    if prev_n and len(fixtures) < prev_n * 0.8:
+        log.warning("msport refresh returned %d against %d stored, looks truncated; "
+                    "keeping the fuller copy", len(fixtures), prev_n)
+        return False
+    _cache_put("msport", _MSPORT_CACHE, fixtures)
+    log.info("msport refreshed: %d events over %d pages in %ss",
+             len(fixtures), stats.get("pages"), stats.get("seconds"))
+    return True
+
+def _msport_loop():
+    entry = _cache_get("msport", _MSPORT_CACHE)
+    if entry and entry.get("data"):
+        age = time.time() - entry["at"]
+        if age < _MSPORT_TTL:
+            time.sleep(_MSPORT_TTL - age)
+    while True:
+        ok = _refresh_msport_once()
+        time.sleep(_MSPORT_TTL if ok else 300)
+
+def _start_msport_thread():
+    if not _MSPORT_LOCK.acquire(blocking=False):
+        return
+    threading.Thread(target=_msport_loop, name="msport-refresh", daemon=True).start()
+    log.info("msport refresher started (every %dm)", _MSPORT_TTL // 60)
+
+_start_msport_thread()
+
+
 # 1XBET: one card per fixture, because their game list carries no prices -
 # about 18 minutes a sweep against a 45 minute timer (29 Sep 2026). The
 # short-sweep guard is Betpawa's; the sweep also counts the games it skipped
@@ -2120,6 +2168,69 @@ def api_betpawa_code():
     return jsonify({"success": False, **out}), 502
 
 
+@app.route('/api/msport/fixtures', methods=['GET'])
+def get_msport_fixtures():
+    """Every MSport event, served from the background sweep (one flat bag, like Betpawa's)."""
+    entry = _cache_get("msport", _MSPORT_CACHE)
+    data = (entry or {}).get("data")
+    if not data:
+        return jsonify({"success": False, "count": 0, "matches": {},
+                        "error": "msport fixtures not loaded yet"}), 503
+    return jsonify({"success": True, "cached": True,
+                    "ageSeconds": int(time.time() - entry["at"]),
+                    "count": len(data), "matches": data})
+
+
+@app.route('/api/msport/booking-code', methods=['POST'])
+def api_msport_code():
+    """Turn picks into an MSport share code. Body: {"selections": [{"eventId": "sr:match:N",
+    "code": "1X"}, ...]}. Every leg MSport will not take is named in `unbookable`:
+    not_mapped (a code they do not sell), event_gone (their card would not load), not_priced
+    (sold, not priced on this game). Same-game legs are allowed: MSport books them (22 Oct)."""
+    data = request.get_json(silent=True) or {}
+    picks = data.get("selections") or []
+    if not picks:
+        return jsonify({"success": False, "error": "no selections"}), 400
+    if len(picks) > msport.BETSLIP_MAX:
+        return jsonify({"success": False, "sent": len(picks),
+                        "error": f"msport slips are capped at {msport.BETSLIP_MAX:d} selections"}), 400
+    resolved, bad, cache = [], [], {}
+    try:
+        for p in picks:
+            code, event_id = p.get("code"), str(p.get("eventId") or "")
+            leg = {"eventId": event_id, "prediction": code}
+            if msport.market_for(code) is None:
+                bad.append(dict(leg, reason="not_mapped")); continue
+            if event_id not in cache:
+                cache[event_id] = msport.fetch_event(event_id)
+            ev = cache[event_id]
+            if not ev:
+                bad.append(dict(leg, reason="event_gone")); continue
+            if code not in (ev.get("odds") or {}):
+                bad.append(dict(leg, reason="not_priced")); continue
+            resolved.append({"event": ev, "code": code})
+    except Exception as ex:                          # noqa: BLE001 - user-facing
+        report("msport odds fetch failed", error=str(ex))
+        return jsonify({"success": False, "error": str(ex)}), 502
+    if bad:
+        report("booking: MSport refused legs before booking", level="info",
+               bad_legs=len(bad), total_legs=len(picks),
+               markets=", ".join(sorted({str(b["prediction"]) for b in bad})))
+        return jsonify({"success": False, "message": "MSport rejected the slip",
+                        "detail": f"no market there for {len(bad)} of {len(picks)} picks",
+                        "unbookable": bad}), 400
+    out = msport.generate_code(resolved)
+    if out.get("code") and not out.get("error"):
+        return jsonify({"success": True, **out})
+    report("msport booking refused", legs=len(resolved),
+           detail=str(out.get("error"))[:300], empty_code=out.get("code"))
+    if out.get("not_priced"):
+        return jsonify({"success": False, "message": "MSport rejected the slip",
+                        "unbookable": [dict(l, reason="not_priced") for l in out["not_priced"]],
+                        **{k: v for k, v in out.items() if k != "not_priced"}}), 400
+    return jsonify({"success": False, **out}), 502
+
+
 @app.route('/api/betway/fixtures', methods=['GET'])
 def get_betway_fixtures():
     """Every Betway event, served from the background sweep."""
@@ -2471,12 +2582,12 @@ def _stamp_sr(book, legs):
 
 @app.route('/api/slip', methods=['GET'])
 def api_read_slip():
-    """GET /api/slip?book=sporty|bet9ja|betking|betpawa|onexbet|betway&code=XXXX -> the legs behind a code."""
+    """GET /api/slip?book=sporty|bet9ja|betking|betpawa|onexbet|betway|msport&code=XXXX -> the legs behind a code."""
     book = (request.args.get("book") or "sporty").strip().lower()
     code = (request.args.get("code") or "").strip()
     if not _CODE_RE.match(code):
         return jsonify({"success": False, "error": "that is not a booking code"}), 400
-    if book not in ("sporty", "bet9ja", "betking", "betpawa", "onexbet", "betway"):
+    if book not in ("sporty", "bet9ja", "betking", "betpawa", "onexbet", "betway", "msport"):
         return jsonify({"success": False, "error": "unknown bookmaker"}), 400
 
     # Named rather than defaulted, so a typo in `book` can never be read
@@ -2489,6 +2600,9 @@ def api_read_slip():
         out = betpawa.read_coupon(code)
     elif book == "onexbet":
         out = onexbet.read_coupon(code)
+    elif book == "msport":
+        # srId on every leg: their event id is Sportradar's.
+        out = msport.read_coupon(code)
     elif book == "betway":
         # Each leg already carries srId: their event id IS Sportradar's.
         out = betway.read_coupon(code)

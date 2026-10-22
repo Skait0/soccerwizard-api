@@ -566,8 +566,8 @@ class TheContainerCanActuallyRunThis(unittest.TestCase):
         # above already reconciles those, so there is no allowlist here. An
         # allowlist is how this test would quietly stop checking the very
         # packages it names.
-        ours = {"bet9ja", "betking", "betpawa", "betway", "onexbet", "server", "generate_code", "srid"}
-        for mod in ("server.py", "bet9ja.py", "betking.py", "betpawa.py", "betway.py", "onexbet.py",
+        ours = {"bet9ja", "betking", "betpawa", "betway", "onexbet", "msport", "server", "generate_code", "srid"}
+        for mod in ("server.py", "bet9ja.py", "betking.py", "betpawa.py", "betway.py", "onexbet.py", "msport.py",
                     "srid.py", "generate_code.py"):
             for name in self._imports(mod):
                 if name in ours or name in sys.stdlib_module_names:
