@@ -2486,6 +2486,59 @@ def _sporty_event_name(event_id, region="ng"):
     return out
 
 
+# FINAL SCORES FROM THE BOOK THAT SETTLED THE BET (owner, 23 Oct 2026: "we keep
+# having these issues and cant accurately see the winners"). The site's ledger
+# graded slips only from its own results table, which misses whole competitions
+# (cup nights, MLS, some Portuguese games) and pairs by exact names; a 12/12
+# x99 win sat "open" for want of one score. SportyBet's event endpoint answers
+# for any Sportradar id - and every book's read-back carries one (_stamp_sr) -
+# with the final score and each half. An ended game is cached for good.
+_SCORE_CACHE = {}
+
+
+def _sporty_event_score(sr, region="ng"):
+    if sr in _SCORE_CACHE:
+        return _SCORE_CACHE[sr]
+    url = (f"https://www.sportybet.com/api/{region}/factsCenter/event"
+           f"?eventId=sr:match:{quote(str(sr))}&productId=3")
+    try:
+        d = (requests.get(url, headers=_headers(region), impersonate="chrome120",
+                          timeout=6).json() or {}).get("data") or {}
+    except Exception as ex:                      # noqa: BLE001 - best effort
+        log.info("sportybet score lookup failed for %s: %s", sr, ex)
+        return None
+    if str(d.get("matchStatus") or "").lower() != "ended":
+        return None
+    try:
+        hg, ag = (int(x) for x in str(d.get("setScore") or "").split(":"))
+    except ValueError:
+        return None
+    out = {"home": d.get("homeTeamName") or "", "away": d.get("awayTeamName") or "",
+           "hg": hg, "ag": ag, "start": d.get("estimateStartTime")}
+    halves = d.get("gameScore") or []
+    try:
+        out["hth"], out["hta"] = (int(x) for x in str(halves[0]).split(":"))
+    except (ValueError, IndexError):
+        pass
+    if len(_SCORE_CACHE) > 20000:
+        _SCORE_CACHE.clear()
+    _SCORE_CACHE[sr] = out
+    return out
+
+
+@app.route('/api/scores', methods=['GET'])
+def api_scores():
+    """GET /api/scores?ids=72530980,72036242 -> final scores of ended games, by Sportradar id."""
+    ids = [x.strip().replace("sr:match:", "") for x in (request.args.get("ids") or "").split(",")]
+    ids = [x for x in ids if x.isdigit()][:40]
+    scores = {}
+    for sr in ids:
+        s = _sporty_event_score(sr)
+        if s:
+            scores[sr] = s
+    return jsonify({"success": True, "scores": scores})
+
+
 def read_sporty_share(code, region="ng", timeout=12):
     """The legs behind a SportyBet booking code, in our own market codes.
 
